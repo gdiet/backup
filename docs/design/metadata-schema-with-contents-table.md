@@ -20,101 +20,14 @@ against being changed afterward - see "Repository settings" below.
 
 ## Schema
 
-```sql
--- Single-row (id = 1) settings fixed at repository creation - see "Repository settings" below.
-CREATE TABLE repository_settings (
-  id                   INTEGER PRIMARY KEY,
-  -- NULL selects whole-file chunking (no CDC); a value selects CDC chunking with that
-  -- target_size_bits - mirrors cdc::ChunkerConfig's own Option<u32> shape exactly.
-  cdc_target_size_bits INTEGER,
-  -- Unix epoch milliseconds, matching tree_entries.time's own unit - REQ-STORAGE-008. The actual
-  -- creation moment for a natively created repository; a migrated repository's source root tree
-  -- entry's own time for one adopted from Scala (see "Repository settings" below).
-  creation_time        INTEGER NOT NULL,
-  CONSTRAINT chk_repository_settings_id CHECK (id = 1),
-  CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (
-    cdc_target_size_bits IS NULL OR cdc_target_size_bits BETWEEN 6 AND 30
-  )
-);
-
--- The directory/file tree.
-CREATE TABLE tree_entries (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
-  -- Empty only for the root entry (id = 0), enforced below.
-  name       TEXT    NOT NULL,
-  time       INTEGER NOT NULL,
-  deleted_at INTEGER,
-  -- NULL only for a directory (kind = KIND_DIR, always). A file's row is
-  -- only ever inserted once its content is settled - including an empty
-  -- file, whose zero-chunk content resolves through the same dedup lookup
-  -- as any other content (see "In-progress files are not written to the
-  -- database" below) - never before that point.
-  content_id INTEGER REFERENCES contents(id),
-  -- KIND_DIR/KIND_FILE (see "Magic values" below) - kept as a separate
-  -- column rather than inferred from content_id; see "Why kind is a
-  -- separate column" below.
-  kind       INTEGER NOT NULL,
-  CONSTRAINT chk_tree_entries_kind CHECK (kind IN (0, 1)),
-  CONSTRAINT chk_tree_entries_kind_content_id CHECK (
-    (kind = 0 AND content_id IS NULL) OR (kind = 1 AND content_id IS NOT NULL)
-  ),
-  CONSTRAINT chk_tree_entries_name_nonempty CHECK (id = 0 OR name != '')
-);
-CREATE UNIQUE INDEX tree_entries_active_name_idx ON tree_entries(parent_id, name) WHERE deleted_at IS NULL;
-CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
-CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
-CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);
-
--- Each content id is for a unique (length, hash) *file* (as opposed to chunk) content pair - a
--- file's content, while a logical entity, consists of a sequence of 0..N chunks. Deduplicating
--- whole-file content here, not just at the chunk level, saves real metadata space in practice -
--- see "Empirical measurement" in metadata-schema-comparison.md.
-CREATE TABLE contents (
-  id        INTEGER PRIMARY KEY,
-  -- Not database-enforced - see "Consistency risk of a stored length" in
-  -- metadata-schema-comparison.md. Kept in sync by the repository's
-  -- integrity check (REQ-INTEGRITY-001), not a schema-level constraint.
-  length    INTEGER NOT NULL,
-  -- See "Hash computation" below.
-  hash      BLOB    NOT NULL,
-  ref_count INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (length, hash),
-  CONSTRAINT chk_contents_ref_count CHECK (ref_count >= 0),
-  CONSTRAINT chk_contents_hash_length CHECK (length(hash) = 20)
-);
-
-CREATE TABLE content_chunks (
-  content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
-  seq        INTEGER NOT NULL,
-  chunk_id   INTEGER NOT NULL REFERENCES chunks(id),
-  PRIMARY KEY (content_id, seq)
-);
-CREATE INDEX content_chunks_chunk_id_idx ON content_chunks(chunk_id);
-
--- Each chunk id is for a unique (length, hash) *chunk* (as opposed to file).
--- Note that a chunk, while being a logical entity, can still be physically spread across multiple extents (see chunk_extents below).
-CREATE TABLE chunks (
-  id        INTEGER PRIMARY KEY,
-  length    INTEGER NOT NULL,
-  -- BLAKE3 of the chunk's raw bytes, truncated to the hash width above.
-  hash      BLOB    NOT NULL,
-  ref_count INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (length, hash),
-  CONSTRAINT chk_chunks_ref_count CHECK (ref_count >= 0),
-  CONSTRAINT chk_chunks_hash_length CHECK (length(hash) = 20)
-);
-
-CREATE TABLE chunk_extents (
-  chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
-  seq      INTEGER NOT NULL,
-  start    INTEGER NOT NULL,
-  stop     INTEGER NOT NULL,
-  PRIMARY KEY (chunk_id, seq),
-  CONSTRAINT chk_chunk_extents_range CHECK (stop > start)
-);
-CREATE INDEX chunk_extents_start_idx ON chunk_extents(start);
-```
+The exact schema - every `CREATE TABLE`/`INDEX` statement and the column-level rationale behind
+each choice - is the `V1` migration in
+[`../../crates/db/src/migrations.rs`](../../crates/db/src/migrations.rs), not duplicated here:
+this document and that file would otherwise be two copies of the same SQL that can silently drift
+apart, particularly since `v1` is edited in place pre-release rather than followed by `v2`, `v3`,
+... (see "Pre-release: a single, freely rewritten `v1` migration" under DESIGN-METADATA-005 in
+[`metadata-storage.md`](metadata-storage.md)). What follows is the *why* behind specific choices in
+that schema, not a restatement of it.
 
 ## Why `tree_entries.id` is `AUTOINCREMENT`
 
@@ -138,9 +51,9 @@ schema has today, but `kind` is kept as its own column rather than derived from 
 readable without recalling the convention, and not coupled to it staying true forever. A future
 kind this schema does not have yet - a symbolic link, say (REQ-TREE-007 in
 [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)) - would also
-have `content_id IS NULL` without being a directory, breaking the inference. The
-`chk_tree_entries_kind_content_id` `CHECK` above keeps `kind` and `content_id` from drifting apart
-for the two kinds that exist today.
+have `content_id IS NULL` without being a directory, breaking the inference. `tree_entries`'s
+`chk_tree_entries_kind_content_id` `CHECK` (see "Schema" above) keeps `kind` and `content_id` from
+drifting apart for the two kinds that exist today.
 
 ## DESIGN-METADATA-007: Hash computation
 
@@ -197,8 +110,8 @@ This is required, not just convenient: REQ-TREE-006 in
 [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) requires that a
 write's content becomes visible to a different process only once it is complete. Keeping the row
 out of the database until settled satisfies that by construction - no reader ever sees `content_id
-IS NULL` on a file row (the `CHECK` above forbids it), so there is no in-progress state to mistake
-for a genuinely settled empty file.
+IS NULL` on a file row (`chk_tree_entries_kind_content_id` forbids it - see "Schema" above), so
+there is no in-progress state to mistake for a genuinely settled empty file.
 
 The same fact - a file's row is inserted exactly once, already at its final `content_id` - also
 means two things an opposite approach would need (inserting the row early, at `content_id = NULL`,
@@ -328,53 +241,10 @@ single, freely rewritten `v1` migration" in `metadata-storage.md`).
 
 ## Triggers
 
-```sql
--- Chunk-level ref-counting.
-CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
-  UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
-END;
-CREATE TRIGGER content_chunks_ref_count_del AFTER DELETE ON content_chunks BEGIN
-  UPDATE chunks SET ref_count = ref_count - 1 WHERE id = OLD.chunk_id;
-END;
-
--- Content-level ref-counting: a tree entry created with content_id already set, or purged.
-CREATE TRIGGER tree_entries_ref_count_ins AFTER INSERT ON tree_entries
-  WHEN NEW.content_id IS NOT NULL
-BEGIN
-  UPDATE contents SET ref_count = ref_count + 1 WHERE id = NEW.content_id;
-END;
-CREATE TRIGGER tree_entries_ref_count_del AFTER DELETE ON tree_entries
-  WHEN OLD.content_id IS NOT NULL
-BEGIN
-  UPDATE contents SET ref_count = ref_count - 1 WHERE id = OLD.content_id;
-END;
-
--- Guard the root tree entry against deletion by code that does not know it is special - see
--- "Magic values" below. Without this, protection would rest purely on convention (e.g. a cleanup
--- routine remembering to skip this row) - the kind of gap this trigger closes structurally.
-CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
-  WHEN OLD.id = 0
-BEGIN
-  SELECT RAISE(ABORT, 'cannot delete the root tree entry');
-END;
-
--- Guard cdc_target_size_bits against being changed after creation - see "Repository settings"
--- below. A deliberate repository-wide re-chunking tool can still DROP/CREATE this trigger around
--- its own work, same as DESIGN-METADATA-005 already does with PRAGMA foreign_keys=OFF for a table
--- rebuild.
-CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
-  BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
-BEGIN
-  SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
-END;
-
--- Guard creation_time against being changed after creation - see "Repository settings" below.
-CREATE TRIGGER repository_settings_creation_time_immutable
-  BEFORE UPDATE OF creation_time ON repository_settings
-BEGIN
-  SELECT RAISE(ABORT, 'creation_time is fixed for the repository''s lifetime (REQ-STORAGE-008)');
-END;
-```
+The trigger definitions themselves - ref-counting, the root-deletion guard, and the two
+`repository_settings` immutability guards - are likewise the `V1` migration in
+[`../../crates/db/src/migrations.rs`](../../crates/db/src/migrations.rs), for the same reason as
+"Schema" above.
 
 ## Performance of the new additions
 
@@ -410,14 +280,9 @@ more than constraint/trigger evaluation does.
   `metadata-storage.md` DESIGN-METADATA-004 for the collision-probability reasoning.
 - **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding.
 
-```sql
-INSERT INTO tree_entries (id, parent_id, name, time, kind)
-  VALUES (0, 0, '', 0, 0);  -- KIND_DIR; time=0 is immediately superseded once anything is
-                            -- created at top level, see REQ-TREE-005
-```
-
-No seed row exists for `contents` - see "In-progress files are not written to the database" above
-for why.
+The root entry's actual seed `INSERT` is the last statement in `migrations.rs`'s `V1` migration
+(see "Schema" above). No seed row exists for `contents` - see "In-progress files are not written to
+the database" above for why.
 
 ## Diagram
 
@@ -489,9 +354,9 @@ encoding is about a byte cheaper still (one column header instead of two). Given
 expected to be a small minority of a typical tree, the aggregate difference across a whole
 repository is negligible.
 
-Rejected on clarity grounds instead: the `kind`/`content_id` consistency `CHECK` added elsewhere in
-this document would need a `LIKE 'S%'` pattern match for the symlink case instead of a plain value
-comparison, `kind` would carry two different jobs (a type tag, and payload data) depending on which
-value it holds, and any future per-symlink attribute (e.g. a "target no longer exists" flag) would
-need further ad-hoc string encoding rather than just another column. Not worth trading that clarity
-for roughly one byte per symlink row.
+Rejected on clarity grounds instead: `tree_entries`'s `chk_tree_entries_kind_content_id` `CHECK`
+(see "Schema" above) would need a `LIKE 'S%'` pattern match for the symlink case instead of a plain
+value comparison, `kind` would carry two different jobs (a type tag, and payload data) depending on
+which value it holds, and any future per-symlink attribute (e.g. a "target no longer exists" flag)
+would need further ad-hoc string encoding rather than just another column. Not worth trading that
+clarity for roughly one byte per symlink row.

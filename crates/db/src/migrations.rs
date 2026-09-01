@@ -9,9 +9,16 @@
 use rusqlite_migration::{M, Migrations};
 
 const V1: &str = r#"
+-- Single-row (id = 1) settings fixed at repository creation - see DESIGN-METADATA-009
+-- (Repository settings) in metadata-schema-with-contents-table.md.
 CREATE TABLE repository_settings (
   id                   INTEGER PRIMARY KEY,
+  -- NULL selects whole-file chunking (no CDC); a value selects CDC chunking with that
+  -- target_size_bits - mirrors cdc::ChunkerConfig's own Option<u32> shape exactly.
   cdc_target_size_bits INTEGER,
+  -- Unix epoch milliseconds, matching tree_entries.time's own unit - REQ-STORAGE-008. The actual
+  -- creation moment for a natively created repository; a migrated repository's source root tree
+  -- entry's own time for one adopted from Scala.
   creation_time        INTEGER NOT NULL,
   CONSTRAINT chk_repository_settings_id CHECK (id = 1),
   CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (
@@ -19,15 +26,24 @@ CREATE TABLE repository_settings (
   )
 );
 
--- AUTOINCREMENT (unlike every other table's id): a purged entry's id must never be reused by a
--- later insert - see "Why tree_entries.id is AUTOINCREMENT" in metadata-schema-with-contents-table.md.
+-- The directory/file tree. AUTOINCREMENT (unlike every other table's id): a purged entry's id must
+-- never be reused by a later insert - see "Why tree_entries.id is AUTOINCREMENT" in
+-- metadata-schema-with-contents-table.md.
 CREATE TABLE tree_entries (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
+  -- Empty only for the root entry (id = 0), enforced below.
   name       TEXT    NOT NULL,
   time       INTEGER NOT NULL,
   deleted_at INTEGER,
+  -- NULL only for a directory (kind = KIND_DIR, always). A file's row is only ever inserted once
+  -- its content is settled - including an empty file, whose zero-chunk content resolves through
+  -- the same dedup lookup as any other content (DESIGN-METADATA-008, "In-progress files are not
+  -- written to the database") - never before that point.
   content_id INTEGER REFERENCES contents(id),
+  -- KIND_DIR = 0 / KIND_FILE = 1 (see the seed INSERT below) - kept as a separate column rather
+  -- than inferred from content_id; see "Why kind is a separate column" in
+  -- metadata-schema-with-contents-table.md.
   kind       INTEGER NOT NULL,
   CONSTRAINT chk_tree_entries_kind CHECK (kind IN (0, 1)),
   CONSTRAINT chk_tree_entries_kind_content_id CHECK (
@@ -40,9 +56,19 @@ CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
 CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);
 
+-- Each content id is for a unique (length, hash) *file* (as opposed to chunk) content pair - a
+-- file's content, while a logical entity, consists of a sequence of 0..N chunks. Deduplicating
+-- whole-file content here, not just at the chunk level, saves real metadata space in practice -
+-- see "Empirical measurement" in metadata-schema-comparison.md.
 CREATE TABLE contents (
   id        INTEGER PRIMARY KEY,
+  -- Not database-enforced - see "Consistency risk of a stored length" in
+  -- metadata-schema-comparison.md. Kept in sync by the repository's integrity check
+  -- (REQ-INTEGRITY-001), not a schema-level constraint.
   length    INTEGER NOT NULL,
+  -- BLAKE3 over the chunk sequence's (length, hash) pairs, not the file's raw bytes directly,
+  -- truncated to 20 bytes - see DESIGN-METADATA-007 (Hash computation) in
+  -- metadata-schema-with-contents-table.md.
   hash      BLOB    NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (length, hash),
@@ -58,9 +84,14 @@ CREATE TABLE content_chunks (
 );
 CREATE INDEX content_chunks_chunk_id_idx ON content_chunks(chunk_id);
 
+-- Each chunk id is for a unique (length, hash) *chunk* (as opposed to file). A chunk, while a
+-- logical entity, can still be physically spread across multiple extents (see chunk_extents
+-- below).
 CREATE TABLE chunks (
   id        INTEGER PRIMARY KEY,
   length    INTEGER NOT NULL,
+  -- BLAKE3 of the chunk's raw bytes, truncated to 20 bytes (same width as contents.hash - see
+  -- "Hash width" in metadata-schema-with-contents-table.md's "Magic values").
   hash      BLOB    NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (length, hash),
@@ -98,19 +129,27 @@ BEGIN
   UPDATE contents SET ref_count = ref_count - 1 WHERE id = OLD.content_id;
 END;
 
--- Guard the root tree entry against deletion by code that does not know it is special.
+-- Guard the root tree entry against deletion by code that does not know it is special - see
+-- "Magic values" in metadata-schema-with-contents-table.md. Without this, protection would rest
+-- purely on convention (e.g. a cleanup routine remembering to skip this row) - the kind of gap
+-- this trigger closes structurally.
 CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
   WHEN OLD.id = 0
 BEGIN
   SELECT RAISE(ABORT, 'cannot delete the root tree entry');
 END;
 
--- Guard cdc_target_size_bits/creation_time against being changed after creation.
+-- Guard cdc_target_size_bits against being changed after creation - see "Repository settings"
+-- (DESIGN-METADATA-009) in metadata-schema-with-contents-table.md. A deliberate repository-wide
+-- re-chunking tool can still DROP/CREATE this trigger around its own work, same as
+-- DESIGN-METADATA-005 already does with PRAGMA foreign_keys=OFF for a table rebuild.
 CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
   BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
 BEGIN
   SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
 END;
+-- Guard creation_time against being changed after creation - see "Repository settings"
+-- (DESIGN-METADATA-009) in metadata-schema-with-contents-table.md.
 CREATE TRIGGER repository_settings_creation_time_immutable
   BEFORE UPDATE OF creation_time ON repository_settings
 BEGIN
