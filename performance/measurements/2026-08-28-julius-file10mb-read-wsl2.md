@@ -48,3 +48,13 @@ this is plausibly closer to a genuine disk-bound comparison than the smaller siz
 cache effects likely dominated the native-Windows numbers - consistent with the lookup/listing
 results above also favoring WSL2 once per-call overhead stops dominating. Not confirmed further
 here.
+
+**Retroactive addendum** (added 2026-09-01, once a script bug was found and fixed): this
+measurement used `file10mb-read.sh` *before* it was fixed to pick a pseudo-random index per read -
+it restarted its read index at file 1 every run instead, so this run's flat-looking numbers were
+likely still somewhat page-cache-warm from repeatedly re-touching the same low-index range, not a
+genuinely random access pattern. The "reversal from every smaller size" observation above may be
+partly an artifact of this rather than purely a real WSL2-vs-native comparison - see
+`2026-09-01-julius-file10mb-read-wsl2.md` for the corrected re-run (17.7 vs. this file's 35.0 ops/s
+mean, and now the *slower* side again, matching the smaller sizes' native-ahead pattern rather than
+reversing it) and `agent-todos/done/file-read-scripts-restart-index-each-run.md` for the bug.

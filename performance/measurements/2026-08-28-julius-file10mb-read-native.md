@@ -45,3 +45,14 @@ volume on this device. Read throughput (26.3 ops/s) is almost identical to creat
 10-16x faster than creates (see the 100 B/30 KB read protocols' Notes) - consistent with this
 being the first size where reads are genuinely disk-bound (cold, not cache-served) rather than
 page-cache-warm, so read and write converge toward the same underlying SSD throughput ceiling.
+
+**Retroactive addendum** (added 2026-09-01, once a script bug was found and fixed): this
+measurement used `file10mb-read.ps1` *before* it was fixed to pick a pseudo-random index per read -
+it restarted its read index at file 1 every run instead, which the "flat across all 5 runs"
+observation above still held for at this size only because the whole tree happened to fit in page
+cache well enough here that the artifact (visible on other machines/environments with a larger
+tree relative to RAM, see `2026-08-28-3327-file10mb-read-wsl2.md`) never showed up as a trend. The
+absolute throughput number is still confounded, though - the same fixed low-index range was
+repeatedly re-touched, so this ran warmer than a genuinely random access pattern would. See
+`2026-09-01-julius-file10mb-read-native.md` for the corrected re-run (20.4 vs. this file's
+26.3 ops/s mean) and `agent-todos/done/file-read-scripts-restart-index-each-run.md` for the bug.

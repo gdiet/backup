@@ -1,0 +1,20 @@
+date: 2026-09-01
+machine: julius
+environment: native-windows
+power_profile:                    # not captured this session - see the .md's Setup note
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: read-file-10mb
+location: native
+tool: ReadAllBytes (PowerShell), fixed pseudo-random index
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 2049                       # total reads across the 5 kept runs, against a fixed 2,642-file set
+content_size: 10485760
+result:
+  unit: ops_per_second
+  mean: 20.4
+  range: [17.8, 21.3]
+  n: 5
+  discarded_warmup_run: false

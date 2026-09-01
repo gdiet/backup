@@ -155,8 +155,10 @@ stick's tiny ~4 GB capacity required a free-space check and a throughput probe b
 | julius | WSL2, Debian 12 | power saver | 100 B | local SSD | native | sequential | 603.4 (443-655) | [2026-08-28](measurements/2026-08-28-julius-file100b-read-wsl2.md) |
 | julius | native Windows | power saver | 30 KB | local SSD | native | sequential | 3760.9 (3645.7-3811.1) | [2026-08-28](measurements/2026-08-28-julius-file30kb-read-native.md) |
 | julius | WSL2, Debian 12 | power saver | 30 KB | local SSD | native | sequential | 531.4 (502-547) | [2026-08-28](measurements/2026-08-28-julius-file30kb-read-wsl2.md) |
-| julius | native Windows | power saver | 10 MB | local SSD | native | sequential | 26.3 (25.2-26.7) | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-native.md) |
-| julius | WSL2, Debian 12 | power saver | 10 MB | local SSD | native | sequential | 35.0 (30-37) | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-wsl2.md) |
+| julius | native Windows | power saver | 10 MB | local SSD | native | sequential | 26.3 (25.2-26.7)\*\* | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-native.md) |
+| julius | WSL2, Debian 12 | power saver | 10 MB | local SSD | native | sequential | 35.0 (30-37)\*\* | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-wsl2.md) |
+| julius | native Windows | (not captured) | 10 MB | local SSD | native | sequential | 20.4 (17.8-21.3) | [2026-09-01](measurements/2026-09-01-julius-file10mb-read-native.md) |
+| julius | WSL2, Debian 12 | (not captured) | 10 MB | local SSD | native | sequential | 17.7 (5.85-29.45) | [2026-09-01](measurements/2026-09-01-julius-file10mb-read-wsl2.md) |
 | 3327 | native Windows | power saver (custom base scheme) | 100 B | local NVMe SSD | native | sequential | 1562.0 (1144.4-2076.0) | [2026-08-28](measurements/2026-08-28-3327-file100b-read-native.md) |
 | 3327 | WSL2, Ubuntu 24.04 | power saver (custom base scheme) | 100 B | local SSD | native | sequential | 958.4 (901-1019) | [2026-08-28](measurements/2026-08-28-3327-file100b-read-wsl2.md) |
 | 3327 | native Windows | power saver (custom base scheme) | 30 KB | local NVMe SSD | native | sequential | 1785.4 (1188.3-2319.3) | [2026-08-28](measurements/2026-08-28-3327-file30kb-read-native.md) |
@@ -164,18 +166,20 @@ stick's tiny ~4 GB capacity required a free-space check and a throughput probe b
 | 3327 | native Windows | power saver (custom base scheme) | 10 MB | local NVMe SSD | native | sequential | 62.4 / ~620 MB/s (49.4-70.2) | [2026-08-28](measurements/2026-08-28-3327-file10mb-read-native.md) |
 | 3327 | WSL2, Ubuntu 24.04 | power saver (custom base scheme) | 10 MB | local SSD | native | sequential | 92.8 / ~928 MB/s (64-118)\*\* | [2026-08-28](measurements/2026-08-28-3327-file10mb-read-wsl2.md) |
 
-\*\* Confounded by a read-script indexing artifact, provisional until fixed and re-run - see the
-`3327` WSL2 paragraph below.
+\*\* Confounded by a read-script indexing artifact (now fixed - see the `2026-09-01` rows above for
+`julius`'s corrected re-runs, and the `3327` WSL2 paragraph below for the still-outstanding `3327`
+case).
 
 On `julius`, reads at 100 B/30 KB run 10-16x faster than the matching creates on native Windows
 (page-cache-warm working sets, both well under this machine's 8 GB RAM); at 10 MB the working set
-exceeds RAM on both environments and read/create throughput converge - the first size in this
-ladder where reads look genuinely disk-bound rather than cache-served. Native Windows is far ahead
-of WSL2 at 100 B/30 KB (~15% ratio, a much bigger native-ahead gap than the create side's 44-45%)
-but **loses** to WSL2 at 10 MB (26.3 vs. 35.0 ops/s) - the only read comparison in this session
-where WSL2 wins, plausibly because per-call cmdlet/cache effects stop dominating once neither side
-is page-cache-warm, closer to a genuinely disk-bound comparison and consistent with the
-lookup/listing results above also favoring WSL2 once overhead stops dominating.
+exceeds RAM on both environments. Native Windows is far ahead of WSL2 at 100 B/30 KB (~15% ratio, a
+much bigger native-ahead gap than the create side's 44-45%). The original 10 MB round (`2026-08-28`)
+showed WSL2 *winning* there (26.3 vs. 35.0 ops/s), the only read comparison that reversed the
+pattern - but that round used the read scripts before the indexing-artifact fix, so both numbers
+were confounded by page-cache effects the fix specifically targets. The corrected `2026-09-01`
+re-run reverses the reversal: native Windows is ahead again at 10 MB too (20.4 vs. 17.7 ops/s),
+matching every other size rather than standing out from it - the original "WSL2 wins at 10 MB"
+finding does not survive the fix and should not be relied on.
 
 On `3327` native Windows, reads at 100 B/30 KB likewise run several times faster than the matching
 creates (page-cache-warm working sets: ~5 MB and ~1.5 GB, well under RAM), and the 100 B and 30 KB
@@ -191,8 +195,9 @@ clearly ahead at 10 MB (~78%, but see the caveat below) - a much flatter read/cr
 than either `julius` or `3327` native Windows show, consistent with `3327` WSL2's create side
 already being per-call-overhead-bound rather than IO-bound at these sizes (see the file-creation
 section above), so cache-warm reads gain relatively little over it. \*\* The 10 MB WSL2 read
-number is confounded by a read-script indexing artifact (`file10mb-read.sh` re-reads the same
-low-numbered files from run 1 every run, so later
-runs find more of that fixed range already page-cache-warm from the previous run - see that
-protocol's Notes and `agent-todos/file-read-scripts-restart-index-each-run.md`) - treat the 92.8
-ops/s figure and its wide range (64-118) as provisional until that script is fixed and re-run.
+number is confounded by a read-script indexing artifact (`file10mb-read.sh` used to re-read the
+same low-numbered files from run 1 every run, so later runs found more of that fixed range already
+page-cache-warm from the previous run - see that protocol's Notes) - the fix (pseudo-random
+indexing) has since been made and confirmed on `julius` (see the `2026-09-01` rows in the table
+above), but `3327` itself has not yet been re-run with it; treat the 92.8 ops/s figure and its wide
+range (64-118) as provisional until it is.
