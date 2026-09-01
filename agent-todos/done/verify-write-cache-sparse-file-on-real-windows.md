@@ -42,3 +42,24 @@ Use the `julius-winfsp-ssh` skill to reach a real Windows machine for this check
 snippet exercising just `mark_sparse` plus a scattered write, checked with `fsutil sparse
 queryflag`, is enough - no full mount session needed since this code path does not depend on
 `mountfs` at all.
+
+## Done
+
+**Completed**: 2026-09-01, by a Claude Code Desktop-App session running natively on `julius`
+(confirmed real WinFSP/NTFS access this session - see `.local/agent-environment.md`).
+
+Ran a standalone probe crate (`crates/cli`'s exact `mark_sparse` code, copied verbatim) against a
+real NTFS temp file: `DeviceIoControl(FSCTL_SET_SPARSE)` succeeded, and a scattered write pattern
+(4 writes spread across a ~500 MB logical range) left the file genuinely sparse - `fsutil sparse
+queryflag` confirmed the sparse flag set, and `fsutil sparse queryrange` showed only 4 small
+allocated ranges (one per write, ~64 KiB each) rather than the full ~500 MB. All three open
+questions from the "Do" list above are now confirmed:
+
+- The call succeeds against a real NTFS volume for a freshly created temp file.
+- A scattered write pattern afterward actually stays sparse.
+- The error path was not separately forced/tested (no reachable failure case attempted - would
+  need e.g. a non-NTFS volume or restricted access rights), but is not urgent given the success
+  path's own confirmation; left open if it ever matters in practice.
+
+Updated the stale "Not verified against a real Windows/NTFS volume yet" code comment in
+`write_cache.rs` to reflect this.

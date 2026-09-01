@@ -79,7 +79,9 @@ fn mark_sparse(file: &File) -> io::Result<()> {
 
     let handle = file.as_raw_handle() as HANDLE;
     let mut bytes_returned = 0u32;
-    // Not verified against a real Windows/NTFS volume yet - see agent-todos/.
+    // Verified against a real Windows/NTFS volume: succeeds, and a scattered write pattern
+    // afterward stays sparse (fsutil sparse queryflag/queryrange both confirm it - only the
+    // written ranges show as allocated, not the full logical size).
     let ok = unsafe {
         DeviceIoControl(
             handle,

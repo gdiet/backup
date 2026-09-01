@@ -9,13 +9,22 @@
 //! is where `flock` is actually used to tell an active holder apart from a stale leftover.
 
 use std::fs::{File, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::Error;
 
 const LOCK_FILE: &str = "lock";
+
+/// How many extra attempts [`create_new_lock_file_with_pending_delete_retry`] makes, and how long
+/// it waits between them, before giving up on a `PermissionDenied` result. Chosen generously
+/// relative to the microseconds-wide race window it targets (confirmed via a live two-thread race
+/// test, not assumed - see this module's own tests) - `10 * 1ms` adds at most 10ms of latency to a
+/// single acquisition attempt in the worst case, negligible next to how rarely acquisition itself
+/// happens, while still being orders of magnitude longer than the window ever needs to close.
+const PENDING_DELETE_RETRY_ATTEMPTS: u32 = 10;
+const PENDING_DELETE_RETRY_DELAY: Duration = Duration::from_millis(1);
 
 /// Held for as long as the caller wants exclusive, repository-mutating access to a repository -
 /// drop to release it.
@@ -55,12 +64,17 @@ pub(crate) fn try_acquire_write_lock(meta_dir: &Path) -> Result<WriteLock, Error
     // first place: on exactly the filesystems where `flock` may not propagate correctly across
     // machines, a `flock` fallback could silently grant a second, actively-writing session the
     // lock right after `create_new` correctly reported a conflict.
-    let file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+    let file = match create_new_lock_file_with_pending_delete_retry(&path) {
         Ok(file) => file,
         Err(err) if err.kind() == ErrorKind::AlreadyExists => {
             return Err(Error::AlreadyLocked(meta_dir.to_path_buf()));
         }
-        Err(err) => return Err(err.into()),
+        Err(source) => {
+            return Err(Error::LockFileInaccessible {
+                path: meta_dir.to_path_buf(),
+                source,
+            });
+        }
     };
 
     // Leaked deliberately: this lock is meant to be held for as long as the process that
@@ -98,18 +112,65 @@ pub(crate) fn try_acquire_write_lock(meta_dir: &Path) -> Result<WriteLock, Error
     Ok(WriteLock { guard, path })
 }
 
-/// Writes a line identifying this process - hostname, process id, and acquisition time - into
-/// `file`, which `try_acquire_write_lock` guarantees is freshly created and therefore empty.
+/// `OpenOptions::new().write(true).create_new(true).open(path)`, with a short bounded retry
+/// specifically for `ErrorKind::PermissionDenied`.
+///
+/// `WriteLock::drop` deletes the lock file while its own `flock` handle is still open, closing
+/// that handle only microseconds later - on Windows/NTFS, a deleted-but-still-open file's
+/// directory entry stays in a "pending delete" state until every handle referencing it closes.
+/// A `create_new` attempt landing in that narrow window has been confirmed live (a two-thread
+/// race test in this module) to observe `PermissionDenied`, not `AlreadyExists` - a case the
+/// caller's own `AlreadyExists` handling does not catch.
+///
+/// `PermissionDenied` is not treated as proof of this race, though: the exact same OS error also
+/// covers a genuine, persistent access-rights problem (wrong ACL, a read-only mount), which this
+/// retry must not silently reinterpret as "someone else holds the lock" - a real permissions
+/// problem would still be failing after these retries, at which point the caller surfaces it as
+/// its own, distinct error rather than folding it into `AlreadyLocked`.
+fn create_new_lock_file_with_pending_delete_retry(path: &Path) -> std::io::Result<File> {
+    let mut attempts_left = PENDING_DELETE_RETRY_ATTEMPTS;
+    loop {
+        match OpenOptions::new().write(true).create_new(true).open(path) {
+            Err(err) if err.kind() == ErrorKind::PermissionDenied && attempts_left > 0 => {
+                attempts_left -= 1;
+                std::thread::sleep(PENDING_DELETE_RETRY_DELAY);
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Writes a placeholder byte 0 (`\n`) followed by a line identifying this process - hostname, OS,
+/// process id, and acquisition time - into `file`, which `try_acquire_write_lock` guarantees is
+/// freshly created and therefore empty.
+///
+/// Byte 0 is deliberately never part of the actual marker content: fd-lock 4.0.4's Windows
+/// implementation locks exactly that one byte (`LockFileEx`/`UnlockFile` both called with offset 0,
+/// length 1 - confirmed against its actual source, not assumed), and Windows file locks are
+/// mandatory, not advisory like Unix `flock` - any other handle attempting to read a locked byte
+/// range is refused by the OS outright, even one opened by the same process. Reserving byte 0 as a
+/// fixed, content-free anchor lets [`read_marker`] read everything after it without ever touching
+/// the locked range, confirmed live: a second handle reading from byte 1 onward succeeds even while
+/// another thread holds the lock. Applied on both platforms - Linux's advisory `flock` never needed
+/// this, but branching the on-disk format by OS would cost more than one shared format does.
+///
+/// The OS name is included because hostname alone does not distinguish a lock acquired by a native
+/// Windows session from one acquired by a WSL2 session on the same machine: WSL2 reports the same
+/// hostname as its Windows host by default (confirmed on this project's own `julius` - both report
+/// `julius`), and the two also have independent process-id namespaces, so even the process id could
+/// coincidentally collide between the two without actually being the same process.
 fn write_diagnostic_marker(file: &mut File) -> std::io::Result<()> {
     let hostname = gethostname::gethostname();
+    let os = std::env::consts::OS;
     let pid = std::process::id();
     let time_millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
+    writeln!(file)?; // byte 0: the lock anchor, never part of the marker content itself
     writeln!(
         file,
-        "locked by {}, process {pid}, time {time_millis}",
+        "locked by {} ({os}), process {pid}, time {time_millis}",
         hostname.to_string_lossy()
     )
 }
@@ -173,16 +234,32 @@ pub(crate) fn try_unlock_stale_write_lock(meta_dir: &Path) -> Result<UnlockOutco
 /// Best-effort read of the diagnostic marker at `path` - `None` on any I/O error (the file
 /// disappearing under us, a permissions issue) or if it is empty, since either case leaves nothing
 /// meaningful to report back to a caller.
+///
+/// Reads starting at byte 1, deliberately skipping the fixed anchor byte
+/// [`write_diagnostic_marker`] reserves at byte 0 - see that function's doc comment for why:
+/// reading byte 0 itself would collide with fd-lock's Windows byte-range lock and fail with a
+/// mandatory-locking OS error while the write lock is actively held by another handle, exactly the
+/// case this needs to work for (an operator asking `dfs unlock` who currently holds a live lock).
 fn read_marker(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|content| content.trim().to_string())
-        .filter(|content| !content.is_empty())
+    let mut file = File::open(path).ok()?;
+    file.seek(SeekFrom::Start(1)).ok()?;
+    let mut content = String::new();
+    file.read_to_string(&mut content).ok()?;
+    let content = content.trim().to_string();
+    (!content.is_empty()).then_some(content)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Writes a synthetic lock file simulating what an unclean exit leaves behind, in the same
+    /// format `write_diagnostic_marker` actually produces (byte-0 anchor included) - so tests
+    /// reading it back through `read_marker` see real content, not the anchor byte's placeholder
+    /// swallowing the first character.
+    fn write_synthetic_marker(path: &Path) {
+        std::fs::write(path, b"\nlocked by some-other-host, process 999999, time 1").unwrap();
+    }
 
     #[test]
     fn a_second_write_lock_attempt_is_refused_while_the_first_is_held() {
@@ -227,11 +304,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Simulates what an unclean exit (a crash, a hard kill) leaves behind: the file itself,
         // holding a previous session's marker, but nothing currently holding its `flock`.
-        std::fs::write(
-            dir.path().join(LOCK_FILE),
-            b"locked by some-other-host, process 999999, time 1",
-        )
-        .unwrap();
+        write_synthetic_marker(&dir.path().join(LOCK_FILE));
 
         let err = try_acquire_write_lock(dir.path()).unwrap_err();
         assert!(
@@ -245,7 +318,10 @@ mod tests {
     fn the_diagnostic_marker_records_the_process_id() {
         let dir = tempfile::tempdir().unwrap();
         let _lock = try_acquire_write_lock(dir.path()).unwrap();
-        let content = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
+        // read_marker, not a raw std::fs::read_to_string: on Windows, byte 0 is locked while the
+        // lock is held (see write_diagnostic_marker's doc comment) - reading the raw file directly
+        // is expected to fail here, exactly the case read_marker exists to work around.
+        let content = read_marker(&dir.path().join(LOCK_FILE)).unwrap();
         assert!(
             content.contains(&std::process::id().to_string()),
             "expected the current process id in the marker, got: {content:?}"
@@ -262,11 +338,7 @@ mod tests {
     #[test]
     fn unlock_removes_a_stale_lock_file_and_reports_its_previous_marker() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(LOCK_FILE),
-            b"locked by some-other-host, process 999999, time 1",
-        )
-        .unwrap();
+        write_synthetic_marker(&dir.path().join(LOCK_FILE));
 
         let outcome = try_unlock_stale_write_lock(dir.path()).unwrap();
         match outcome {
@@ -307,14 +379,66 @@ mod tests {
     #[test]
     fn a_fresh_acquisition_succeeds_again_after_unlocking_a_stale_lock() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(LOCK_FILE),
-            b"locked by some-other-host, process 999999, time 1",
-        )
-        .unwrap();
+        write_synthetic_marker(&dir.path().join(LOCK_FILE));
 
         try_unlock_stale_write_lock(dir.path()).unwrap();
 
         try_acquire_write_lock(dir.path()).expect("must succeed once the stale lock is cleared");
+    }
+
+    #[test]
+    fn a_racing_acquirer_never_sees_anything_but_already_locked_or_success() {
+        // Verifies the release path's actual concern (see WriteLock's Drop impl and
+        // agent-todos/verify-lock-file-delete-pending-on-real-windows.md): Windows/NTFS leaves a
+        // deleted-but-still-open file's directory entry in a "pending delete" state until every
+        // handle referencing it closes, which here follows only microseconds after the explicit
+        // `remove_file` call (once `Drop::drop` returns and `guard`'s own field-drop releases the
+        // flock and closes its handle). A second acquirer's `create_new` landing in that window
+        // must resolve to exactly `AlreadyLocked` (before the release) or a clean success (after
+        // it) - never a different, unhandled error kind, which would mean `try_acquire_write_lock`
+        // needs its own bounded retry around that specific case.
+        //
+        // This is a same-process, two-thread race rather than two real OS processes: the NTFS
+        // pending-delete mechanism is a property of open file handles, not of which process holds
+        // them, so two threads each opening their own independent handle (as two real processes
+        // would) exercise the identical race. Repeated many times (not just once) since the
+        // pending-delete window is only microseconds wide - a single attempt would likely miss it
+        // entirely and prove nothing either way.
+        use std::sync::{Arc, Barrier};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+
+        for _ in 0..500 {
+            let held = try_acquire_write_lock(&path).expect("acquiring the lock must succeed");
+
+            let barrier = Arc::new(Barrier::new(2));
+            let racer_barrier = Arc::clone(&barrier);
+            let racer_path = path.clone();
+            let racer = std::thread::spawn(move || {
+                racer_barrier.wait();
+                // Hammer acquisition attempts right through the release below, until one
+                // succeeds (proving the lock does become available again) or a genuinely
+                // unexpected error kind shows up (proving it does not, cleanly).
+                loop {
+                    match try_acquire_write_lock(&racer_path) {
+                        Ok(lock) => return Ok(lock),
+                        Err(Error::AlreadyLocked(_)) => continue,
+                        Err(other) => return Err(other),
+                    }
+                }
+            });
+
+            barrier.wait();
+            drop(held); // triggers the delete-then-release sequence under test, right now
+
+            match racer.join().expect("racer thread must not panic") {
+                Ok(lock) => drop(lock),
+                Err(other) => panic!(
+                    "a racing acquisition attempt hit something other than AlreadyLocked or \
+                     success while racing the release: {other:?}"
+                ),
+            }
+        }
     }
 }

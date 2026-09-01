@@ -121,11 +121,25 @@ this session's own lingering hold on the (already unnamed) file is unreachable b
 acquirer and irrelevant to correctness, gone entirely once its `flock` guard finishes dropping
 immediately after.
 
-Once acquired, the process writes one line identifying itself - hostname, process id, and
-acquisition time - into the file. This is diagnostic: read back by a human inspecting the file
-directly, and by DESIGN-MAINTENANCE-003's recovery command to report who held (or holds) the lock -
-but never consulted by acquisition's own locking logic. See the rejected alternative below for why
-using it as a second gate was considered and specifically not adopted.
+Once acquired, the process writes a diagnostic marker into the file: a placeholder byte (`\n`) at
+offset 0, followed by a line identifying itself - hostname, operating system, process id, and
+acquisition time. This is diagnostic: read back by a human inspecting the file directly, and by
+DESIGN-MAINTENANCE-003's recovery command to report who held (or holds) the lock - but never
+consulted by acquisition's own locking logic. See the rejected alternative below for why using it
+as a second gate was considered and specifically not adopted.
+
+The leading placeholder byte exists because Windows file locks are mandatory, not advisory like
+Unix `flock`: fd-lock's Windows implementation locks exactly one byte at offset 0 (confirmed
+against its source, not assumed), so any read starting at byte 0 - including one issued from a
+separate handle in the same process - is refused by the OS outright for as long as the lock is
+held. Reading the marker back starting at byte 1 instead avoids the locked byte entirely and
+succeeds even while the lock is actively held, confirmed live; applied on both platforms, since
+Linux's `flock` never needed the workaround but a single shared on-disk format is simpler than
+branching it by OS. The operating system is recorded alongside the hostname because a WSL2 session
+reports the same hostname as its Windows host by default (confirmed on this project's own
+development machine), and the two also have independent process-id namespaces - hostname and
+process id alone cannot reliably distinguish a lock held by a native Windows session from one held
+by a WSL2 session on the same machine.
 
 ### Alternative considered and rejected: falling back to `flock` on `AlreadyExists`
 
@@ -144,16 +158,24 @@ separately invoked action - DESIGN-MAINTENANCE-003 - where a human, not unattend
 override it, informed by context (e.g. having just killed the process themselves) this code cannot
 have.
 
-### Known limitation: Windows delete-pending semantics not yet verified against a real mount
+### Windows delete-pending window: a bounded retry, not an unconditional refusal
 
 Deleting a file while a handle to it is still open succeeds on Windows the same way it does on
 Unix - Rust's default share mode already includes `FILE_SHARE_DELETE` - but NTFS keeps the directory
 entry in a "pending delete" state until every handle referencing it actually closes, which here
 follows only microseconds later as part of the same release (the `flock` guard dropping right after
-the delete call above). Whether a competing acquirer's `create_new` in that narrow window reports
-`AlreadyExists` - now an unconditional, immediately visible refusal rather than something a `flock`
-fallback might have smoothed over - has not been checked against a real Windows/NTFS mount -
-`agent-todos/` tracks this the same way it already does for `write_cache.rs`'s sparse-file behavior.
+the delete call above). Confirmed live on a real Windows/NTFS volume, via a repeated (500-iteration)
+two-thread race in `lock.rs`'s own tests: a competing acquirer's `create_new` landing in that window
+reports `PermissionDenied`, not `AlreadyExists` - a case the unconditional-refusal gate above does
+not, by itself, catch.
+
+`PermissionDenied` is not treated as proof of this race, though: the identical OS error also covers
+a genuine, persistent filesystem-permissions problem, which acquisition must not silently
+reinterpret as "someone else holds the lock" - doing so would hide a real permissions problem behind
+a misleading message. Acquisition instead retries a `PermissionDenied` result briefly (a handful of
+1ms-spaced attempts, comfortably longer than the microseconds-wide window this targets) before
+giving up; a result that still fails after those retries is reported as its own distinct,
+permissions-oriented error, separate from `AlreadyLocked`.
 
 ### Alternative considered and rejected: using the diagnostic marker's own presence as a second locking gate
 

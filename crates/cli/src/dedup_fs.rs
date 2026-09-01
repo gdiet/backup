@@ -111,6 +111,7 @@ fn to_errno(err: db::Error) -> Errno {
         // exhaustively.
         | db::Error::AlreadyLocked(_)
         | db::Error::LockUnavailable { .. }
+        | db::Error::LockFileInaccessible { .. }
         | db::Error::Io(_)
         | db::Error::Sqlite(_)
         | db::Error::Migration(_) => Errno::EIO,

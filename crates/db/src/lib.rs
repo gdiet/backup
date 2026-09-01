@@ -89,6 +89,15 @@ pub enum Error {
         path: PathBuf,
         source: std::io::Error,
     },
+    /// [`acquire_write_lock`] could not even create the write lock file - after a short retry for
+    /// the one known transient cause (a concurrent release's Windows "pending delete" window, see
+    /// `lock.rs`'s `create_new_lock_file_with_pending_delete_retry`), most plausibly a genuine
+    /// filesystem-permissions problem rather than lock contention (that case is `AlreadyLocked`
+    /// instead).
+    LockFileInaccessible {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// SQLite reported a `journal_mode` other than `wal` after `configure_write_connection`
     /// requested it - e.g. an unsupported filesystem (SQLite silently falls back instead of
     /// failing outright). Carries whatever mode SQLite actually settled on.
@@ -141,6 +150,17 @@ impl std::fmt::Display for Error {
                     "could not acquire the write lock for the repository at {} ({source}) - this \
                      can happen on a network-mounted repository, where the underlying storage may \
                      not actually enforce locking; see README.md's \"Known Limitations\"",
+                    path.display()
+                )
+            }
+            Error::LockFileInaccessible { path, source } => {
+                write!(
+                    f,
+                    "could not create the write lock file for the repository at {} ({source}) - \
+                     most likely a filesystem-permissions problem (check that this process can \
+                     create files under {}); briefly retried in case another process's release \
+                     was still completing, but the failure persisted",
+                    path.display(),
                     path.display()
                 )
             }
