@@ -47,7 +47,8 @@ fn resolve_cdc_target_size_bits(whole_file: bool, explicit_bits: Option<u32>) ->
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Creates a new, empty repository at PATH.
+    // REQ-CLI-005.
+    /// Creates a new, empty repository.
     CreateRepo {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
@@ -55,7 +56,8 @@ enum Commands {
         #[command(flatten)]
         chunking: ChunkingArgs,
     },
-    /// Mounts a repository as a real filesystem at MOUNTPOINT (REQ-MOUNT-001).
+    // REQ-MOUNT-001.
+    /// Mounts a repository as a real filesystem.
     Mount {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
@@ -67,13 +69,15 @@ enum Commands {
         /// mount onto a path that does not. On Windows, it does not need to already exist - WinFSP
         /// creates it itself and removes it again on unmount.
         mountpoint: PathBuf,
-        /// Allow structural changes (currently: directories only - REQ-MOUNT-003) through the
-        /// mount. Without this, the mount is read-only (REQ-MOUNT-002).
+        // REQ-MOUNT-002/003.
+        /// Allow structural changes (currently: directories only) through the mount. Without this,
+        /// the mount is read-only.
         #[arg(long)]
         read_write: bool,
     },
-    /// Checks whether PATH's write lock is stale (no process currently holds it) and clears it if
-    /// so - DESIGN-MAINTENANCE-003. Never removes an actively held lock.
+    // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
+    /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
+    /// it if so. Never removes an actively held lock.
     Unlock {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
