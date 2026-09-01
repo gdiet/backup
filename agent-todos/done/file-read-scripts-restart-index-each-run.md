@@ -36,3 +36,36 @@ Once fixed, re-run `file10mb-read.sh`/`.ps1` (the only rung where this has been 
 to get a measurement not confounded by this artifact; the 100 B/30 KB read measurements already
 taken do not need redoing (the effect could not have shown up there - the whole tree fits in RAM
 either way).
+
+## Done
+
+**Completed (code fix only)**: 2026-09-01, by Claude Code on the web session (branch
+`mount-read-write`), during an unattended sweep of open `agent-todos`/`developer-todos`. The
+remeasurement this TODO also called for is genuinely out of scope for this environment (a Linux
+container with no multi-GB test tree and not the target hardware for these baselines) - spun off
+as its own, narrower agent-todo: `agent-todos/redo-file10mb-read-measurement.md`.
+
+Picked **option 2** (pseudo-random index, matching `dir-lookup.{sh,ps1}`) over option 1 (a
+persisted cross-run counter): simpler, no new state file to manage, and already the established
+pattern in this exact script family for the equivalent problem. Applied to all six
+`file*-read.{sh,ps1}` scripts identically (`idx=$(( (RANDOM * 32768 + RANDOM) % total + 1 ))` /
+`$idx = Get-Random -Minimum 1 -Maximum ($total + 1)`, both copied verbatim from
+`dir-lookup.{sh,ps1}`'s own already-validated construct). Updated each script's header comment to
+describe the new pseudo-random behavior and record what the old sequential-restart bug actually did
+and why, for anyone reading the script later.
+
+Verified the `.sh` fix concretely: `bash -n` syntax-checked all three, and ran the exact fixed
+`idx` expression against a small synthetic tree (50 files) for a short window, confirming reads
+now spread across the *full* range (`seen_min=1 seen_max=50`) rather than sticking to a growing
+low-index prefix. Could not execute the `.ps1` scripts directly (no PowerShell interpreter in this
+environment) - `Get-Random -Minimum 1 -Maximum ($total + 1)` is character-for-character the same
+construct `dir-lookup.ps1` already uses and that has already been validated on real Windows
+(`3327`), so confidence is high without a live re-run here.
+
+Checked `performance/methodology.md` and the existing
+`2026-08-28-3327-file10mb-read-wsl2.md`/`.yaml` measurement report for anything else needing an
+update: methodology.md's own "sequential" wording is about single-process-vs-N-way-parallel
+execution, an unrelated axis, so nothing there needed changing; the existing confounded measurement
+report already fully documents the artifact and explicitly recommends this exact fix in its own
+Notes section, so it was left as-is rather than edited further - it already correctly warns a
+future reader not to trust those numbers as they stand.
