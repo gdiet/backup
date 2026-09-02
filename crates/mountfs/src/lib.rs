@@ -31,7 +31,7 @@
 /// [`MountFilesystem`] methods on failure. Kept as this crate's own type
 /// (a positive `errno` value, matching the C convention `-errno.0` return
 /// codes are built from) rather than re-exporting `fuser`'s or `libc`'s,
-/// since both the Linux (libfuse) and future Windows (WinFSP, itself a
+/// since both the Linux (libfuse) and Windows (WinFSP, itself a
 /// FUSE-compatible layer) backends expect the same POSIX error numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Errno(pub i32);
@@ -226,9 +226,9 @@ pub trait MountFilesystem: Send + Sync + 'static {
     }
 
     /// Accepted no-op by default: this crate models no permission bits at
-    /// all (see the plan doc's "Not modeling permissions") - overriding
-    /// with `Err` would make every write-capable client that happens to
-    /// `chmod` after creating a file fail for no functional reason.
+    /// all - overriding with `Err` would make every write-capable client
+    /// that happens to `chmod` after creating a file fail for no
+    /// functional reason.
     fn chmod(&self, path: &str) -> Result<(), Errno> {
         let _ = path;
         Ok(())
