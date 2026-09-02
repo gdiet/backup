@@ -28,9 +28,9 @@ Importance: must
 
 A given tree location has at most one live entry at a time, but any number (0..N) of deleted
 entries that previously occupied it - each an independent history entry (REQ-TREE-004), carrying
-its own deletion timestamp. A deleted entry's ancestors resolve the same way as any entry's (by
-current name/position), so its path reflects whatever has since happened to them (a rename, a
-move, an ancestor also deleted) - no separate mechanism records the path as it looked at deletion
+its own deletion timestamp. A deleted entry's ancestors resolve the same way as any entry's, by
+current name and position. So its path reflects whatever has since happened to them - a rename, a
+move, or an ancestor also deleted. No separate mechanism records the path as it looked at deletion
 time. A deleted entry can be reactivated into the live tree, or have its content restored directly
 to disk without first reactivating it.
 
@@ -85,11 +85,11 @@ or the complete state the write would have produced had it finished — never a 
 Content still being written when such an interruption happens is not required to survive it — only
 that whatever remains visible afterward is never partial.
 
-Rationale: a backup archive silently containing truncated, corrupted-looking content — whether
-glimpsed mid-write or left behind by an unclean shutdown, and either way indistinguishable from a
-file that genuinely only ever had that content — would undermine trust in the archive far more than
-a concurrent reader seeing slightly stale (but always complete) content, or losing in-progress work
-when power was cut.
+Rationale: a backup archive silently containing truncated, corrupted-looking content would
+undermine trust in the archive far more than a concurrent reader seeing slightly stale but always
+complete content, or losing in-progress work when power was cut. That holds whether the truncated
+content is glimpsed mid-write or left behind by an unclean shutdown - either way, it is
+indistinguishable from a file that genuinely only ever had that content.
 
 ### REQ-TREE-007: Symbolic link support
 Status: agreed
@@ -99,10 +99,10 @@ A tree entry can be a symbolic link - its content is the path it points to, not 
 stored and restored alongside ordinary files and directories, distinct from both in kind.
 
 Rationale: symbolic links are a common, if not universal, part of real filesystem trees - a
-typical Linux JDK/JRE installation alone commonly contains dozens of them, some pointing to
-locations outside the tree being backed up entirely; supporting them keeps a backed-up tree
-faithful to what was actually on disk, instead of silently skipping them, following them to
-whatever they currently point at, or otherwise altering them on the way in.
+typical Linux JDK/JRE installation alone commonly contains dozens of them, some pointing outside
+the tree being backed up entirely. Supporting them keeps a backed-up tree faithful to what was
+actually on disk. The alternative would be silently skipping them, following them to whatever they
+currently point at, or otherwise altering them on the way in.
 
 Until implemented, encountering a symbolic link during ingest is treated the same as a per-item
 failure (REQ-INGEST-004 in [`ingest.md`](ingest.md)) - skipped with a warning, never silently

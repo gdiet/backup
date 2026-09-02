@@ -63,8 +63,8 @@ window, without having to time those invocations around it manually.
 Rationale: without reclaiming the storage a purge frees, a repository under continuous use (files
 added and removed over years) would grow monotonically even though its live content stays roughly
 constant. Making purge explicit rather than automatic keeps its timing - and therefore
-REQ-MAINTENANCE-007's staleness window - something the operator always decides and can correlate
-with a command they actually ran, not a background process acting invisibly;
+REQ-MAINTENANCE-007's staleness window - something the operator always decides. The operator can
+correlate that timing with a command they actually ran, not a background process acting invisibly.
 REQ-MAINTENANCE-001/002's whole trust model already depends on the operator being able to reason
 about exactly when the repository's physical layout could have changed. Without a caller-chosen
 minimum age on top of that, an operator who wants both routine purging and a guaranteed recovery
@@ -92,10 +92,11 @@ Importance: should
 
 Stored content bytes are kept in a plain, simple on-disk layout rather than a proprietary or
 compressed opaque format, so that even in a worst-case metadata-loss scenario, there is still a
-realistic chance of recovering stored data by inspecting the storage directly. Bounded by sub-file
-deduplication (REQ-STORAGE-002) itself: a file's chunks are not guaranteed to be stored
-contiguously, so without metadata the plain layout does not reveal a file's chunk boundaries or
-order - only that bytes are stored unencrypted and uncompressed, not hidden behind an opaque format.
+realistic chance of recovering stored data by inspecting the storage directly. This is bounded by
+sub-file deduplication (REQ-STORAGE-002) itself: a file's chunks are not guaranteed to be stored
+contiguously. So without metadata, the plain layout does not reveal a file's chunk boundaries or
+order. It only reveals that bytes are stored unencrypted and uncompressed, not hidden behind an
+opaque format.
 
 Rationale: for a backup system specifically, resilience against metadata corruption matters more
 than the storage-efficiency or convenience a more complex format might offer.

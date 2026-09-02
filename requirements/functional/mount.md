@@ -79,9 +79,9 @@ the copyright notice and repository link WinFSP's FLOSS exception requires (see
 but a user never opens.
 
 Rationale: WinFSP's GPLv3 FLOSS exception is what makes using it from an MIT/Apache-2.0 project
-legally viable at all, and is conditioned specifically on that notice reaching a user, not just
-existing somewhere in the repository — a `NOTICE.md` nobody using the built software ever opens
-does not satisfy that on its own.
+legally viable at all. That exception is conditioned specifically on the notice reaching a user,
+not just existing somewhere in the repository. A `NOTICE.md` nobody using the built software ever
+opens does not satisfy that condition on its own.
 
 ### REQ-MOUNT-007: Two-tier permission model for the deleted-entry view
 Status: agreed
@@ -110,9 +110,9 @@ such a directory can eventually be fully removed, once its history is gone.
 
 Rejected: reporting success without actually purging under only the base opt-in, so a delete
 attempt against the view would appear to succeed but do nothing. This would make the mount's return
-value inconsistent with the repository's actual state - a caller (a script, a file manager's
-optimistic UI update) would see the entry still present or reappearing, reading as a bug rather
-than a deliberate safety feature. An honest refusal communicates the same safety property without
+value inconsistent with the repository's actual state. A caller - a script, or a file manager's
+optimistic UI update - would see the entry still present or reappearing. That reads as a bug, not
+as a deliberate safety feature; an honest refusal communicates the same safety property without
 that risk.
 
 ### REQ-MOUNT-008: Disambiguating and displaying deleted entries in the view
@@ -137,9 +137,9 @@ with the timestamp always prefixed instead - a second presentation of the same d
 different one. `st_mtime` for any entry is always its own real, stored modification time, never the
 deletion time, in either presentation.
 
-Rationale: a deletion timestamp is more informative at a glance than an opaque id, and sorting by
-name only gives a meaningful chronological order when the timestamp is always present and at the
-start - which conflicts with keeping an unambiguous entry's original name intact. Offering both -
+Rationale: a deletion timestamp is more informative at a glance than an opaque id. Sorting by name
+only gives a meaningful chronological order when the timestamp is always present and at the start,
+which conflicts with keeping an unambiguous entry's original name intact. Offering both -
 suffix-only-when-needed for recognizability, always-prefixed under `[time]` for chronological
 browsing - serves both needs rather than picking one purpose for a single view to serve badly.
 
@@ -211,8 +211,8 @@ succeeds and updates its stored spelling in place - e.g. renaming `install.txt` 
 
 Rationale: this repository can be populated from a real ext4 tree, which can legally contain
 entries differing only in case - a case-insensitive storage layer could not represent that without
-losing data. But ordinary Windows software routinely performs case-insensitive lookups (opening
-`Readme.TXT` for `readme.txt` just works on real NTFS) - case-sensitive with no exception would
+losing data. But ordinary Windows software routinely performs case-insensitive lookups - opening
+`Readme.TXT` for `readme.txt` just works on real NTFS. Case-sensitive with no exception would
 surprise everyday Windows use, against REQ-MOUNT-009's own "behave like the native platform"
 principle. Case-sensitive storage with a Windows-only lookup fallback satisfies both.
 

@@ -18,9 +18,9 @@ Status: agreed
 Importance: must
 
 A repository can be kept in sync with a secondary copy using ordinary, repository-unaware
-file-synchronization tools — comparing file size and modification time is enough to decide what
-needs copying — without those tools needing to understand deduplication, chunk boundaries, or the
-metadata format, and without re-transferring stored content that has not actually changed.
+file-synchronization tools. Comparing file size and modification time is enough for those tools to
+decide what needs copying — they do not need to understand deduplication, chunk boundaries, or the
+metadata format. And they do not need to re-transfer stored content that has not actually changed.
 Metadata is small relative to the bulk data it describes, so re-transferring it in full on every
 sync run stays cheap even though it changes every run.
 

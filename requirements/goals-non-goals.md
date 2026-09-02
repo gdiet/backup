@@ -17,9 +17,9 @@ filesystem (ZFS, Btrfs), not a full storage-stack replacement.
   [`functional/mount.md`](functional/mount.md) and REQ-RESTORE-001 in
   [`functional/restore.md`](functional/restore.md).
 - **Integrity is knowable, not assumed** — whether stored data still matches what was stored can
-  actually be checked, not just trusted; ordinary filesystems do not provide this, only
-  checksumming ones like ZFS/Btrfs do, and it is what makes a lightweight filesystem trustworthy
-  for a large, long-lived archive despite skipping their complexity. See REQ-INTEGRITY-001 in
+  actually be checked, not just trusted. Ordinary filesystems do not provide this - only
+  checksumming ones like ZFS/Btrfs do. This is what makes a lightweight filesystem trustworthy for
+  a large, long-lived archive, despite skipping their complexity. See REQ-INTEGRITY-001 in
   [`functional/integrity.md`](functional/integrity.md).
 - **Low resource footprint and easy installation** — see REQ-OPERABILITY-001 in
   [`non-functional/operability.md`](non-functional/operability.md).

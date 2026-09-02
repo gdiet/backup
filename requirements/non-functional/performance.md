@@ -30,12 +30,12 @@ required is across streams, not within one.
 
 Rationale: the workload this is built for is many files and large volumes of data in aggregate (see
 "Core" in [`../goals-non-goals.md`](../goals-non-goals.md)), not a few very large individual files
-or a single write stream — cross-stream parallelism delivers the available speedup for that shape
-of workload regardless of which write path the streams arrive through, without the complexity and
-reduced dedup quality splitting a single stream's chunking across threads would cost (forced,
-non-content-defined boundaries at the split points). Should a workload with very large individual
-streams on storage fast enough for single-thread chunking speed to bottleneck emerge, this would
-need revisiting — no such case is known today.
+or a single write stream. Cross-stream parallelism delivers the available speedup for that shape of
+workload regardless of which write path the streams arrive through. It does so without the
+complexity and reduced dedup quality that splitting a single stream's chunking across threads would
+cost - forced, non-content-defined boundaries at the split points. Should a workload with very
+large individual streams on storage fast enough for single-thread chunking speed to bottleneck
+emerge, this would need revisiting — no such case is known today.
 
 ### REQ-PERFORMANCE-003: Reading stored content in smaller pieces does not cost proportionally more
 Status: agreed
@@ -92,10 +92,10 @@ throughput is bounded by chunking and hashing cost (REQ-STORAGE-002 in
 [`../functional/storage.md`](../functional/storage.md)), and concurrent write streams see
 throughput scale with available CPU cores, up to REQ-PERFORMANCE-002's cross-stream parallelism.
 This holds even for a client copying files one at a time onto a read-write mount (REQ-MOUNT-003 in
-[`../functional/mount.md`](../functional/mount.md)): chunking and hashing happen when a file is
-closed, not while it is being written, so the next file's data can already be arriving from the
-client into the mount's cache while the previous file's chunking/hashing is still running —
-sequential from the client's point of view, pipelined underneath.
+[`../functional/mount.md`](../functional/mount.md)). Chunking and hashing happen when a file is
+closed, not while it is being written. So the next file's data can already be arriving from the
+client into the mount's cache while the previous file's chunking/hashing is still running — the
+result is sequential from the client's point of view, but pipelined underneath.
 
 Rationale: this speedup needs to be an architectural property of how the mount defers and pipelines
 work, not something that only shows up when a client happens to write multiple files concurrently
