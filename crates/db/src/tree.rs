@@ -20,6 +20,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
+use crate::name_cache::NameCache;
 
 const KIND_DIR: i64 = 0;
 const KIND_FILE: i64 = 1;
@@ -80,7 +81,12 @@ fn require_dir(conn: &Connection, id: i64) -> Result<Entry, Error> {
     Ok(entry)
 }
 
-fn find_child_id(conn: &Connection, parent_id: i64, name: &str) -> Result<Option<i64>, Error> {
+fn find_child_id(
+    conn: &Connection,
+    cache: &NameCache,
+    parent_id: i64,
+    name: &str,
+) -> Result<Option<i64>, Error> {
     let exact: Option<i64> = conn
         .query_row(
             "SELECT id FROM tree_entries WHERE parent_id = ?1 AND name = ?2 AND deleted_at IS NULL",
@@ -94,7 +100,7 @@ fn find_child_id(conn: &Connection, parent_id: i64, name: &str) -> Result<Option
     if !cfg!(windows) {
         return Ok(None);
     }
-    find_child_id_case_insensitive(conn, parent_id, name)
+    find_child_id_case_insensitive(conn, cache, parent_id, name)
 }
 
 /// DESIGN-MOUNT-005's Unicode case fold for the lookup fallback below - Rust's full case mapping,
@@ -119,19 +125,29 @@ fn case_insensitive_match(candidates: &[(i64, String)], target: &str) -> Option<
 /// [`find_child_id`]'s Windows-only fallback body, factored out and left unconditionally compiled
 /// (not itself `#[cfg(windows)]`) so its actual query-and-match logic can be exercised by tests on
 /// any platform, even though [`find_child_id`] only ever calls it on a real Windows build.
+///
+/// Consults `cache` first - an experimental mitigation for the unindexed full scan below being
+/// O(n) in the parent's live child count on every miss (see `crates/db/src/name_cache.rs`).
 fn find_child_id_case_insensitive(
     conn: &Connection,
+    cache: &NameCache,
     parent_id: i64,
     name: &str,
 ) -> Result<Option<i64>, Error> {
-    let mut stmt = conn.prepare(
-        "SELECT id, name FROM tree_entries \
-         WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
-    )?;
-    let candidates: Vec<(i64, String)> = stmt
-        .query_map(params![parent_id], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<Result<_, _>>()?;
-    Ok(case_insensitive_match(&candidates, name))
+    cache.with_cached_or_populate(
+        parent_id,
+        || {
+            let mut stmt = conn.prepare(
+                "SELECT id, name FROM tree_entries \
+                 WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
+            )?;
+            let candidates: Vec<(i64, String)> = stmt
+                .query_map(params![parent_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            Ok(candidates)
+        },
+        |candidates| case_insensitive_match(candidates, name),
+    )
 }
 
 fn touch(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
@@ -142,10 +158,14 @@ fn touch(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn resolve_path(conn: &Connection, path: &str) -> Result<Option<Entry>, Error> {
+pub(crate) fn resolve_path(
+    conn: &Connection,
+    cache: &NameCache,
+    path: &str,
+) -> Result<Option<Entry>, Error> {
     let mut current_id = 0i64;
     for component in path.split('/').filter(|c| !c.is_empty()) {
-        match find_child_id(conn, current_id, component)? {
+        match find_child_id(conn, cache, current_id, component)? {
             Some(id) => current_id = id,
             None => return Ok(None),
         }
@@ -194,13 +214,14 @@ pub(crate) fn set_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<
 
 pub(crate) fn mkdir(
     conn: &Connection,
+    cache: &NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
 ) -> Result<i64, Error> {
     require_dir(conn, parent_id)?;
 
-    if find_child_id(conn, parent_id, name)?.is_some() {
+    if find_child_id(conn, cache, parent_id, name)?.is_some() {
         return Err(Error::EntryAlreadyExists {
             parent_id,
             name: name.to_string(),
@@ -214,6 +235,7 @@ pub(crate) fn mkdir(
     match result {
         Ok(_) => {
             let id = conn.last_insert_rowid();
+            cache.note_inserted(parent_id, id, name);
             touch(conn, parent_id, time_millis)?;
             Ok(id)
         }
@@ -242,12 +264,13 @@ pub(crate) fn mkdir(
 /// Returns the new entry's id.
 pub(crate) fn settle_file(
     conn: &Connection,
+    cache: &NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
     content_id: i64,
 ) -> Result<i64, Error> {
-    settle_file_impl(conn, parent_id, name, time_millis, content_id, None)
+    settle_file_impl(conn, cache, parent_id, name, time_millis, content_id, None)
 }
 
 /// Like [`settle_file`], except a live entry that is still exactly id `collapsible_placeholder_id`
@@ -259,6 +282,7 @@ pub(crate) fn settle_file(
 /// Returns the new entry's id.
 pub(crate) fn settle_file_collapsing_placeholder(
     conn: &Connection,
+    cache: &NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -267,6 +291,7 @@ pub(crate) fn settle_file_collapsing_placeholder(
 ) -> Result<i64, Error> {
     settle_file_impl(
         conn,
+        cache,
         parent_id,
         name,
         time_millis,
@@ -275,8 +300,10 @@ pub(crate) fn settle_file_collapsing_placeholder(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn settle_file_impl(
     conn: &Connection,
+    cache: &NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -285,7 +312,7 @@ fn settle_file_impl(
 ) -> Result<i64, Error> {
     require_dir(conn, parent_id)?;
 
-    let replaced = find_child_id(conn, parent_id, name)?;
+    let replaced = find_child_id(conn, cache, parent_id, name)?;
     if let Some(old_id) = replaced {
         let old_entry = get_by_id(conn, old_id)?.ok_or(Error::NoSuchEntry(old_id))?;
         if old_entry.kind == EntryKind::Dir {
@@ -306,6 +333,9 @@ fn settle_file_impl(
                 params![time_millis, old_id],
             )?;
         }
+        // Simpler and safer than trying to patch the cached list in place for a replace - the
+        // next miss just repopulates it.
+        cache.invalidate(parent_id);
     }
 
     conn.execute(
@@ -314,6 +344,7 @@ fn settle_file_impl(
         params![parent_id, name, time_millis, content_id, KIND_FILE],
     )?;
     let id = conn.last_insert_rowid();
+    cache.note_inserted(parent_id, id, name);
 
     if replaced.is_none() {
         touch(conn, parent_id, time_millis)?;
@@ -321,7 +352,12 @@ fn settle_file_impl(
     Ok(id)
 }
 
-pub(crate) fn rmdir(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
+pub(crate) fn rmdir(
+    conn: &Connection,
+    cache: &NameCache,
+    id: i64,
+    time_millis: i64,
+) -> Result<(), Error> {
     if id == 0 {
         // Not guarded by any DB trigger (tree_entries_protect_root only blocks a real DELETE,
         // never a soft-delete UPDATE) - guarded here instead.
@@ -348,6 +384,7 @@ pub(crate) fn rmdir(conn: &Connection, id: i64, time_millis: i64) -> Result<(), 
         "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
         params![time_millis, id],
     )?;
+    cache.invalidate(parent_id);
     touch(conn, parent_id, time_millis)?;
     Ok(())
 }
@@ -355,7 +392,12 @@ pub(crate) fn rmdir(conn: &Connection, id: i64, time_millis: i64) -> Result<(), 
 /// Soft-deletes the live file entry `id` (REQ-TREE-002), bumping its parent's modification time -
 /// removing a name is a structural change (REQ-TREE-005), unlike DESIGN-MOUNT-011's pure content
 /// overwrite. A directory at `id` is refused; the caller's `rmdir` is the directory counterpart.
-pub(crate) fn unlink_file(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
+pub(crate) fn unlink_file(
+    conn: &Connection,
+    cache: &NameCache,
+    id: i64,
+    time_millis: i64,
+) -> Result<(), Error> {
     let entry = get_by_id(conn, id)?.ok_or(Error::NoSuchEntry(id))?;
     if entry.kind != EntryKind::File {
         return Err(Error::WrongKind(id));
@@ -371,6 +413,7 @@ pub(crate) fn unlink_file(conn: &Connection, id: i64, time_millis: i64) -> Resul
         "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
         params![time_millis, id],
     )?;
+    cache.invalidate(parent_id);
     touch(conn, parent_id, time_millis)?;
     Ok(())
 }
@@ -398,8 +441,10 @@ fn is_ancestor_or_self(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn rename(
     conn: &Connection,
+    cache: &NameCache,
     old_parent_id: i64,
     old_name: &str,
     new_parent_id: i64,
@@ -407,8 +452,8 @@ pub(crate) fn rename(
     no_replace: bool,
     time_millis: i64,
 ) -> Result<(), Error> {
-    let old_id =
-        find_child_id(conn, old_parent_id, old_name)?.ok_or(Error::NoSuchEntry(old_parent_id))?;
+    let old_id = find_child_id(conn, cache, old_parent_id, old_name)?
+        .ok_or(Error::NoSuchEntry(old_parent_id))?;
 
     // Same source and target: a no-op, not a cycle.
     if old_parent_id == new_parent_id && old_name == new_name {
@@ -422,7 +467,7 @@ pub(crate) fn rename(
         return Err(Error::WouldCreateCycle);
     }
 
-    if let Some(target_id) = find_child_id(conn, new_parent_id, new_name)? {
+    if let Some(target_id) = find_child_id(conn, cache, new_parent_id, new_name)? {
         // DESIGN-MOUNT-005: under the Windows lookup fallback, the match found here can be the
         // entry being renamed itself (a case-only respelling, e.g. install.txt -> Install.txt) -
         // not a distinct existing target, so not a collision at all. Falls through to the plain
@@ -454,6 +499,12 @@ pub(crate) fn rename(
         "UPDATE tree_entries SET parent_id = ?1, name = ?2 WHERE id = ?3",
         params![new_parent_id, new_name, old_id],
     )?;
+    // Simpler and safer than patching both cached lists in place (in particular the
+    // same-parent-rename case) - the next miss just repopulates whichever one is touched again.
+    cache.invalidate(old_parent_id);
+    if new_parent_id != old_parent_id {
+        cache.invalidate(new_parent_id);
+    }
 
     touch(conn, old_parent_id, time_millis)?;
     if new_parent_id != old_parent_id {
@@ -967,8 +1018,9 @@ mod tests {
         let (repo, _dir) = repo();
         let id = repo.mkdir(0, "foo", 100).unwrap();
 
+        let cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "FOO"))
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
             .unwrap();
         assert_eq!(found, Some(id));
     }
@@ -978,8 +1030,9 @@ mod tests {
         let (repo, _dir) = repo();
         repo.mkdir(0, "foo", 100).unwrap();
 
+        let cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "bar"))
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "bar"))
             .unwrap();
         assert_eq!(found, None);
     }
@@ -990,10 +1043,43 @@ mod tests {
         let id = repo.mkdir(0, "foo", 100).unwrap();
         repo.rmdir(id, 200).unwrap();
 
+        let cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "FOO"))
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
             .unwrap();
         assert_eq!(found, None);
+    }
+
+    // A regression test for the cache itself: a removal must invalidate the *parent's* cached
+    // entry, not the removed id's own - easy to get backwards (an earlier version of this branch
+    // did exactly that), and a stale cache would silently resurrect a removed sibling for every
+    // case-insensitive lookup against that parent from then on.
+    #[test]
+    fn find_child_id_case_insensitive_does_not_resurrect_a_sibling_removed_after_the_cache_was_warmed()
+     {
+        let (repo, _dir) = repo();
+        let cache = super::NameCache::new(16);
+
+        let a = repo
+            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "a", 100))
+            .unwrap();
+
+        let found = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "A"))
+            .unwrap();
+        assert_eq!(
+            found,
+            Some(a),
+            "the cache must be warm for the root directory now"
+        );
+
+        repo.with_transaction(|conn| super::rmdir(conn, &cache, a, 200))
+            .unwrap();
+
+        let found_after_removal = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "A"))
+            .unwrap();
+        assert_eq!(found_after_removal, None);
     }
 
     // The base, case-sensitive behavior (REQ-MOUNT-010) must stay exactly as it was outside the

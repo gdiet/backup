@@ -14,6 +14,7 @@ mod connection;
 mod content;
 mod lock;
 mod migrations;
+mod name_cache;
 mod settings;
 mod tree;
 
@@ -33,6 +34,10 @@ const META_DIR: &str = "meta";
 const META_TMP_DIR: &str = "meta.tmp";
 const META_DB_FILE: &str = "repository.sqlite3";
 const DATA_DIR: &str = "data";
+
+// Experimental (branch write-cache) - how many directories' name_cache entries to keep at once.
+// See `crates/db/src/name_cache.rs`.
+const NAME_CACHE_CAPACITY: usize = 16;
 
 /// `repo_root`'s byte-store directory (DESIGN-REPOSITORY-001) - where a caller opening
 /// `crates/store`'s `ByteStore` against this same repository points it.
@@ -251,6 +256,8 @@ pub struct Repository {
     settings: RepositorySettings,
     conn: Mutex<Connection>,
     read_only: bool,
+    // Experimental (branch write-cache) - see `crates/db/src/name_cache.rs`.
+    name_cache: name_cache::NameCache,
 }
 
 impl Repository {
@@ -293,7 +300,7 @@ impl Repository {
     /// root). `Ok(None)` if any path component does not exist (or is soft-deleted) - not itself
     /// an error, since "does this path exist" is a legitimate question to ask.
     pub fn resolve_path(&self, path: &str) -> Result<Option<Entry>, Error> {
-        self.with_connection(|conn| tree::resolve_path(conn, path))
+        self.with_connection(|conn| tree::resolve_path(conn, &self.name_cache, path))
     }
 
     /// Lists the live, direct children of the directory entry `parent_id`.
@@ -304,20 +311,22 @@ impl Repository {
     /// Creates a new, empty directory named `name` inside the directory `parent_id`, bumping its
     /// parent's modification time (REQ-TREE-005). Returns the new entry's id.
     pub fn mkdir(&self, parent_id: i64, name: &str, time_millis: i64) -> Result<i64, Error> {
-        self.with_transaction(|conn| tree::mkdir(conn, parent_id, name, time_millis))
+        self.with_transaction(|conn| {
+            tree::mkdir(conn, &self.name_cache, parent_id, name, time_millis)
+        })
     }
 
     /// Soft-deletes the directory entry `id` (REQ-TREE-002), refusing if it still has live
     /// children (REQ-TREE-008). Bumps its parent's modification time.
     pub fn rmdir(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_transaction(|conn| tree::rmdir(conn, id, time_millis))
+        self.with_transaction(|conn| tree::rmdir(conn, &self.name_cache, id, time_millis))
     }
 
     /// Soft-deletes the live file entry `id` (REQ-TREE-002). Bumps its parent's modification
     /// time - unlike DESIGN-MOUNT-011's pure content overwrite, removing a name is a structural
     /// change (REQ-TREE-005). A directory at `id` is refused.
     pub fn unlink_file(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_transaction(|conn| tree::unlink_file(conn, id, time_millis))
+        self.with_transaction(|conn| tree::unlink_file(conn, &self.name_cache, id, time_millis))
     }
 
     /// Looks up the live entry by its own id, rather than by path - `Ok(None)` if it does not
@@ -346,7 +355,14 @@ impl Repository {
         content_id: i64,
     ) -> Result<i64, Error> {
         self.with_transaction(|conn| {
-            tree::settle_file(conn, parent_id, name, time_millis, content_id)
+            tree::settle_file(
+                conn,
+                &self.name_cache,
+                parent_id,
+                name,
+                time_millis,
+                content_id,
+            )
         })
     }
 
@@ -365,6 +381,7 @@ impl Repository {
         self.with_transaction(|conn| {
             tree::settle_file_collapsing_placeholder(
                 conn,
+                &self.name_cache,
                 parent_id,
                 name,
                 time_millis,
@@ -432,6 +449,7 @@ impl Repository {
         self.with_transaction(|conn| {
             tree::rename(
                 conn,
+                &self.name_cache,
                 old_parent_id,
                 old_name,
                 new_parent_id,
@@ -539,6 +557,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
         settings,
         conn: Mutex::new(conn),
         read_only: false,
+        name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
     })
 }
 
@@ -578,6 +597,7 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
         settings,
         conn: Mutex::new(conn),
         read_only: true,
+        name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
     })
 }
 
