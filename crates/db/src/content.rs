@@ -149,11 +149,11 @@ mod tests {
     fn find_chunk_and_find_content_return_none_when_nothing_is_stored() {
         let (repo, _dir) = repo();
         let found = repo
-            .with_connection(|conn| super::find_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::find_chunk(conn, 100, HASH_A))
             .unwrap();
         assert_eq!(found, None);
         let found = repo
-            .with_connection(|conn| super::find_content(conn, 100, CONTENT_HASH))
+            .with_connection(|conn, _cache| super::find_content(conn, 100, CONTENT_HASH))
             .unwrap();
         assert_eq!(found, None);
     }
@@ -162,12 +162,12 @@ mod tests {
     fn reserve_and_insert_chunk_creates_a_findable_chunk_with_extents_at_position_zero() {
         let (repo, _dir) = repo();
         let (chunk_id, ranges) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
         assert_eq!(ranges, vec![(0, 100)]);
 
         let found = repo
-            .with_connection(|conn| super::find_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::find_chunk(conn, 100, HASH_A))
             .unwrap();
         assert_eq!(found, Some(chunk_id));
     }
@@ -175,10 +175,10 @@ mod tests {
     #[test]
     fn reserve_and_insert_chunk_a_second_time_extends_past_the_first() {
         let (repo, _dir) = repo();
-        repo.with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+        repo.with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
         let (_id, ranges) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
             .unwrap();
         assert_eq!(ranges, vec![(100, 150)]);
     }
@@ -187,20 +187,20 @@ mod tests {
     fn find_or_create_content_creates_a_new_content_linking_its_chunks_in_order() {
         let (repo, _dir) = repo();
         let (chunk_a, _) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
         let (chunk_b, _) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
             .unwrap();
 
         let content_id = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 super::find_or_create_content(conn, 150, CONTENT_HASH, &[chunk_a, chunk_b])
             })
             .unwrap();
 
         let seq_and_chunk: Vec<(i64, i64)> = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 let mut stmt = conn.prepare(
                     "SELECT seq, chunk_id FROM content_chunks WHERE content_id = ?1 ORDER BY seq",
                 )?;
@@ -217,23 +217,23 @@ mod tests {
     fn resolve_extents_returns_ranges_in_content_chunk_order_not_insertion_order() {
         let (repo, _dir) = repo();
         let (chunk_a, ranges_a) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
         let (chunk_b, ranges_b) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
             .unwrap();
 
         // Content order is deliberately the reverse of chunk-creation order, so this only passes
         // if resolve_extents actually follows content_chunks.seq rather than chunk id/insertion
         // order.
         let content_id = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 super::find_or_create_content(conn, 150, CONTENT_HASH, &[chunk_b, chunk_a])
             })
             .unwrap();
 
         let extents = repo
-            .with_connection(|conn| super::resolve_extents(conn, content_id))
+            .with_connection(|conn, _cache| super::resolve_extents(conn, content_id))
             .unwrap();
         let mut expected = ranges_b;
         expected.extend(ranges_a);
@@ -246,7 +246,7 @@ mod tests {
         // Force chunk_a to spill into two ranges by reserving and freeing a small gap first is
         // not available here (no reclaim yet) - instead exercise the seq ordering directly via
         // raw rows, since that is what resolve_extents must actually respect.
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO chunks (id, length, hash) VALUES (1, 30, X'0102030405060708090A0B0C0D0E0F1011121314')",
                 (),
@@ -272,7 +272,7 @@ mod tests {
         .unwrap();
 
         let extents = repo
-            .with_connection(|conn| super::resolve_extents(conn, 1))
+            .with_connection(|conn, _cache| super::resolve_extents(conn, 1))
             .unwrap();
         // seq 0 (0..20) before seq 1 (1000..1010), even though it was inserted second.
         assert_eq!(extents, vec![(0, 20), (1000, 1010)]);
@@ -282,7 +282,7 @@ mod tests {
     fn resolve_extents_returns_empty_for_an_unknown_content_id() {
         let (repo, _dir) = repo();
         let extents = repo
-            .with_connection(|conn| super::resolve_extents(conn, 999))
+            .with_connection(|conn, _cache| super::resolve_extents(conn, 999))
             .unwrap();
         assert_eq!(extents, Vec::<(u64, u64)>::new());
     }
@@ -291,16 +291,16 @@ mod tests {
     fn find_or_create_content_returns_the_same_id_for_an_already_known_content() {
         let (repo, _dir) = repo();
         let (chunk_a, _) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
 
         let first = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_a])
             })
             .unwrap();
         let second = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_a])
             })
             .unwrap();
@@ -308,7 +308,7 @@ mod tests {
 
         // Only one content_chunks link exists - the second call did not insert a duplicate.
         let link_count: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT COUNT(*) FROM content_chunks WHERE content_id = ?1",
                     [first],
@@ -323,11 +323,13 @@ mod tests {
     fn find_or_create_content_supports_a_zero_length_content_with_no_chunks() {
         let (repo, _dir) = repo();
         let content_id = repo
-            .with_connection(|conn| super::find_or_create_content(conn, 0, CONTENT_HASH, &[]))
+            .with_connection(|conn, _cache| {
+                super::find_or_create_content(conn, 0, CONTENT_HASH, &[])
+            })
             .unwrap();
 
         let found = repo
-            .with_connection(|conn| super::find_content(conn, 0, CONTENT_HASH))
+            .with_connection(|conn, _cache| super::find_content(conn, 0, CONTENT_HASH))
             .unwrap();
         assert_eq!(found, Some(content_id));
     }
@@ -336,11 +338,11 @@ mod tests {
     fn reserve_and_insert_chunk_leaves_ref_count_at_zero_until_linked() {
         let (repo, _dir) = repo();
         let (chunk_id, _) = repo
-            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
 
         let ref_count: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT ref_count FROM chunks WHERE id = ?1",
                     [chunk_id],
@@ -350,13 +352,13 @@ mod tests {
             .unwrap();
         assert_eq!(ref_count, 0);
 
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_id])
         })
         .unwrap();
 
         let ref_count: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT ref_count FROM chunks WHERE id = ?1",
                     [chunk_id],

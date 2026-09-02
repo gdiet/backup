@@ -677,8 +677,8 @@ read-write session); worth revisiting once real read concurrency under a mount a
 
 `crates/db/src/name_cache.rs`'s experimental per-directory name cache (DESIGN-MOUNT-017 in
 [`tree-namespace-case-sensitivity.md`](tree-namespace-case-sensitivity.md)) leans on exactly this
-one-connection-per-`Repository` property for its own correctness without a contended lock: it
-lives behind its own `Mutex`, but every access happens while a caller already holds the single
-connection lock above, so that lock is never actually contended. A future split to multiple
+one-connection-per-`Repository` property for its own correctness: it holds no lock of its own at
+all, living as a plain field alongside the connection inside the same `Mutex` (a `Locked { conn,
+name_cache }` struct), so it is unreachable except through that one lock. A future split to multiple
 concurrent connections backing one `Repository` would put more than one connection behind a single
-cache and needs to revisit that cache's own locking alongside the split, not after it.
+cache and needs to revisit that cache's own access pattern alongside the split, not after it.

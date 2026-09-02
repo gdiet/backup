@@ -63,7 +63,7 @@ mod tests {
     }
 
     fn insert_extent(repo: &crate::Repository, chunk_id: i64, start: i64, stop: i64) {
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO chunks (id, length, hash) \
                  VALUES (?1, ?2, X'0102030405060708090A0B0C0D0E0F1011121314')",
@@ -82,7 +82,7 @@ mod tests {
     fn reserve_starts_at_zero_in_an_empty_store() {
         let (repo, _dir) = repo();
         let ranges = repo
-            .with_connection(|conn| super::reserve(conn, 100))
+            .with_connection(|conn, _cache| super::reserve(conn, 100))
             .unwrap();
         assert_eq!(ranges, vec![(0, 100)]);
     }
@@ -92,7 +92,7 @@ mod tests {
         let (repo, _dir) = repo();
         insert_extent(&repo, 1, 0, 100);
         let ranges = repo
-            .with_connection(|conn| super::reserve(conn, 50))
+            .with_connection(|conn, _cache| super::reserve(conn, 50))
             .unwrap();
         assert_eq!(ranges, vec![(100, 150)]);
     }
@@ -104,7 +104,7 @@ mod tests {
         insert_extent(&repo, 2, 130, 200);
         // Gap is exactly 30 bytes (100..130) - a 30-byte request fits inside it alone.
         let ranges = repo
-            .with_connection(|conn| super::reserve(conn, 30))
+            .with_connection(|conn, _cache| super::reserve(conn, 30))
             .unwrap();
         assert_eq!(ranges, vec![(100, 130)]);
     }
@@ -116,7 +116,7 @@ mod tests {
         insert_extent(&repo, 2, 110, 200);
         // Gap is only 10 bytes (100..110); the remaining 40 bytes extend past 200.
         let ranges = repo
-            .with_connection(|conn| super::reserve(conn, 50))
+            .with_connection(|conn, _cache| super::reserve(conn, 50))
             .unwrap();
         assert_eq!(ranges, vec![(100, 110), (200, 240)]);
     }
@@ -125,7 +125,7 @@ mod tests {
     fn reserve_of_zero_length_returns_no_ranges() {
         let (repo, _dir) = repo();
         let ranges = repo
-            .with_connection(|conn| super::reserve(conn, 0))
+            .with_connection(|conn, _cache| super::reserve(conn, 0))
             .unwrap();
         assert_eq!(ranges, Vec::<(u64, u64)>::new());
     }

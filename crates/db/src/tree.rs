@@ -85,7 +85,7 @@ fn require_dir(conn: &Connection, id: i64) -> Result<Entry, Error> {
 
 fn find_child_id(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
 ) -> Result<Option<i64>, Error> {
@@ -139,7 +139,7 @@ fn insert_keeping_highest_id(candidates: &mut HashMap<String, i64>, folded_key: 
 /// already-warm entry is an `O(1)` average hash lookup, not another `O(n)` scan.
 fn find_child_id_case_insensitive(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
 ) -> Result<Option<i64>, Error> {
@@ -179,7 +179,7 @@ fn touch(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
 
 pub(crate) fn resolve_path(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     path: &str,
 ) -> Result<Option<Entry>, Error> {
     let mut current_id = 0i64;
@@ -233,7 +233,7 @@ pub(crate) fn set_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<
 
 pub(crate) fn mkdir(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -254,7 +254,7 @@ pub(crate) fn mkdir(
     match result {
         Ok(_) => {
             let id = conn.last_insert_rowid();
-            cache.note_inserted(parent_id, id, &fold_key(name))?;
+            cache.note_inserted(parent_id, id, &fold_key(name));
             touch(conn, parent_id, time_millis)?;
             Ok(id)
         }
@@ -283,7 +283,7 @@ pub(crate) fn mkdir(
 /// Returns the new entry's id.
 pub(crate) fn settle_file(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -301,7 +301,7 @@ pub(crate) fn settle_file(
 /// Returns the new entry's id.
 pub(crate) fn settle_file_collapsing_placeholder(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -322,7 +322,7 @@ pub(crate) fn settle_file_collapsing_placeholder(
 #[allow(clippy::too_many_arguments)]
 fn settle_file_impl(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     parent_id: i64,
     name: &str,
     time_millis: i64,
@@ -354,7 +354,7 @@ fn settle_file_impl(
         }
         // Simpler and safer than trying to patch the cached list in place for a replace - the
         // next miss just repopulates it.
-        cache.invalidate(parent_id)?;
+        cache.invalidate(parent_id);
     }
 
     conn.execute(
@@ -363,7 +363,7 @@ fn settle_file_impl(
         params![parent_id, name, time_millis, content_id, KIND_FILE],
     )?;
     let id = conn.last_insert_rowid();
-    cache.note_inserted(parent_id, id, &fold_key(name))?;
+    cache.note_inserted(parent_id, id, &fold_key(name));
 
     if replaced.is_none() {
         touch(conn, parent_id, time_millis)?;
@@ -373,7 +373,7 @@ fn settle_file_impl(
 
 pub(crate) fn rmdir(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     id: i64,
     time_millis: i64,
 ) -> Result<(), Error> {
@@ -403,7 +403,7 @@ pub(crate) fn rmdir(
         "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
         params![time_millis, id],
     )?;
-    cache.invalidate(parent_id)?;
+    cache.invalidate(parent_id);
     touch(conn, parent_id, time_millis)?;
     Ok(())
 }
@@ -413,7 +413,7 @@ pub(crate) fn rmdir(
 /// overwrite. A directory at `id` is refused; the caller's `rmdir` is the directory counterpart.
 pub(crate) fn unlink_file(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     id: i64,
     time_millis: i64,
 ) -> Result<(), Error> {
@@ -432,7 +432,7 @@ pub(crate) fn unlink_file(
         "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
         params![time_millis, id],
     )?;
-    cache.invalidate(parent_id)?;
+    cache.invalidate(parent_id);
     touch(conn, parent_id, time_millis)?;
     Ok(())
 }
@@ -463,7 +463,7 @@ fn is_ancestor_or_self(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rename(
     conn: &Connection,
-    cache: &NameCache,
+    cache: &mut NameCache,
     old_parent_id: i64,
     old_name: &str,
     new_parent_id: i64,
@@ -520,9 +520,9 @@ pub(crate) fn rename(
     )?;
     // Simpler and safer than patching both cached lists in place (in particular the
     // same-parent-rename case) - the next miss just repopulates whichever one is touched again.
-    cache.invalidate(old_parent_id)?;
+    cache.invalidate(old_parent_id);
     if new_parent_id != old_parent_id {
-        cache.invalidate(new_parent_id)?;
+        cache.invalidate(new_parent_id);
     }
 
     touch(conn, old_parent_id, time_millis)?;
@@ -591,7 +591,7 @@ mod tests {
         hash_byte: u8,
         length: i64,
     ) -> i64 {
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO contents (id, length, hash) VALUES (?1, ?2, ?3)",
                 (id, length, vec![hash_byte; 20]),
@@ -664,7 +664,7 @@ mod tests {
 
         // The old entry is soft-deleted, not gone - still visible via a raw lookup by id.
         let old_deleted_at: Option<i64> = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT deleted_at FROM tree_entries WHERE id = ?1",
                     [first_id],
@@ -676,7 +676,7 @@ mod tests {
     }
 
     fn row_count(repo: &crate::Repository, id: i64) -> i64 {
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             Ok(conn.query_row(
                 "SELECT COUNT(*) FROM tree_entries WHERE id = ?1",
                 [id],
@@ -738,7 +738,7 @@ mod tests {
             "a mismatched expected id must fall back to the ordinary, history-preserving replace"
         );
         let old_deleted_at: Option<i64> = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT deleted_at FROM tree_entries WHERE id = ?1",
                     [first_id],
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn rename_replaces_an_existing_file_unless_no_replace_is_set() {
         let (repo, _dir) = repo();
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO contents (id, length, hash) \
                  VALUES (2, 0, X'0102030405060708090A0B0C0D0E0F1011121314')",
@@ -1036,9 +1036,11 @@ mod tests {
         let (repo, _dir) = repo();
         let id = repo.mkdir(0, "foo", 100).unwrap();
 
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "FOO")
+            })
             .unwrap();
         assert_eq!(found, Some(id));
     }
@@ -1053,7 +1055,7 @@ mod tests {
         // platform - this exercises the real population path in `find_child_id_case_insensitive`
         // itself, not just the standalone `insert_keeping_highest_id` tiebreak helper above.
         let higher_id = repo
-            .with_transaction(|conn| {
+            .with_transaction(|conn, _cache| {
                 conn.execute(
                     "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'foo', 100, 0)",
                     [],
@@ -1066,9 +1068,11 @@ mod tests {
             })
             .unwrap();
 
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "FOO")
+            })
             .unwrap();
         assert_eq!(found, Some(higher_id));
     }
@@ -1078,9 +1082,11 @@ mod tests {
         let (repo, _dir) = repo();
         repo.mkdir(0, "foo", 100).unwrap();
 
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "bar"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "bar")
+            })
             .unwrap();
         assert_eq!(found, None);
     }
@@ -1091,9 +1097,11 @@ mod tests {
         let id = repo.mkdir(0, "foo", 100).unwrap();
         repo.rmdir(id, 200).unwrap();
 
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "FOO")
+            })
             .unwrap();
         assert_eq!(found, None);
     }
@@ -1106,14 +1114,16 @@ mod tests {
     fn find_child_id_case_insensitive_does_not_resurrect_a_sibling_removed_after_the_cache_was_warmed()
      {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
 
         let a = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "a", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
             .unwrap();
 
         let found = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "A"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "A")
+            })
             .unwrap();
         assert_eq!(
             found,
@@ -1121,11 +1131,13 @@ mod tests {
             "the cache must be warm for the root directory now"
         );
 
-        repo.with_transaction(|conn| super::rmdir(conn, &cache, a, 200))
+        repo.with_transaction(|conn, _cache| super::rmdir(conn, &mut cache, a, 200))
             .unwrap();
 
         let found_after_removal = repo
-            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "A"))
+            .with_connection(|conn, _cache| {
+                super::find_child_id_case_insensitive(conn, &mut cache, 0, "A")
+            })
             .unwrap();
         assert_eq!(found_after_removal, None);
     }
@@ -1140,14 +1152,14 @@ mod tests {
     #[test]
     fn mkdir_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
 
         let a = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "a", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A"
             ))
             .unwrap(),
             Some(a),
@@ -1155,14 +1167,14 @@ mod tests {
         );
 
         let b = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "b", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "b", 100))
             .unwrap();
         // "b" must be found even though the cache was already warm before it was created - proves
         // `note_inserted` actually keeps an already-cached entry current, not just a freshly
         // populated one.
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "B"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "B"
             ))
             .unwrap(),
             Some(b)
@@ -1172,16 +1184,18 @@ mod tests {
     #[test]
     fn settle_file_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 
         let a = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "a.txt", 100, content_a))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "a.txt", 100, content_a)
+            })
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A.TXT"
             ))
             .unwrap(),
             Some(a),
@@ -1189,11 +1203,13 @@ mod tests {
         );
 
         let b = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "b.txt", 100, content_b))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "b.txt", 100, content_b)
+            })
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "B.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "B.TXT"
             ))
             .unwrap(),
             Some(b)
@@ -1203,16 +1219,18 @@ mod tests {
     #[test]
     fn settle_file_replacing_an_existing_file_keeps_the_cache_correct() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 
         let first = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "a.txt", 100, content_a))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "a.txt", 100, content_a)
+            })
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A.TXT"
             ))
             .unwrap(),
             Some(first),
@@ -1220,7 +1238,9 @@ mod tests {
         );
 
         let second = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "a.txt", 200, content_b))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "a.txt", 200, content_b)
+            })
             .unwrap();
         assert_ne!(
             first, second,
@@ -1230,8 +1250,8 @@ mod tests {
         // Must resolve to the new entry, not the replaced one - proves the invalidate-then-let-the-
         // next-miss-repopulate path actually runs, rather than a stale entry surviving the replace.
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A.TXT"
             ))
             .unwrap(),
             Some(second)
@@ -1241,27 +1261,29 @@ mod tests {
     #[test]
     fn unlink_file_does_not_resurrect_a_file_removed_after_the_cache_was_warmed() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let content_id = insert_content(&repo, 1, 0xAA);
 
         let id = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "a.txt", 100, content_id))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "a.txt", 100, content_id)
+            })
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A.TXT"
             ))
             .unwrap(),
             Some(id),
             "the cache must be warm for the root directory now"
         );
 
-        repo.with_transaction(|conn| super::unlink_file(conn, &cache, id, 200))
+        repo.with_transaction(|conn, _cache| super::unlink_file(conn, &mut cache, id, 200))
             .unwrap();
 
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A.TXT"
             ))
             .unwrap(),
             None
@@ -1271,34 +1293,36 @@ mod tests {
     #[test]
     fn rename_within_the_same_directory_keeps_the_cache_correct_for_the_new_name() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
 
         let a = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "a", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
             .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A"
             ))
             .unwrap(),
             Some(a),
             "the cache must be warm for the root directory now"
         );
 
-        repo.with_transaction(|conn| super::rename(conn, &cache, 0, "a", 0, "renamed", false, 200))
-            .unwrap();
+        repo.with_transaction(|conn, _cache| {
+            super::rename(conn, &mut cache, 0, "a", 0, "renamed", false, 200)
+        })
+        .unwrap();
 
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "A"
             ))
             .unwrap(),
             None,
             "the old name must no longer resolve"
         );
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "RENAMED"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "RENAMED"
             ))
             .unwrap(),
             Some(a),
@@ -1309,50 +1333,50 @@ mod tests {
     #[test]
     fn rename_across_directories_keeps_the_cache_correct_in_both_parents() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
 
         let source = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "source", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "source", 100))
             .unwrap();
         let target_dir = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, 0, "target", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "target", 100))
             .unwrap();
         let a = repo
-            .with_transaction(|conn| super::mkdir(conn, &cache, source, "a", 100))
+            .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, source, "a", 100))
             .unwrap();
 
         // Warm the cache for both the source and the (empty) target directory before the move.
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, source, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, source, "A"
             ))
             .unwrap(),
             Some(a)
         );
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, target_dir, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, target_dir, "A"
             ))
             .unwrap(),
             None
         );
 
-        repo.with_transaction(|conn| {
-            super::rename(conn, &cache, source, "a", target_dir, "a", false, 200)
+        repo.with_transaction(|conn, _cache| {
+            super::rename(conn, &mut cache, source, "a", target_dir, "a", false, 200)
         })
         .unwrap();
 
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, source, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, source, "A"
             ))
             .unwrap(),
             None,
             "the old parent's cache must no longer show the moved entry"
         );
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, target_dir, "A"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, target_dir, "A"
             ))
             .unwrap(),
             Some(a),
@@ -1363,43 +1387,45 @@ mod tests {
     #[test]
     fn rename_replacing_an_existing_file_keeps_the_cache_correct() {
         let (repo, _dir) = repo();
-        let cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::new(16);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 
         let old = repo
-            .with_transaction(|conn| super::settle_file(conn, &cache, 0, "old.txt", 100, content_a))
+            .with_transaction(|conn, _cache| {
+                super::settle_file(conn, &mut cache, 0, "old.txt", 100, content_a)
+            })
             .unwrap();
-        repo.with_transaction(|conn| {
-            super::settle_file(conn, &cache, 0, "new.txt", 100, content_b)
+        repo.with_transaction(|conn, _cache| {
+            super::settle_file(conn, &mut cache, 0, "new.txt", 100, content_b)
         })
         .unwrap();
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "OLD.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "OLD.TXT"
             ))
             .unwrap(),
             Some(old),
             "the cache must be warm for the root directory now"
         );
 
-        repo.with_transaction(|conn| {
-            super::rename(conn, &cache, 0, "old.txt", 0, "new.txt", false, 200)
+        repo.with_transaction(|conn, _cache| {
+            super::rename(conn, &mut cache, 0, "old.txt", 0, "new.txt", false, 200)
         })
         .unwrap();
 
         // `rename` moves `old`'s own row rather than creating a new one, so "new.txt" must now
         // resolve to `old`'s id - not the replaced target's, and not a stale cached miss either.
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "OLD.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "OLD.TXT"
             ))
             .unwrap(),
             None
         );
         assert_eq!(
-            repo.with_connection(|conn| super::find_child_id_case_insensitive(
-                conn, &cache, 0, "NEW.TXT"
+            repo.with_connection(|conn, _cache| super::find_child_id_case_insensitive(
+                conn, &mut cache, 0, "NEW.TXT"
             ))
             .unwrap(),
             Some(old)
@@ -1478,7 +1504,7 @@ mod tests {
     #[cfg(windows)]
     fn rename_replaces_a_different_entrys_case_variant_file() {
         let (repo, _dir) = repo();
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO contents (id, length, hash) \
                  VALUES (2, 0, X'0102030405060708090A0B0C0D0E0F1011121314')",

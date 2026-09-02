@@ -7,26 +7,28 @@
 //! `developer-todos/windows-mkdir-degrades-in-large-directories.md` for where the problem itself
 //! was first found.
 //!
-//! Lives behind its own [`Mutex`] rather than [`crate::Repository`]'s single connection lock, but
-//! every access happens while a caller already holds that connection lock (every [`NameCache`]
-//! method is only ever called from within [`crate::Repository::with_connection`]/`with_transaction`'s
-//! closure) - so this lock is never contended in practice, just a cheap uncontended lock/unlock per
-//! call, not a source of real cross-thread waiting.
+//! Holds no lock of its own - [`NameCache`] lives as a plain field alongside the connection inside
+//! [`crate::Repository`]'s single [`std::sync::Mutex`] (see that struct's own doc comment), so it
+//! is unreachable at all except from within [`crate::Repository::with_connection`]/
+//! `with_transaction`'s closure, which already holds that one lock. A second, nested lock (an
+//! earlier version of this cache had one) would only ever have been uncontended by convention, not
+//! by construction - a future caller could have reached it without going through
+//! `with_connection`/`with_transaction` and no compiler error would have caught it. Merging it into
+//! the same `Mutex` instead makes that mistake impossible to make, not just unlikely.
 //!
-//! This correctness argument holds only as long as a [`crate::Repository`] instance still funnels
-//! *all* of its own database access through that one connection/lock - which is exactly the
-//! narrower step DESIGN-METADATA-003 describes itself as being (see its doc comment on
-//! [`crate::Repository`]), not its eventual fuller design of splitting reads onto their own,
-//! unlocked connection(s). A distinct [`crate::Repository`] instance (e.g. one opened via
-//! [`crate::open_repository_read_only`]) already gets its own independent [`NameCache`], so nothing
-//! here assumes there is only ever one connection to a repository at a time - but a *pool of read
-//! connections shared by one [`crate::Repository`] instance* would put more than one connection
-//! behind a single cache, and each would need to reach it without the single-lock argument above to
-//! fall back on. Revisit this cache's locking (a real, contended lock; or a cache per connection in
-//! the pool instead of per `Repository`) before or alongside implementing that split, not after.
+//! This still depends on a [`crate::Repository`] instance funneling *all* of its own database
+//! access through that one connection/lock - DESIGN-METADATA-003's current
+//! one-connection-per-`Repository` model, not its eventual fuller design of splitting reads onto
+//! their own, unlocked connection(s) (see `metadata-storage.md`). A distinct [`crate::Repository`]
+//! instance (e.g. one opened via [`crate::open_repository_read_only`]) already gets its own
+//! independent [`NameCache`], so nothing here assumes there is only ever one connection to a
+//! repository at a time - but a *pool of read connections shared by one [`crate::Repository`]
+//! instance* would put more than one connection behind a single cache, and each would need its own
+//! way to reach it without a shared `&mut` to rely on. Revisit this cache's access pattern (a real
+//! lock again; or a cache per connection in the pool instead of per `Repository`) before or
+//! alongside implementing that split, not after.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Mutex;
 
 /// A directory's live children, keyed by [`crate::tree`]'s folded name (`fold_key` output, not the
 /// entry's raw stored name) and mapped to the id currently holding that folded name - `O(1)`
@@ -43,14 +45,14 @@ type CachedChildren = HashMap<String, i64>;
 #[derive(Debug)]
 pub(crate) struct NameCache {
     capacity: usize,
-    entries: Mutex<VecDeque<(i64, CachedChildren)>>,
+    entries: VecDeque<(i64, CachedChildren)>,
 }
 
 impl NameCache {
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            entries: Mutex::new(VecDeque::with_capacity(capacity)),
+            entries: VecDeque::with_capacity(capacity),
         }
     }
 
@@ -63,25 +65,25 @@ impl NameCache {
     /// whole map on every lookup would silently reintroduce an O(n) cost per call on a warm, large
     /// directory, defeating the point of caching it at all.
     pub(crate) fn with_cached_or_populate<T>(
-        &self,
+        &mut self,
         parent_id: i64,
         populate_miss: impl FnOnce() -> Result<CachedChildren, crate::Error>,
         use_candidates: impl FnOnce(&CachedChildren) -> T,
     ) -> Result<T, crate::Error> {
-        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
-        let entry = match entries.iter().position(|(p, _)| *p == parent_id) {
-            Some(pos) => entries
+        let entry = match self.entries.iter().position(|(p, _)| *p == parent_id) {
+            Some(pos) => self
+                .entries
                 .remove(pos)
                 .expect("pos just came back from position() above"),
             None => {
-                if entries.len() >= self.capacity {
-                    entries.pop_back();
+                if self.entries.len() >= self.capacity {
+                    self.entries.pop_back();
                 }
                 (parent_id, populate_miss()?)
             }
         };
         let result = use_candidates(&entry.1);
-        entries.push_front(entry);
+        self.entries.push_front(entry);
         Ok(result)
     }
 
@@ -98,25 +100,16 @@ impl NameCache {
     /// always increasing - see "Why tree_entries.id is AUTOINCREMENT" in
     /// `metadata-schema-with-contents-table.md`), so it is always DESIGN-MOUNT-005's tiebreak
     /// winner for its folded key regardless of whatever was cached under that key before.
-    pub(crate) fn note_inserted(
-        &self,
-        parent_id: i64,
-        id: i64,
-        folded_name: &str,
-    ) -> Result<(), crate::Error> {
-        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
-        if let Some((_, candidates)) = entries.iter_mut().find(|(p, _)| *p == parent_id) {
+    pub(crate) fn note_inserted(&mut self, parent_id: i64, id: i64, folded_name: &str) {
+        if let Some((_, candidates)) = self.entries.iter_mut().find(|(p, _)| *p == parent_id) {
             candidates.insert(folded_name.to_string(), id);
         }
-        Ok(())
     }
 
     /// Drops `parent_id`'s cached list entirely, if present - used wherever a child is removed or
     /// renamed away. Simpler and safer than patching the cached list in place for those less
     /// common, more intricate mutation shapes; the next miss just repopulates it from the database.
-    pub(crate) fn invalidate(&self, parent_id: i64) -> Result<(), crate::Error> {
-        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
-        entries.retain(|(p, _)| *p != parent_id);
-        Ok(())
+    pub(crate) fn invalidate(&mut self, parent_id: i64) {
+        self.entries.retain(|(p, _)| *p != parent_id);
     }
 }

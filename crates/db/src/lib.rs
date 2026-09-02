@@ -90,9 +90,8 @@ pub enum Error {
     WouldCreateCycle,
     /// The root entry cannot be removed.
     CannotRemoveRoot,
-    /// Another thread using this [`Repository`] panicked while holding one of its internal locks -
-    /// the connection lock, or (experimental, branch `write-cache`) `crates/db/src/name_cache.rs`'s
-    /// own lock.
+    /// Another thread using this [`Repository`] panicked while holding its internal lock (guarding
+    /// the connection and, experimentally - DESIGN-MOUNT-017 - the name cache alongside it).
     Poisoned,
     /// [`acquire_write_lock`] found the repository's write lock file already present - either
     /// genuinely held by another process, or left behind by one that exited without releasing it
@@ -247,6 +246,17 @@ impl From<rusqlite_migration::Error> for Error {
     }
 }
 
+/// [`Repository`]'s connection and (experimental, DESIGN-MOUNT-017) name cache, held together
+/// behind one [`Mutex`] rather than two separately-locked fields - see [`Repository`]'s own doc
+/// comment and `crates/db/src/name_cache.rs` for why: the cache's own correctness depends on never
+/// being reached except while the connection is already locked, and putting both behind the same
+/// `Mutex` makes that impossible to violate, rather than relying on every caller to remember it.
+#[derive(Debug)]
+struct Locked {
+    conn: Connection,
+    name_cache: name_cache::NameCache,
+}
+
 /// A handle to an existing, open repository.
 ///
 /// Holds one connection for its whole lifetime, behind a mutex, rather than opening a fresh one
@@ -259,10 +269,8 @@ impl From<rusqlite_migration::Error> for Error {
 #[derive(Debug)]
 pub struct Repository {
     settings: RepositorySettings,
-    conn: Mutex<Connection>,
+    locked: Mutex<Locked>,
     read_only: bool,
-    // Experimental (branch write-cache) - see `crates/db/src/name_cache.rs`.
-    name_cache: name_cache::NameCache,
 }
 
 impl Repository {
@@ -272,10 +280,11 @@ impl Repository {
 
     fn with_connection<T>(
         &self,
-        f: impl FnOnce(&Connection) -> Result<T, Error>,
+        f: impl FnOnce(&Connection, &mut name_cache::NameCache) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let conn = self.conn.lock().map_err(|_| Error::Poisoned)?;
-        f(&conn)
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        let Locked { conn, name_cache } = &mut *locked;
+        f(conn, name_cache)
     }
 
     /// Like [`Self::with_connection`], but runs `f` inside an explicit transaction, committed only
@@ -289,14 +298,15 @@ impl Repository {
     /// `SQLITE_READONLY` independently.
     fn with_transaction<T>(
         &self,
-        f: impl FnOnce(&Connection) -> Result<T, Error>,
+        f: impl FnOnce(&Connection, &mut name_cache::NameCache) -> Result<T, Error>,
     ) -> Result<T, Error> {
         if self.read_only {
             return Err(Error::ReadOnlyRepository);
         }
-        let mut conn = self.conn.lock().map_err(|_| Error::Poisoned)?;
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        let Locked { conn, name_cache } = &mut *locked;
         let tx = conn.transaction()?;
-        let result = f(&tx)?;
+        let result = f(&tx, name_cache)?;
         tx.commit()?;
         Ok(result)
     }
@@ -305,45 +315,43 @@ impl Repository {
     /// root). `Ok(None)` if any path component does not exist (or is soft-deleted) - not itself
     /// an error, since "does this path exist" is a legitimate question to ask.
     pub fn resolve_path(&self, path: &str) -> Result<Option<Entry>, Error> {
-        self.with_connection(|conn| tree::resolve_path(conn, &self.name_cache, path))
+        self.with_connection(|conn, cache| tree::resolve_path(conn, cache, path))
     }
 
     /// Lists the live, direct children of the directory entry `parent_id`.
     pub fn list_children(&self, parent_id: i64) -> Result<Vec<(String, EntryKind)>, Error> {
-        self.with_connection(|conn| tree::list_children(conn, parent_id))
+        self.with_connection(|conn, _cache| tree::list_children(conn, parent_id))
     }
 
     /// Creates a new, empty directory named `name` inside the directory `parent_id`, bumping its
     /// parent's modification time (REQ-TREE-005). Returns the new entry's id.
     pub fn mkdir(&self, parent_id: i64, name: &str, time_millis: i64) -> Result<i64, Error> {
-        self.with_transaction(|conn| {
-            tree::mkdir(conn, &self.name_cache, parent_id, name, time_millis)
-        })
+        self.with_transaction(|conn, cache| tree::mkdir(conn, cache, parent_id, name, time_millis))
     }
 
     /// Soft-deletes the directory entry `id` (REQ-TREE-002), refusing if it still has live
     /// children (REQ-TREE-008). Bumps its parent's modification time.
     pub fn rmdir(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_transaction(|conn| tree::rmdir(conn, &self.name_cache, id, time_millis))
+        self.with_transaction(|conn, cache| tree::rmdir(conn, cache, id, time_millis))
     }
 
     /// Soft-deletes the live file entry `id` (REQ-TREE-002). Bumps its parent's modification
     /// time - unlike DESIGN-MOUNT-011's pure content overwrite, removing a name is a structural
     /// change (REQ-TREE-005). A directory at `id` is refused.
     pub fn unlink_file(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_transaction(|conn| tree::unlink_file(conn, &self.name_cache, id, time_millis))
+        self.with_transaction(|conn, cache| tree::unlink_file(conn, cache, id, time_millis))
     }
 
     /// Looks up the live entry by its own id, rather than by path - `Ok(None)` if it does not
     /// exist or is soft-deleted, the same as [`Self::resolve_path`].
     pub fn entry_by_id(&self, id: i64) -> Result<Option<Entry>, Error> {
-        self.with_connection(|conn| tree::get_by_id(conn, id))
+        self.with_connection(|conn, _cache| tree::get_by_id(conn, id))
     }
 
     /// The live entry `id`'s current `(parent_id, name)` - `None` if it does not exist or is
     /// soft-deleted, reflecting any `rename` since `id` was first obtained.
     pub fn parent_and_name(&self, id: i64) -> Result<Option<(i64, String)>, Error> {
-        self.with_connection(|conn| tree::parent_and_name(conn, id))
+        self.with_connection(|conn, _cache| tree::parent_and_name(conn, id))
     }
 
     /// Settles a background write job's already-resolved content (see [`Self::find_or_create_content`])
@@ -359,15 +367,8 @@ impl Repository {
         time_millis: i64,
         content_id: i64,
     ) -> Result<i64, Error> {
-        self.with_transaction(|conn| {
-            tree::settle_file(
-                conn,
-                &self.name_cache,
-                parent_id,
-                name,
-                time_millis,
-                content_id,
-            )
+        self.with_transaction(|conn, cache| {
+            tree::settle_file(conn, cache, parent_id, name, time_millis, content_id)
         })
     }
 
@@ -383,10 +384,10 @@ impl Repository {
         content_id: i64,
         collapsible_placeholder_id: i64,
     ) -> Result<i64, Error> {
-        self.with_transaction(|conn| {
+        self.with_transaction(|conn, cache| {
             tree::settle_file_collapsing_placeholder(
                 conn,
-                &self.name_cache,
+                cache,
                 parent_id,
                 name,
                 time_millis,
@@ -398,7 +399,7 @@ impl Repository {
 
     /// Looks up an already-known chunk by its own `(length, hash)` - REQ-STORAGE-002.
     pub fn find_chunk(&self, length: i64, hash: &[u8]) -> Result<Option<i64>, Error> {
-        self.with_connection(|conn| content::find_chunk(conn, length, hash))
+        self.with_connection(|conn, _cache| content::find_chunk(conn, length, hash))
     }
 
     /// Reserves storage for a chunk not already known (caller already checked [`Self::find_chunk`]
@@ -410,7 +411,7 @@ impl Repository {
         length: i64,
         hash: &[u8],
     ) -> Result<(i64, Vec<(u64, u64)>), Error> {
-        self.with_transaction(|conn| content::reserve_and_insert_chunk(conn, length, hash))
+        self.with_transaction(|conn, _cache| content::reserve_and_insert_chunk(conn, length, hash))
     }
 
     /// Finds or creates the whole-content `(length, hash)` row (DESIGN-METADATA-007's
@@ -422,7 +423,9 @@ impl Repository {
         hash: &[u8],
         chunk_ids: &[i64],
     ) -> Result<i64, Error> {
-        self.with_transaction(|conn| content::find_or_create_content(conn, length, hash, chunk_ids))
+        self.with_transaction(|conn, _cache| {
+            content::find_or_create_content(conn, length, hash, chunk_ids)
+        })
     }
 
     /// Returns `content_id`'s complete physical layout in `crates/store` - every backing
@@ -430,12 +433,12 @@ impl Repository {
     /// order, reproduces the content's own bytes exactly. An unknown `content_id` returns an
     /// empty `Vec`, the same as a genuinely zero-length content.
     pub fn resolve_extents(&self, content_id: i64) -> Result<Vec<(u64, u64)>, Error> {
-        self.with_connection(|conn| content::resolve_extents(conn, content_id))
+        self.with_connection(|conn, _cache| content::resolve_extents(conn, content_id))
     }
 
     /// Sets `id`'s own modification time (REQ-MOUNT-003's `utimens`).
     pub fn set_mtime(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_connection(|conn| tree::set_mtime(conn, id, time_millis))
+        self.with_connection(|conn, _cache| tree::set_mtime(conn, id, time_millis))
     }
 
     /// Moves/renames the entry named `old_name` inside `old_parent_id` to `new_name` inside
@@ -451,10 +454,10 @@ impl Repository {
         no_replace: bool,
         time_millis: i64,
     ) -> Result<(), Error> {
-        self.with_transaction(|conn| {
+        self.with_transaction(|conn, cache| {
             tree::rename(
                 conn,
-                &self.name_cache,
+                cache,
                 old_parent_id,
                 old_name,
                 new_parent_id,
@@ -560,9 +563,11 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     let settings = read_settings(&conn)?;
     Ok(Repository {
         settings,
-        conn: Mutex::new(conn),
+        locked: Mutex::new(Locked {
+            conn,
+            name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+        }),
         read_only: false,
-        name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
     })
 }
 
@@ -600,9 +605,11 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
     let settings = read_settings(&conn)?;
     Ok(Repository {
         settings,
-        conn: Mutex::new(conn),
+        locked: Mutex::new(Locked {
+            conn,
+            name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+        }),
         read_only: true,
-        name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
     })
 }
 
@@ -822,9 +829,9 @@ mod tests {
         let repo = open_repository(&repo_root).expect("open must succeed");
 
         let mode: String = repo
-            .with_connection(
-                |conn| Ok(conn.query_row("PRAGMA journal_mode", (), |row| row.get(0))?),
-            )
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row("PRAGMA journal_mode", (), |row| row.get(0))?)
+            })
             .unwrap();
         assert_eq!(mode, "wal");
     }
@@ -840,7 +847,9 @@ mod tests {
         let repo = open_repository(&repo_root).expect("open must succeed");
 
         let mode: i64 = repo
-            .with_connection(|conn| Ok(conn.query_row("PRAGMA auto_vacuum", (), |row| row.get(0))?))
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row("PRAGMA auto_vacuum", (), |row| row.get(0))?)
+            })
             .unwrap();
         assert_eq!(mode, 2, "expected INCREMENTAL (2), got {mode}");
     }
@@ -853,7 +862,7 @@ mod tests {
         let repo = open_repository(&repo_root).expect("open must succeed");
 
         let err = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.execute(
                     "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (999, 0, 999)",
                     (),
@@ -870,7 +879,7 @@ mod tests {
         init_repository(&repo_root, settings()).expect("init must succeed");
         let repo = open_repository(&repo_root).expect("open must succeed");
 
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO chunks (id, length, hash) \
                  VALUES (1, 3, X'0102030405060708090A0B0C0D0E0F1011121314')",
@@ -890,7 +899,7 @@ mod tests {
         .expect("inserts must succeed");
 
         let chunk_ref_count: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(
                     conn.query_row("SELECT ref_count FROM chunks WHERE id = 1", (), |row| {
                         row.get(0)
@@ -900,11 +909,13 @@ mod tests {
             .unwrap();
         assert_eq!(chunk_ref_count, 1);
 
-        repo.with_connection(|conn| Ok(conn.execute("DELETE FROM contents WHERE id = 1", ())?))
-            .expect("delete must succeed");
+        repo.with_connection(|conn, _cache| {
+            Ok(conn.execute("DELETE FROM contents WHERE id = 1", ())?)
+        })
+        .expect("delete must succeed");
 
         let content_chunks_left: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(conn.query_row(
                     "SELECT COUNT(*) FROM content_chunks WHERE content_id = 1",
                     (),
@@ -918,7 +929,7 @@ mod tests {
         );
 
         let chunk_ref_count: i64 = repo
-            .with_connection(|conn| {
+            .with_connection(|conn, _cache| {
                 Ok(
                     conn.query_row("SELECT ref_count FROM chunks WHERE id = 1", (), |row| {
                         row.get(0)
@@ -954,7 +965,7 @@ mod tests {
         init_repository(&repo_root, settings()).expect("init must succeed");
         let repo = open_repository(&repo_root).expect("open must succeed");
 
-        repo.with_connection(|conn| {
+        repo.with_connection(|conn, _cache| {
             conn.execute(
                 "INSERT INTO contents (id, length, hash) \
                  VALUES (2, 3, X'0102030405060708090A0B0C0D0E0F1011121314')",
@@ -970,7 +981,7 @@ mod tests {
         .expect("inserts must succeed");
 
         let ref_count = |repo: &Repository| {
-            repo.with_connection(|conn| {
+            repo.with_connection(|conn, _cache| {
                 Ok(
                     conn.query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
                         row.get::<_, i64>(0)
@@ -981,8 +992,10 @@ mod tests {
         };
         assert_eq!(ref_count(&repo), 1);
 
-        repo.with_connection(|conn| Ok(conn.execute("DELETE FROM tree_entries WHERE id = 1", ())?))
-            .expect("delete must succeed");
+        repo.with_connection(|conn, _cache| {
+            Ok(conn.execute("DELETE FROM tree_entries WHERE id = 1", ())?)
+        })
+        .expect("delete must succeed");
         assert_eq!(ref_count(&repo), 0);
     }
 }

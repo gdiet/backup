@@ -135,8 +135,14 @@ A small, bounded, most-recently-used-first in-process cache
 (`crates/db/src/name_cache.rs`, `NameCache`) of a handful of recently-touched directories' live
 children, each kept as a `HashMap<folded_name, id>` (DESIGN-MOUNT-005's `fold_key` output, not the
 raw stored name - a lookup against an already-warm entry never re-folds a candidate, only the
-query's own target). One `NameCache` per `Repository` instance, living behind its own `Mutex` -
-correctness of that lock is a direct consequence of DESIGN-METADATA-003's current
+query's own target). One `NameCache` per `Repository` instance, holding no lock of its own: it lives
+as a plain field alongside the connection inside `Repository`'s single `Mutex` (a `Locked { conn,
+name_cache }` struct, not two separately-locked fields), so it is structurally unreachable except
+from within `with_connection`/`with_transaction`'s closure, which already holds that one lock - not
+merely a documented convention a future caller could still get wrong (an earlier version of this
+cache tried a second, nested `Mutex` instead, relying on a comment to say it would only ever be
+called from inside the first one's critical section; nothing enforced that). Correctness of the
+merged lock is still a direct consequence of DESIGN-METADATA-003's current
 one-connection-per-`Repository` model, not an independent guarantee; see the note this decision adds
 in `metadata-storage.md`'s "A lighter configuration for a genuinely read-only connection" section.
 
@@ -218,7 +224,7 @@ selectivity the large, patterned directories this cache targets need most.
   describes - unlike the persisted-fold-column alternative there, which would also help a cold,
   already-large directory's first touch.
 - Depends on DESIGN-METADATA-003's current one-connection-per-`Repository` model for its
-  uncontended-lock correctness argument; a future read-connection split needs to revisit this
+  single-lock correctness argument; a future read-connection split needs to revisit this
   cache's own locking alongside it (see `metadata-storage.md`).
 - `NAME_CACHE_CAPACITY` is a private, hardcoded constant - not exposed via `RepositorySettings` or
   the CLI, so there is no way to disable or resize it without a code change.
