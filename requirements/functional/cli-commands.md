@@ -43,11 +43,11 @@ Importance: could
 
 A command permanently removes one or more specific soft-deleted entries, selected by their
 history-entry identity (the same addressing REQ-RESTORE-002 uses), rather than requiring a general
-space-reclamation sweep (REQ-STORAGE-004 in [`storage.md`](storage.md)) to eventually reach them.
-This is a distinct command from REQ-CLI-003's live-entry delete, since it addresses history entries
-rather than live paths - the two commands take different kinds of argument for what to act on.
+bulk purge sweep (REQ-STORAGE-004 in [`storage.md`](storage.md)) to eventually reach them. This is
+a distinct command from REQ-CLI-003's live-entry delete, since it addresses history entries rather
+than live paths - the two commands take different kinds of argument for what to act on.
 
-Rationale: REQ-STORAGE-004's reclamation is a repository-wide maintenance sweep; a user who wants a
+Rationale: REQ-STORAGE-004's bulk purge is a repository-wide maintenance sweep; a user who wants a
 specific soft-deleted entry gone for good right now - something sensitive that was accidentally
 backed up and then deleted, say - should not have to wait for, or explicitly trigger, a full sweep
 just to get that guarantee for the one entry they actually care about.

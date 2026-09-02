@@ -16,7 +16,7 @@ Importance: must
 
 Deleting a file or directory marks it deleted rather than immediately destroying it; a deleted
 entry still counts toward the storage it references and stays recoverable until an explicit,
-separate space-reclamation step (REQ-STORAGE-004 in [`storage.md`](storage.md)) actually purges it.
+separate purge (REQ-STORAGE-004 in [`storage.md`](storage.md)) actually removes it.
 
 Rationale: deletion is very often a mistake, or a decision reversed later — a two-step delete
 turns an accidental or premature deletion into a recoverable event instead of a permanent loss,

@@ -38,36 +38,38 @@ overhead per byte stored; the right trade-off depends on the data being stored, 
 software. Whole-file mode trades away REQ-STORAGE-002's sub-file matching entirely, for cases where
 even that overhead is not worth paying.
 
-### REQ-STORAGE-004: Space reclamation
+### REQ-STORAGE-004: Bulk purge of aged soft-deleted entries
 Status: draft
 Importance: must
 
-Storage occupied by content no longer referenced by any file can be reclaimed. Reclamation runs
-only when a caller explicitly invokes a dedicated command - never automatically or silently as a
-side effect of ordinary use (a mount session, an ingest run). That command purges outright every
-soft-deleted entry (REQ-TREE-002 in [`tree.md`](tree.md)) that has stayed soft-deleted for at least
-a caller-chosen minimum age, defaulting to zero (purged the next time the command runs at all) when
-a caller does not specify one - ending its REQ-TREE-003 recoverability, not only freeing the
-storage it held. Any storage that becomes unreferenced as a result is reclaimed in the same step:
-tracked and available for reuse by future writes from that point on, so repeated delete/write
-cycles do not make storage grow without bound. Reclaiming a range makes it eligible for reuse
-without itself altering any byte still on disk - this is what creates the staleness risk
-REQ-MAINTENANCE-007 in [`maintenance.md`](maintenance.md) requires a warning for, whether or not
-the range is ever actually reused afterward.
+A caller can purge every soft-deleted entry (REQ-TREE-002 in [`tree.md`](tree.md)) that has stayed
+soft-deleted for at least a caller-chosen minimum age, defaulting to zero (purged the next time the
+command runs at all) when a caller does not specify one - ending its REQ-TREE-003 recoverability
+for good, not only freeing the storage it held. This runs only when a caller explicitly invokes a
+dedicated command - never automatically or silently as a side effect of ordinary use (a mount
+session, an ingest run).
 
-A caller who invokes reclamation routinely or on a self-managed schedule (e.g. their own cron job
-calling the command above) can use the minimum-age setting above to still preserve a
-recent-deletion recovery window, without having to time those invocations around it manually.
+Any storage that becomes unreferenced as a result is reclaimed in the same step: tracked and
+available for reuse by future writes from that point on, so repeated delete/write cycles do not
+make storage grow without bound. Reclaiming a range makes it eligible for reuse without itself
+altering any byte still on disk - this is what creates the staleness risk REQ-MAINTENANCE-007 in
+[`maintenance.md`](maintenance.md) requires a warning for, whether or not the range is ever
+actually reused afterward.
 
-Rationale: without reuse, a repository under continuous use (files added and removed over years)
-would grow monotonically even though its live content stays roughly constant. Making reclamation
-explicit rather than automatic keeps its timing - and therefore REQ-MAINTENANCE-007's staleness
-window - something the operator always decides and can correlate with a command they actually ran,
-not a background process acting invisibly; REQ-MAINTENANCE-001/002's whole trust model already
-depends on the operator being able to reason about exactly when the repository's physical layout
-could have changed. Without a caller-chosen minimum age on top of that, an operator who wants both
-routine reclamation and a guaranteed recovery window for a recent accidental deletion would have to
-choose one or the other, or build the timing logic themselves outside the tool.
+A caller who purges routinely or on a self-managed schedule (e.g. their own cron job calling the
+command above) can use the minimum-age setting above to still preserve a recent-deletion recovery
+window, without having to time those invocations around it manually.
+
+Rationale: without reclaiming the storage a purge frees, a repository under continuous use (files
+added and removed over years) would grow monotonically even though its live content stays roughly
+constant. Making purge explicit rather than automatic keeps its timing - and therefore
+REQ-MAINTENANCE-007's staleness window - something the operator always decides and can correlate
+with a command they actually ran, not a background process acting invisibly;
+REQ-MAINTENANCE-001/002's whole trust model already depends on the operator being able to reason
+about exactly when the repository's physical layout could have changed. Without a caller-chosen
+minimum age on top of that, an operator who wants both routine purging and a guaranteed recovery
+window for a recent accidental deletion would have to choose one or the other, or build the timing
+logic themselves outside the tool.
 
 ### REQ-STORAGE-005: On-demand store compaction
 Status: draft

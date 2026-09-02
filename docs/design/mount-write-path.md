@@ -290,9 +290,9 @@ modification time is not touched by this - same as any other pure content modifi
 Rationale: an ordinary save through the mount (a text editor, a periodically rewritten log or VM
 image) becomes a history entry every time, which does mean a frequent-save workload grows history
 proportionally - but REQ-STORAGE-004 in
-[`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)'s
-reclamation (with its own caller-chosen minimum age before an entry becomes eligible) already
-exists to bound that growth without losing recent recoverability, and chunk/content-level
+[`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)'s bulk
+purge (with its own caller-chosen minimum age before an entry becomes eligible) already exists to
+bound that growth without losing recent recoverability, and chunk/content-level
 deduplication (REQ-STORAGE-001/002, same file) means only genuinely new bytes cost real storage
 regardless of how often the metadata row itself gets replaced.
 
