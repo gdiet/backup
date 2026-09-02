@@ -72,7 +72,7 @@ window for a recent accidental deletion would have to choose one or the other, o
 logic themselves outside the tool.
 
 ### REQ-STORAGE-005: On-demand store compaction
-Status: draft
+Status: agreed
 Importance: should
 
 Beyond reclaiming and reusing gaps internally, the store can be defragmented on demand — live
