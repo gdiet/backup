@@ -39,7 +39,7 @@ software. Whole-file mode trades away REQ-STORAGE-002's sub-file matching entire
 even that overhead is not worth paying.
 
 ### REQ-STORAGE-004: Bulk purge of aged soft-deleted entries
-Status: draft
+Status: agreed
 Importance: must
 
 A caller can purge every soft-deleted entry (REQ-TREE-002 in [`tree.md`](tree.md)) that has stayed
