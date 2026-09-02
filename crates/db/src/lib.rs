@@ -35,8 +35,8 @@ const META_TMP_DIR: &str = "meta.tmp";
 const META_DB_FILE: &str = "repository.sqlite3";
 const DATA_DIR: &str = "data";
 
-// Experimental (DESIGN-MOUNT-017 in docs/design/tree-namespace-case-sensitivity.md, not yet
-// decided) - how many directories' name_cache entries to keep at once. See that design entry and
+// How many directories' name_cache entries to keep at once - DESIGN-MOUNT-017 in
+// docs/design/tree-namespace-case-sensitivity.md; see that design entry and
 // crates/db/src/name_cache.rs. Chosen by feel ("a small LRU cache"), not by measurement or a
 // memory budget - it bounds only the number of cached directories, not the size of any one of them
 // (each holds every live child of that directory, however many there are).
