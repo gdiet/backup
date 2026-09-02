@@ -20,7 +20,7 @@ One candidate approach, worth evaluating fresh against this project's actual imp
 than assumed correct: a generation counter held in `repository_settings` (see DESIGN-METADATA-009
 in [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) for that
 table), bumped whenever an operation runs that may have physically relocated or invalidated stored
-bytes; a metadata backup stamps the counter's value at backup time; restore compares the stamped
+bytes. A metadata backup stamps the counter's value at backup time. Restore compares the stamped
 value against the repository's current one and warns (not refuses) on a mismatch. Not weighed
 against alternatives yet, and not assumed to be the answer - named here only so the option is not
 lost before this gets picked up.
@@ -42,11 +42,11 @@ Both, then, are best treated as arming events in their own right: bumping a shar
 equivalent) at reclamation time itself, not deferred until some later write happens to reuse a
 given range. Tracking staleness at the finer granularity of "was this specific reclaimed range
 actually reused yet" was the alternative considered here, and is worth naming explicitly as
-rejected, not merely undecided: it would require the ordinary store/write path to check, on every
-write, whether the range it is about to use might be referenced by some outstanding metadata
-backup - a real, ongoing coupling between two otherwise-independent subsystems, taken on to reduce
-how often a warning fires without needing to reduce anything else, since a false positive here (an
-unnecessary warning) is cheap and a false negative (an undetected stale restore, silently resolving
+rejected, not merely undecided. It would require the ordinary store/write path to check, on every
+write, whether the range it is about to use might be referenced by some outstanding metadata backup
+- a real, ongoing coupling between two otherwise-independent subsystems. This was taken on to
+reduce how often a warning fires, without needing to reduce anything else: a false positive here (an
+unnecessary warning) is cheap, and a false negative (an undetected stale restore, silently resolving
 to wrong bytes) is exactly what REQ-MAINTENANCE-007 exists to prevent. Arming at reclamation time
 gets that asymmetry right for free, with a single, simple, well-isolated hook - the fine-grained
 alternative would spend real design and implementation complexity buying back a cost (an

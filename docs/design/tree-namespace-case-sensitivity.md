@@ -59,8 +59,8 @@ Custom, via `rusqlite::Connection::create_collation`, or the built-in `NOCASE`.
 
 Considered as a middle ground that avoids baking anything into the schema itself, by adding
 `COLLATE` only at the query level. Rejected: SQLite cannot use the existing binary-collated index
-for a differently-collated comparison, so a `COLLATE`-qualified query pays the same full-scan cost
-as the chosen Rust-side fallback - with no performance advantage to justify the extra
+for a differently-collated comparison. So a `COLLATE`-qualified query pays the same full-scan cost
+as the chosen Rust-side fallback. This gives no performance advantage to justify the extra
 implementation surface (collation registration, its own set of Unicode-corner-case tests) over
 simply comparing already-fetched rows in application code. The built-in `NOCASE` specifically has
 its own, independent problem regardless of performance: it only folds the 26 ASCII letters
@@ -137,14 +137,15 @@ A small, bounded, most-recently-used-first in-process cache
 (`crates/db/src/name_cache.rs`, `NameCache`) of a handful of recently-touched directories' live
 children, each kept as a `HashMap<folded_name, id>` (DESIGN-MOUNT-005's `fold_key` output, not the
 raw stored name - a lookup against an already-warm entry never re-folds a candidate, only the
-query's own target). One `NameCache` per `Repository` instance, holding no lock of its own: it lives
+query's own target). One `NameCache` per `Repository` instance, holding no lock of its own. It lives
 as a plain field alongside the connection inside `Repository`'s single `Mutex` (a `Locked { conn,
 name_cache }` struct, not two separately-locked fields), so it is structurally unreachable except
-from within `with_connection`/`with_transaction`'s closure, which already holds that one lock - not
-merely a documented convention a future caller could still get wrong (an earlier version of this
-cache tried a second, nested `Mutex` instead, relying on a comment to say it would only ever be
-called from inside the first one's critical section; nothing enforced that). Correctness of the
-merged lock is still a direct consequence of DESIGN-METADATA-003's current
+from within `with_connection`/`with_transaction`'s closure, which already holds that one lock. This
+is not merely a documented convention a caller could still get wrong: an alternative of a second,
+nested `Mutex` was considered and rejected, since it would only ever be uncontended by convention,
+not by construction - nothing would enforce that it is only ever taken from inside the first
+`Mutex`'s critical section. Correctness of the merged lock is still a direct consequence of
+DESIGN-METADATA-003's current
 one-connection-per-`Repository` model, not an independent guarantee; see the note this decision adds
 in `metadata-storage.md`'s "A lighter configuration for a genuinely read-only connection" section.
 

@@ -22,9 +22,9 @@ one file, then open the next) - a blocking `release()` would prevent files from 
 processing in parallel, however many workers the pool has, collapsing exactly the throughput a
 separate pool exists to provide. A non-blocking `release()` (handing work off and returning
 immediately, blocking only as ordinary backpressure once the pool's own queue is full) keeps that
-overlap instead - this is the mechanism REQ-PERFORMANCE-006 in
+overlap instead. This is the mechanism REQ-PERFORMANCE-006 in
 [`../../requirements/non-functional/performance.md`](../../requirements/non-functional/performance.md)
-describes: chunking and hashing happen once a file is closed, not while it is being written, so the
+describes: chunking and hashing happen once a file is closed, not while it is being written. So the
 next file's data can already be arriving from the client while the previous file's chunking/hashing
 is still running - sequential from the client's point of view, pipelined underneath. The same
 non-blocking handoff is also what lets multiple concurrent write streams reach REQ-PERFORMANCE-002's
@@ -57,10 +57,10 @@ severity, not derived from first principles: `Backend.scala`'s equivalent delay 
 "severe but working" point (250 ms per 32 KiB persist-queue chunk, ~131 KiB/s effective) once its
 signal - all queued bytes, not just spilled ones, further multiplied by queue *file count* - grew
 large. This project's signal is narrower (DESIGN-MOUNT-010's spill-only bytes, no file-count
-factor, since the common case never spills at all - see that section below) and a spilled byte here
-is already a worse state than a merely-queued Scala byte, so the same 250 ms cap is kept, chosen to
-land at the same effective-bandwidth floor (~512 KiB/s) once backlog reaches the level of a
-genuinely severe, sustained overflow, independent of the caller's own write size. The cap itself
+factor, since the common case never spills at all - see that section below), and a spilled byte
+here is already a worse state than a merely-queued Scala byte. So the same 250 ms cap is kept,
+chosen to land at the same effective-bandwidth floor (~512 KiB/s) once backlog reaches the level of
+a genuinely severe, sustained overflow, independent of the caller's own write size. The cap itself
 also bounds worst-case per-call latency directly - a FUSE/WinFSP dispatch thread blocked this long
 is one fewer available for every other concurrent request meanwhile - which matters most for a
 caller using unusually large individual `write()` calls, where the backlog-and-size-scaled delay
@@ -163,7 +163,7 @@ means for the rest of the session - not every systemic failure is the same shape
   same way and left to the operator to diagnose.
 - A failure of the single shared `db::Repository` connection itself (a poisoned connection mutex
   and the like) is not that shape of problem: every future call through that one connection is
-  doomed equally, reads included, not just writes - the read-only-degradation response above would
+  doomed equally, reads included, not just writes. The read-only-degradation response above would
   be misleading here, since it implies the mount is still readable. Read-only degradation therefore
   does not apply to this case at all; instead, the first such occurrence in a session - from a
   background job or a synchronous FUSE call (`mkdir`/`rmdir`/`rename`/`unlink`/`utimens`/a path

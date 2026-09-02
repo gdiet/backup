@@ -50,9 +50,9 @@ alone, with no functional benefit.
 WinFSP's own native, non-FUSE-compatible interface - a COM-style callback interface, distinct from
 its FUSE-compatibility shim.
 
-Rejected as the primary approach (though it remains the fallback if the shared FUSE-shaped
-approach ever hits a real blocker on Windows): it would need its own hand-written bindings and its
-own translation into `MountFilesystem`, on top of the Linux backend's separate implementation -
+Rejected as the primary approach, though it remains the fallback if the shared FUSE-shaped approach
+ever hits a real blocker on Windows. It would need its own hand-written bindings and its own
+translation into `MountFilesystem`, on top of the Linux backend's separate implementation. That is
 twice the platform-specific code for no capability the FUSE-compatible shim does not already
 provide.
 
@@ -78,9 +78,9 @@ one, present only once a mount is actually attempted. A build-time dependency wo
 contributor and CI environment to have the relevant SDK installed just to compile the workspace,
 for a feature only a subset of actual runs exercise.
 
-Both backends also fail gracefully - a clean `io::Result::Err` with an actionable message, not a
-panic - when the platform library turns out to be absent at runtime, and this is verified on both
-platforms, not just documented: `scripts/test-linux-without-libfuse.sh` runs the
+Both backends also fail gracefully when the platform library turns out to be absent at runtime - a
+clean `io::Result::Err` with an actionable message, not a panic. This is verified on both platforms,
+not just documented: `scripts/test-linux-without-libfuse.sh` runs the
 `preflight_check` example inside a container that never had libfuse3 installed; the equivalent
 Windows check ran the same example, cross-built via `scripts/build-windows-docker.sh`, directly
 against a real Windows install genuinely missing WinFSP (see `agent-todos/done/

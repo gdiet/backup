@@ -36,12 +36,12 @@ protecting against corruption from an operation that only ever writes metadata. 
 however, extend to what this decision actually needs: exclusivity across a whole *session's* worth
 of many separate transactions, not just within any one of them. Nothing stops SQLite from letting a
 second process's transaction interleave between two transactions belonging to a session that
-still considers itself "in progress" - a background write job that reserves and records a new
+still considers itself "in progress". A background write job that reserves and records a new
 chunk's byte range in one short transaction, then writes those bytes through `store` as a separate
 step outside any transaction at all (DESIGN-STORE-003 in [`byte-store.md`](byte-store.md)),
-depends on nothing else being able to reclaim that same range in between; that guarantee holds only
-because reclaim itself cannot start while the write session is still running, which is precisely
-what this decision provides and SQLite's own per-transaction locking does not.
+depends on nothing else being able to reclaim that same range in between. That guarantee holds only
+because reclaim itself cannot start while the write session is still running - precisely what this
+decision provides and SQLite's own per-transaction locking does not.
 
 SQLite's locking also has no awareness at all of `crates/store`'s separate `data/` directory
 (DESIGN-STORE-002) - two processes physically relocating or overwriting byte ranges there at the
@@ -137,9 +137,9 @@ succeeds even while the lock is actively held, confirmed live; applied on both p
 Linux's `flock` never needed the workaround but a single shared on-disk format is simpler than
 branching it by OS. The operating system is recorded alongside the hostname because a WSL2 session
 reports the same hostname as its Windows host by default (confirmed on this project's own
-development machine), and the two also have independent process-id namespaces - hostname and
-process id alone cannot reliably distinguish a lock held by a native Windows session from one held
-by a WSL2 session on the same machine.
+development machine). The two also have independent process-id namespaces. So hostname and process
+id alone cannot reliably distinguish a lock held by a native Windows session from one held by a
+WSL2 session on the same machine.
 
 ### Alternative considered and rejected: falling back to `flock` on `AlreadyExists`
 

@@ -39,10 +39,11 @@ far that run got, rather than simply starting over.
 Whether a given root directory already holds a repository is decided by whether `meta/` exists
 there, not whether the root directory itself exists - this is what lets `create-repo` accept an
 already-existing, empty root directory (see REQ-CLI-005) while still refusing to reinitialize a
-directory that already holds one. `data/` is created directly, with no staging: unlike `meta/`, an
+directory that already holds one. `data/` is created directly, with no staging. Unlike `meta/`, an
 empty or partially populated `data/` left behind by an interrupted creation is harmless clutter, not
-a correctness risk - nothing in `meta/` can reference bytes in `data/` until `meta/` itself exists,
-so a `data/` directory alone, with no `meta/` next to it, is never mistaken for a valid repository.
+a correctness risk, because nothing in `meta/` can reference bytes in `data/` until `meta/` itself
+exists. So a `data/` directory alone, with no `meta/` next to it, is never mistaken for a valid
+repository.
 
 ### Rejected: requiring the root directory to not yet exist
 
@@ -67,9 +68,9 @@ leaving any sidecar file's own creation unprotected by the same guarantee.
 ### Rejected: one shared directory for both metadata and byte-store content
 
 Keeping `meta/`'s and `data/`'s contents in one combined directory, rather than as two separate
-ones, was considered and rejected: REQ-STORAGE-007's data files are structurally different from the
+ones, was considered and rejected. REQ-STORAGE-007's data files are structurally different from the
 metadata database (bounded, sequentially filled, effectively immutable once sealed, versus a small,
-frequently mutated random-access file) and serve different operational needs - a metadata-only
+frequently mutated random-access file), and serve different operational needs. A metadata-only
 backup or copy (REQ-MAINTENANCE-001, or the still-open "shallow copy" question in
 [`../../requirements/open-questions.md`](../../requirements/open-questions.md)) is then a matter of
-copying one clearly bounded directory rather than filtering specific files out of a mixed one.
+copying one clearly bounded directory, rather than filtering specific files out of a mixed one.
