@@ -1,8 +1,11 @@
-//! An experimental, small LRU cache of a handful of recently-touched directories' live children -
-//! meant to spare [`crate::tree`]'s Windows-only case-insensitive lookup fallback its unindexed
-//! full scan on every miss when the same directory is visited repeatedly in a row (the common case
-//! for a bulk `mkdir`/`create` run into one directory). See `developer-todos/windows-mkdir-degrades-in-large-directories.md`
-//! for the problem this targets and the measurement this cache is being tried against.
+//! An experimental (DESIGN-MOUNT-017 in `tree-namespace-case-sensitivity.md`, not yet decided),
+//! small LRU cache of a handful of recently-touched directories' live children - meant to spare
+//! [`crate::tree`]'s Windows-only case-insensitive lookup fallback its unindexed full scan on
+//! every miss when the same directory is visited repeatedly in a row (the common case for a bulk
+//! `mkdir`/`create` run into one directory). See that design entry for the background this targets,
+//! the memory/correctness tradeoffs it commits to, and the measurements behind it; see
+//! `developer-todos/windows-mkdir-degrades-in-large-directories.md` for where the problem itself
+//! was first found.
 //!
 //! Lives behind its own [`Mutex`] rather than [`crate::Repository`]'s single connection lock, but
 //! every access happens while a caller already holds that connection lock (every [`NameCache`]

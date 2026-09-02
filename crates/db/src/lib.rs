@@ -35,10 +35,11 @@ const META_TMP_DIR: &str = "meta.tmp";
 const META_DB_FILE: &str = "repository.sqlite3";
 const DATA_DIR: &str = "data";
 
-// Experimental (branch write-cache) - how many directories' name_cache entries to keep at once.
-// See `crates/db/src/name_cache.rs`. Chosen by feel ("a small LRU cache"), not by measurement or
-// a memory budget - it bounds only the number of cached directories, not the size of any one of
-// them (each holds every live child of that directory, however many there are).
+// Experimental (DESIGN-MOUNT-017 in docs/design/tree-namespace-case-sensitivity.md, not yet
+// decided) - how many directories' name_cache entries to keep at once. See that design entry and
+// crates/db/src/name_cache.rs. Chosen by feel ("a small LRU cache"), not by measurement or a
+// memory budget - it bounds only the number of cached directories, not the size of any one of them
+// (each holds every live child of that directory, however many there are).
 const NAME_CACHE_CAPACITY: usize = 16;
 
 /// `repo_root`'s byte-store directory (DESIGN-REPOSITORY-001) - where a caller opening
