@@ -54,7 +54,7 @@ the import happened" (REQ-TREE-005 in [`tree.md`](tree.md)), silently losing the
 history the moment it is imported.
 
 ### REQ-INGEST-004: Resilience to per-item failures
-Status: draft
+Status: agreed
 Importance: must
 
 A source file or directory that cannot be read (a permission error, something that disappears
