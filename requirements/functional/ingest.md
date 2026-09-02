@@ -94,7 +94,7 @@ performance regression into an actionable error at the point a caller can still 
 it.
 
 ### REQ-INGEST-007: Templated target paths for repeated runs
-Status: draft
+Status: agreed
 Importance: could
 
 A target path passed to ingest can contain a placeholder resolved against the current date/time at
