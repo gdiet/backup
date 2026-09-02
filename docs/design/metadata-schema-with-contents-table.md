@@ -84,9 +84,9 @@ running everything through a second hasher.
 
 Cheaper per chunk (a rotate and an `XOR` versus a hash-update call) - but the saving is not
 meaningful in absolute terms, for the same reason the chosen approach is already cheap enough: 28
-bytes per chunk either way. Rejected primarily on collision-resistance grounds instead: rotating by
-one bit or one byte has a period of 160 bits/20 bytes - a chunk at position 0 and one at position
-160 (bits) or 20 (bytes) receive the identical rotation, reintroducing exactly the kind of
+bytes per chunk either way. Rejected primarily on collision-resistance grounds instead. Rotating by
+one bit or one byte has a period of 160 bits/20 bytes: a chunk at position 0 and one at position 160
+(bits) or 20 (bytes) receive the identical rotation. That reintroduces exactly the kind of
 positional aliasing the hash-width choice elsewhere in this document was careful to avoid. At a
 1 MiB average chunk size that repeats roughly every 20-160 MiB, well within range for video files,
 VM images, or disk images. Plain `XOR` without rotation was never a serious candidate: it is
@@ -173,11 +173,11 @@ safely operate on at all; it does nothing to stop an in-range change on an exist
 which is its own, more consequential problem: `cdc_target_size_bits` only affects how *newly*
 written content is chunked going forward - existing `chunks`/`content_chunks` rows stay exactly as
 they are, still correctly referenced. Changing the value on a live repository therefore corrupts
-nothing, but it silently degrades deduplication: content written afterward is very unlikely to
-reproduce the same chunk boundaries as byte-identical content written before the change (a
-different `target_size_bits` changes `base_size` and the mask width from the first byte onward),
-so dedup against the repository's prior history quietly gets much worse - the entire value
-proposition behind REQ-STORAGE-001/002 - with no error, warning, or symptom pointing at the cause.
+nothing, but it silently degrades deduplication. Content written afterward is very unlikely to
+reproduce the same chunk boundaries as byte-identical content written before the change, because a
+different `target_size_bits` changes `base_size` and the mask width from the first byte onward. So
+dedup against the repository's prior history quietly gets much worse - the entire value proposition
+behind REQ-STORAGE-001/002 - with no error, warning, or symptom pointing at the cause.
 
 A second trigger closes this, independently of the range `CHECK` - see
 `repository_settings_cdc_target_size_bits_immutable` in "Triggers" below.
@@ -346,11 +346,11 @@ Instead of a separate column, encode `kind` as a `TEXT` value: `'D'`/`'F'` for a
 `'S' || target` (the tag character followed directly by the target path) for a symlink - avoiding
 a second column that is `NULL` for every non-symlink row.
 
-Costs almost the same either way: SQLite's record format stores a `NULL` column as a single header
+Costs almost the same either way. SQLite's record format stores a `NULL` column as a single header
 byte with no body, so a separate `target` column costs one byte more than the merged encoding per
-row for a directory or file (`kind` alone: 1 byte via the free 0/1 constant encoding, or 2 bytes
-for `KIND_SYMLINK`, plus a 1-byte `NULL` header for `target`) - for a symlink row, the merged
-encoding is about a byte cheaper still (one column header instead of two). Given symlinks are
+row for a directory or file (`kind` alone: 1 byte via the free 0/1 constant encoding, or 2 bytes for
+`KIND_SYMLINK`, plus a 1-byte `NULL` header for `target`). For a symlink row, the merged encoding is
+about a byte cheaper still (one column header instead of two). Given symlinks are
 expected to be a small minority of a typical tree, the aggregate difference across a whole
 repository is negligible.
 

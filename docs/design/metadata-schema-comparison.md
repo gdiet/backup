@@ -26,12 +26,12 @@ settled (see "In-progress files are not written to the database" in each schema 
 `content_id`/`length` is never mutated in place in either design, and neither needs an `AFTER
 UPDATE` trigger to guard against it.
 
-What removing `contents` still avoids: the two `tree_entries` ref-count triggers, which have
-nothing to maintain once there is no shared, mutable content identity to keep synchronized in the
-first place - with `content_chunks` scoped 1:1 to the tree entry that owns it (created and
-cascade-deleted together, never re-pointed), that identity does not exist at all in the
-without-`contents` proposal. Fewer tables and fewer triggers are a real, ongoing complexity cost
-either way, independent of which proposal is chosen later. (Sentinel-row count is no longer a
+What removing `contents` still avoids: the two `tree_entries` ref-count triggers. They have nothing
+to maintain once there is no shared, mutable content identity to keep synchronized. In the
+without-`contents` proposal that identity does not exist at all, since `content_chunks` is scoped
+1:1 to the tree entry that owns it (created and cascade-deleted together, never re-pointed). Fewer
+tables and fewer triggers are a real, ongoing complexity cost either way, independent of which
+proposal is chosen later. (Sentinel-row count is no longer a
 differentiator between the two proposals: neither keeps a distinct, pre-seeded empty-content row -
 see "In-progress files are not written to the database" in
 `metadata-schema-with-contents-table.md`.)
@@ -62,12 +62,13 @@ Using those two real quantities, and estimating chunk count per content as
 `round(length / 2^20)` (chunk_size_bits = 20) with a minimum of 1: the with-`contents` proposal
 needs roughly 2.9 million `content_chunks` rows (one set per distinct content); the
 without-`contents` proposal needs roughly 24-25 million (one set per tree entry) - a ratio close
-to the measured duplication factor, as expected. Converting to bytes with the same rough per-row
+to the measured duplication factor, as expected. Converting to bytes uses the same rough per-row
 estimates used elsewhere in this document (~30-35 bytes per `content_chunks` row including its
-index entry, ~80 bytes per `contents` row including its unique index): on the order of 150-200 MB
-of total overhead with `contents` (nearly all of it the `content_chunks` rows, a small remainder
-the `contents` table itself) versus on the order of 750-800 MB without it - a difference in the
-range of 550-650 MB for this specific archive, favoring the with-`contents` proposal.
+index entry, ~80 bytes per `contents` row including its unique index). On that basis, total
+overhead is on the order of 150-200 MB with `contents` (nearly all of it the `content_chunks` rows,
+a small remainder the `contents` table itself) versus on the order of 750-800 MB without it. That is
+a difference in the range of 550-650 MB for this specific archive, favoring the with-`contents`
+proposal.
 
 This is one real data point, not a universal constant - the actual duplication factor depends
 entirely on how a given repository is used (how often the same content is stored at more than one

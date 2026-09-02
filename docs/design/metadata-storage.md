@@ -34,10 +34,10 @@ likely to go subtly wrong.
 
 **A custom on-disk format**, purpose-built for this schema: viable for a genuinely simple,
 single-purpose layout (the byte store already does this, successfully, for a sequential
-write-once structure) but not for a schema with several cross-referencing, independently-queried
-tables - this would mean building a bespoke index, transaction, and query layer, competing against
-one of the most thoroughly tested pieces of software that exists (SQLite) for a role where
-correctness matters enormously: losing or corrupting the index effectively loses track of
+write-once structure), but not for a schema with several cross-referencing, independently-queried
+tables. Such a schema would mean building a bespoke index, transaction, and query layer, competing
+against one of the most thoroughly tested pieces of software that exists (SQLite), for a role where
+correctness matters enormously. Losing or corrupting the index effectively loses track of
 otherwise-intact backed-up data.
 
 **An embedded analytical (OLAP) engine** (e.g. DuckDB): optimized for large scans and columnar
@@ -67,13 +67,12 @@ needs to hold while no process is using the repository, now documented directly 
 requirement). Correctness matters enormously for this role: losing or corrupting the metadata
 index effectively loses track of otherwise-intact stored data.
 
-SQLite satisfies all of this and more: embeddable with no server process at all, full SQL feature
-coverage including triggers, foreign keys, and partial indexes (exactly what DESIGN-METADATA-001
-established
-this schema needs), one of the most thoroughly tested pieces of software that exists, a mature
-Rust binding (`rusqlite`), and - via `rusqlite`'s "bundled" feature - can be compiled directly into
-the binary with no runtime dependency at all, going beyond "no separate server" to "nothing to
-install separately, period."
+SQLite satisfies all of this and more. It is embeddable with no server process at all, has full SQL
+feature coverage including triggers, foreign keys, and partial indexes (exactly what
+DESIGN-METADATA-001 established this schema needs), and is one of the most thoroughly tested pieces
+of software that exists. It also has a mature Rust binding (`rusqlite`), which - via its "bundled"
+feature - can be compiled directly into the binary with no runtime dependency at all, going beyond
+"no separate server" to "nothing to install separately, period."
 
 ### Alternatives considered and rejected
 
@@ -144,10 +143,10 @@ not merely assumed not to happen.
 SQLite itself only ever allows one write transaction in progress at a time, regardless of how many
 connections attempt to write - WAL mode lets readers proceed concurrently with the single writer,
 but grants no additional write concurrency. A single coordinated writer is therefore not an
-arbitrary constraint but the correct way to use SQLite from a multi-threaded producer: it avoids
+arbitrary constraint but the correct way to use SQLite from a multi-threaded producer. It avoids
 lock contention and retries between connections that would only ever serialize against each other
-anyway, and it can batch several pending writes into one transaction, which independent connections
-racing for the write lock cannot coordinate to do.
+anyway. It can also batch several pending writes into one transaction, which independent
+connections racing for the write lock cannot coordinate to do.
 
 REQ-PERFORMANCE-002 in
 [`../../requirements/non-functional/performance.md`](../../requirements/non-functional/performance.md)'s
@@ -297,8 +296,8 @@ wide is its birthday-bound collision resistance, ~2⁸⁰ hash evaluations, not 
 what current cryptographic guidance (generally at least a 128-bit security margin for a new
 design) considers a comfortable margin, though still far beyond casual reach. Judged not to matter
 here: exploiting an engineered collision would require an attacker to already control what content
-lands in the victim's backup before it is stored, at which point directly tampering with that
-content is a far simpler attack than manufacturing a BLAKE3 collision - a threat model this
+lands in the victim's backup before it is stored. At that point, directly tampering with that
+content is a far simpler attack than manufacturing a BLAKE3 collision. This is a threat model this
 project (a personal backup tool, not a multi-tenant deduplication service where cross-tenant
 collisions would be a genuinely different concern) does not need to defend against.
 
@@ -328,9 +327,9 @@ collision could do: two different chunks that happened to collide would still be
 their lengths differ. `contents` currently deduplicates on `hash` alone, even though it has its
 own `length` column (the file's total logical size) sitting right there unused for this purpose.
 
-The asymmetry does not hold up: `contents.hash` hashes the ordered sequence of each referenced
-chunk's `(length, hash)` pair, not raw file bytes, but a hash's output is not less collision-prone
-merely because its input is structured rather than raw - two different chunk sequences can easily
+The asymmetry does not hold up. `contents.hash` hashes the ordered sequence of each referenced
+chunk's `(length, hash)` pair, not raw file bytes - but a hash's output is not less collision-prone
+merely because its input is structured rather than raw. Two different chunk sequences can easily
 share the same total length while differing in exact composition (e.g. one 100-byte chunk plus one
 200-byte chunk vs. one 50-byte chunk plus one 250-byte chunk: 300 bytes either way, clearly
 different content), so `contents.length` is not implied by a `contents.hash` collision any more

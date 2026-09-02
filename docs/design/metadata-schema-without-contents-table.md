@@ -233,17 +233,17 @@ Instead of a separate column, encode `kind` as a `TEXT` value: `'D'`/`'F'` for a
 `'S' || target` (the tag character followed directly by the target path) for a symlink - avoiding
 a second column that is `NULL` for every non-symlink row.
 
-Costs almost the same either way: SQLite's record format stores a `NULL` column as a single header
+Costs almost the same either way. SQLite's record format stores a `NULL` column as a single header
 byte with no body, so a separate `target` column costs one byte more than the merged encoding per
-row for a directory or file (`kind` alone: 1 byte via the free 0/1 constant encoding, or 2 bytes
-for `KIND_SYMLINK`, plus a 1-byte `NULL` header for `target`) - for a symlink row, the merged
-encoding is about a byte cheaper still (one column header instead of two). Given symlinks are
+row for a directory or file (`kind` alone: 1 byte via the free 0/1 constant encoding, or 2 bytes for
+`KIND_SYMLINK`, plus a 1-byte `NULL` header for `target`). For a symlink row, the merged encoding is
+about a byte cheaper still (one column header instead of two). Given symlinks are
 expected to be a small minority of a typical tree, the aggregate difference across a whole
 repository is negligible.
 
-Rejected on clarity grounds instead: the `kind`/`length` consistency `CHECK` added elsewhere in
+Rejected on clarity grounds instead. The `kind`/`length` consistency `CHECK` added elsewhere in
 this document would need a `LIKE 'S%'` pattern match for the symlink case instead of a plain value
-comparison, `kind` would carry two different jobs (a type tag, and payload data) depending on which
-value it holds, and any future per-symlink attribute (e.g. a "target no longer exists" flag) would
-need further ad-hoc string encoding rather than just another column. Not worth trading that clarity
-for roughly one byte per symlink row.
+comparison, and `kind` would carry two different jobs (a type tag, and payload data) depending on
+which value it holds. Any future per-symlink attribute (e.g. a "target no longer exists" flag)
+would also need further ad-hoc string encoding rather than just another column. Not worth trading
+that clarity for roughly one byte per symlink row.
