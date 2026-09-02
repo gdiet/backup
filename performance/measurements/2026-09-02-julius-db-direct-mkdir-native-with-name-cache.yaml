@@ -1,0 +1,28 @@
+date: 2026-09-02
+machine: julius
+environment: native-windows
+power_profile: power-saver        # base scheme Balanced, overlay OVERLAY_SCHEME_MIN (Power Saver) - same as the baseline
+io_device: local-ssd
+dfs_build: 826890dfeba9f2d932d17c5b511dd41abcedae2f (write-cache)
+operation: mkdir
+location: db-direct
+tool: db::Repository::mkdir (crates/db/examples/db_bench.rs)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 363421                     # total directories created across the 5 kept runs, all siblings under repo root
+content_size:
+result:
+  unit: ops_per_second
+  mean: 3633.8
+  range: [3583.7, 3696.3]
+  n: 5
+  discarded_warmup_run: false     # run 1 is at the high end, not low - no warmup effect visible
+notes: >
+  A/B against ../measurements/2026-09-01-julius-db-direct-mkdir-native.yaml (same tool/machine/
+  power profile/IO device, no code differences besides being on branch write-cache, which adds
+  DESIGN-MOUNT-017's in-memory name cache). Baseline showed a monotonic decline (428.0 -> 108.5
+  ops/s) as sibling count grew; this run is flat (no trend) despite reaching an ~18.5x larger
+  sibling count (363421 vs 19602), confirming the cache eliminates the O(n^2) cost on real
+  Windows/WinFSP hardware, not just in the non-Windows simulation DESIGN-MOUNT-017's own
+  Verification section used during development.
