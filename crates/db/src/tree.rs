@@ -129,6 +129,13 @@ fn insert_keeping_highest_id(candidates: &mut HashMap<String, i64>, folded_key: 
         .or_insert(id);
 }
 
+/// Folds `name` and passes it on to [`NameCache::note_inserted`] - a mutation call site (`mkdir`,
+/// `settle_file`) only needs "this inserted a new child, keep the cache in sync", not `fold_key`'s
+/// own case-insensitivity concern or `note_inserted`'s folded-name precondition spelled out inline.
+fn note_child_inserted(cache: &mut NameCache, parent_id: i64, id: i64, name: &str) {
+    cache.note_inserted(parent_id, id, &fold_key(name));
+}
+
 /// [`find_child_id`]'s Windows-only fallback body, factored out and left unconditionally compiled
 /// (not itself `#[cfg(windows)]`) so its actual query-and-match logic can be exercised by tests on
 /// any platform, even though [`find_child_id`] only ever calls it on a real Windows build.
@@ -254,7 +261,7 @@ pub(crate) fn mkdir(
     match result {
         Ok(_) => {
             let id = conn.last_insert_rowid();
-            cache.note_inserted(parent_id, id, &fold_key(name));
+            note_child_inserted(cache, parent_id, id, name);
             touch(conn, parent_id, time_millis)?;
             Ok(id)
         }
@@ -363,7 +370,7 @@ fn settle_file_impl(
         params![parent_id, name, time_millis, content_id, KIND_FILE],
     )?;
     let id = conn.last_insert_rowid();
-    cache.note_inserted(parent_id, id, &fold_key(name));
+    note_child_inserted(cache, parent_id, id, name);
 
     if replaced.is_none() {
         touch(conn, parent_id, time_millis)?;
