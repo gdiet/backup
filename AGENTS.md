@@ -76,6 +76,10 @@ that way, not the history of how it got there. Concretely:
 - Write in formal, contraction-free prose ("does not", not "doesn't") throughout — this applies to
   every document in this repo, `AGENTS.md` included, not only user-facing or specification-style
   documents.
+- Prefer short, single-claim sentences over long ones that chain several justifications with
+  commas, semicolons, or dashes. A `Rationale:` paragraph that packs three or four reasons into one
+  sentence is harder to read and harder to verify claim-by-claim than the same content split into
+  two or three shorter sentences - split it, even if that makes the writing slightly longer.
 - **Self-check before adding a sentence to a product-facing document** (`requirements/`,
   `migration/`, `README.md`): ask who the sentence is actually about. If its real subject is
   "whoever is editing this file" rather than DedupFS itself, it does not belong there — recurring
