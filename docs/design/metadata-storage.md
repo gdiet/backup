@@ -646,16 +646,14 @@ the full configuration above applies to it. One from `open_repository_read_only`
 genuinely `SQLITE_OPEN_READ_ONLY` connection, needing only `busy_timeout` from the per-connection
 group - `foreign_keys`/`synchronous` have nothing to enforce on a connection that never writes.
 Nothing from the persistent group needs setting there either, for the ordinary reason any
-persistent property does not (already true by the time a read-only connection opens): confirmed
-empirically that a plain `SQLITE_OPEN_READ_ONLY` connection *can* still issue
-`PRAGMA journal_mode = WAL` as a no-op re-assertion when the database is already in WAL mode - a
-correction to an earlier assumption here that it could not - but there is nothing to gain from
-doing so, since every repository this crate creates is already durably in WAL mode from
-`init_repository` onward, so `open_repository_read_only` does not attempt it either way. A
-read-only connection cannot reuse `configure_write_connection` for this reason regardless of
-whether that specific `PRAGMA` happens to succeed: the rest of that function's `PRAGMA` calls
-(`foreign_keys`, `synchronous`, `auto_vacuum`) are either pointless or would fail outright against
-a read-only connection.
+persistent property does not (already true by the time a read-only connection opens): every
+repository this crate creates is already durably in WAL mode from `init_repository` onward, so
+there is nothing to gain from re-asserting it - confirmed empirically, a plain
+`SQLITE_OPEN_READ_ONLY` connection can still issue `PRAGMA journal_mode = WAL` as a no-op when the
+database is already in WAL mode, but `open_repository_read_only` does not attempt it, since
+nothing needs it to. A read-only connection cannot reuse `configure_write_connection` regardless:
+the rest of that function's `PRAGMA` calls (`foreign_keys`, `synchronous`, `auto_vacuum`) are
+either pointless or would fail outright against a read-only connection.
 
 Two further properties this split needed, beyond the connection-pragma question itself:
 
