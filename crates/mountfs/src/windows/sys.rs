@@ -17,9 +17,13 @@
 //!
 //! The full read-only set plus the structural read-write set
 //! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown`,
-//! mirroring `linux::sys`) are given real signatures - every other
-//! `fuse3_operations` slot is typed as a same-size, unused
-//! function-pointer placeholder.
+//! mirroring `linux::sys`) are given real signatures and wired to a
+//! `dispatch_*` trampoline in `mod.rs`. `flush`/`opendir`/`access` are also
+//! typed with their real signature rather than the `Unimplemented`
+//! placeholder their `linux::sys` counterparts use, but - like every other
+//! remaining `fuse3_operations` slot, all of which are typed as a
+//! same-size, unused function-pointer placeholder - are left unwired and
+//! so are never called.
 
 #![allow(non_camel_case_types)]
 

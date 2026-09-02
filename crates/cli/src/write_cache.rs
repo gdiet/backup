@@ -39,11 +39,8 @@ impl MemoryBudget {
             .is_ok()
     }
 
-    /// The total bytes currently spilled to disk across every [`WriteCache`] sharing this budget
-    /// that this method's caller is tracking on its own behalf - see DESIGN-MOUNT-006's
-    /// backpressure signal, narrowed in DESIGN-MOUNT-010 to released-but-not-yet-persisted work
-    /// specifically. This budget itself only tracks memory, not spilled bytes - a caller
-    /// maintaining that separate count is not this type's job.
+    /// Returns `n` previously-[`try_acquire`](Self::try_acquire)d bytes to the shared budget,
+    /// making them available to other reservations again.
     fn release(&self, n: u64) {
         self.available.fetch_add(n, Ordering::AcqRel);
     }

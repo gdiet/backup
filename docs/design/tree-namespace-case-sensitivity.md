@@ -121,7 +121,7 @@ This was not a theoretical concern by the time it was investigated: a real `db-d
 measurement on native Windows (`performance/measurements/2026-09-01-julius-db-direct-mkdir-native.md`)
 showed throughput falling monotonically from 428.0 to 108.5 ops/s across 19,602 directories created
 under one parent, and a query against a real, large Scala-DedupFS repository
-(`developer-todos/windows-mkdir-degrades-in-large-directories.md`) found that while 78.5% of real
+(`developer-todos/done/windows-mkdir-degrades-in-large-directories.md`) found that while 78.5% of real
 directories hold under 10 entries, a small number of outlier directories (0.09%, 469 of 511,269)
 hold 1,000+ entries each and together account for ~16.3% of all files - exactly the directories this
 cost concentrates in, not a uniform tax on every `mkdir`.

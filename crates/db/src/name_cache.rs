@@ -4,8 +4,8 @@
 //! every miss when the same directory is visited repeatedly in a row (the common case for a bulk
 //! `mkdir`/`create` run into one directory). See that design entry for the background this targets,
 //! the memory/correctness tradeoffs it commits to, and the measurements behind it; see
-//! `developer-todos/windows-mkdir-degrades-in-large-directories.md` for where the problem itself
-//! was first found.
+//! `developer-todos/done/windows-mkdir-degrades-in-large-directories.md` for where the problem
+//! itself was first found.
 //!
 //! A Windows-only feature end to end, on both sides:
 //! [`crate::tree::case_insensitive::find_child_id_case_insensitive`] (the only reader, via
@@ -20,11 +20,11 @@
 //! Holds no lock of its own - [`NameCache`] lives as a plain field alongside the connection inside
 //! [`crate::Repository`]'s single [`std::sync::Mutex`] (see that struct's own doc comment), so it
 //! is unreachable at all except from within [`crate::Repository::with_connection`]/
-//! `with_transaction`'s closure, which already holds that one lock. A second, nested lock (an
-//! earlier version of this cache had one) would only ever have been uncontended by convention, not
-//! by construction - a future caller could have reached it without going through
-//! `with_connection`/`with_transaction` and no compiler error would have caught it. Merging it into
-//! the same `Mutex` instead makes that mistake impossible to make, not just unlikely.
+//! `with_transaction`'s closure, which already holds that one lock. An alternative of a second,
+//! nested lock inside this cache was considered and rejected: it would only ever be uncontended by
+//! convention, not by construction - a caller could reach it without going through
+//! `with_connection`/`with_transaction`, with no compiler error catching the mistake. Merging it
+//! into the same `Mutex` instead makes that mistake impossible to make, not just unlikely.
 //!
 //! This still depends on a [`crate::Repository`] instance funneling *all* of its own database
 //! access through that one connection/lock - DESIGN-METADATA-003's current

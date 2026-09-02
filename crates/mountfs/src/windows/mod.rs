@@ -376,13 +376,6 @@ unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
     }
 }
 
-/// Mounts `fs` at `mountpoint`, blocking until WinFSP unmounts it (Ctrl+C,
-/// the console closing, or the process otherwise ending - see this
-/// module's doc comment for why no custom handling is needed here for
-/// that). Unlike the Linux backend, no `-f` (foreground) flag is needed:
-/// WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a no-op
-/// there - see `sys.rs`), so the footgun `-f` guards against on Linux
-/// does not exist on this platform.
 /// Cheap check for whether WinFSP is actually installed, without starting
 /// a mount. Meant to be called *before* announcing a mount as started -
 /// `mount` below only discovers WinFSP's absence mid-call, once
@@ -392,9 +385,17 @@ pub fn preflight() -> io::Result<()> {
     sys::check_available()
 }
 
+/// Mounts `fs` at `mountpoint`, blocking until WinFSP unmounts it (Ctrl+C,
+/// the console closing, or the process otherwise ending - see this
+/// module's doc comment for why no custom handling is needed here for
+/// that). Unlike the Linux backend, no `-f` (foreground) flag is needed:
+/// WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a no-op
+/// there - see `sys.rs`), so the footgun `-f` guards against on Linux
+/// does not exist on this platform.
+///
 /// `mountpoint` does not need to already exist - unlike `linux::mount`, WinFSP creates it itself
 /// once the mount is live (see `../../performance/scripts/dfs-mount-dir-create.ps1`'s own comment
-/// to that effect). Blocks until the mount is unmounted (Ctrl+C, or the process being killed).
+/// to that effect).
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),

@@ -349,16 +349,6 @@ unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
     }
 }
 
-/// Mounts `fs` at `mountpoint`, blocking (in the foreground - see the
-/// `-f` note below) until it is unmounted (e.g. via `fusermount3 -u
-/// <mountpoint>`, `umount <mountpoint>`, or process signal).
-///
-/// `-f` is required, not optional: without it libfuse's default behavior
-/// is to daemonize (fork into the background), which is unsound to trigger
-/// from a process that may have other threads running (e.g. a Rust test
-/// binary, or any multi-threaded caller) - exactly the kind of footgun
-/// `fuser` sidesteps by not going through libfuse at all, and why callers
-/// of this binding must not be able to opt out of it.
 /// Cheap check for whether libfuse3 is actually available right now,
 /// without starting a mount. Meant to be called *before* announcing a
 /// mount as started - `mount` below only discovers libfuse3's absence
@@ -369,11 +359,21 @@ pub fn preflight() -> io::Result<()> {
     sys::check_available()
 }
 
+/// Mounts `fs` at `mountpoint`, blocking (in the foreground - see the
+/// `-f` note below) until it is unmounted (e.g. via `fusermount3 -u
+/// <mountpoint>`, `umount <mountpoint>`, or process signal).
+///
+/// `-f` is required, not optional: without it libfuse's default behavior
+/// is to daemonize (fork into the background), which is unsound to trigger
+/// from a process that may have other threads running (e.g. a Rust test
+/// binary, or any multi-threaded caller) - exactly the kind of footgun
+/// `fuser` sidesteps by not going through libfuse at all, and why callers
+/// of this binding must not be able to opt out of it.
+///
 /// `mountpoint` must already exist as a directory - unlike `windows::mount`, libfuse does not
 /// create it, and fails outright if it does not. libfuse prints its own diagnostic directly to
 /// stderr in that case ("bad mount point: No such file or directory") - this call's own `Err`
-/// only carries `fuse_main_real`'s exit code, not that message. Blocks until the mount is
-/// unmounted (Ctrl+C, `fusermount3 -u`, or the process being killed).
+/// only carries `fuse_main_real`'s exit code, not that message.
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),
