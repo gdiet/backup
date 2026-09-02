@@ -1,7 +1,7 @@
 //! Resolves a content's logical byte range against `crates/store`, via `crates/db`'s physical
 //! layout (DESIGN-MOUNT-012 in `docs/design/mount-write-path.md`) - the read path an ordinary
-//! read-only open needs, and the same one the future write cache's original-content fallback
-//! will reuse.
+//! read-only open needs, and the same one `crate::write_cache`'s original-content fallback
+//! reuses.
 
 use mountfs::Errno;
 use store::ReadIntegrity;

@@ -227,9 +227,9 @@ mod tests {
     }
 
     // A regression test for the cache itself: a removal must invalidate the *parent's* cached
-    // entry, not the removed id's own - easy to get backwards (an earlier version of this branch
-    // did exactly that), and a stale cache would silently resurrect a removed sibling for every
-    // case-insensitive lookup against that parent from then on.
+    // entry, not the removed id's own - easy to get backwards, and a stale cache would silently
+    // resurrect a removed sibling for every case-insensitive lookup against that parent from then
+    // on.
     #[test]
     fn find_child_id_case_insensitive_does_not_resurrect_a_sibling_removed_after_the_cache_was_warmed()
      {
@@ -585,9 +585,9 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn rename_case_only_respelling_of_self_succeeds_and_updates_spelling() {
-        // REQ-MOUNT-010's own example (install.txt -> Install.txt), exercised via mkdir since no
-        // file-creation path exists yet (REQ-STORAGE-007) - the distinction does not matter here,
-        // the self-identity check runs before any file/directory-kind logic.
+        // REQ-MOUNT-010's own example (install.txt -> Install.txt), exercised via mkdir for
+        // simplicity - the distinction does not matter here, the self-identity check runs before
+        // any file/directory-kind logic.
         let (repo, _dir) = repo();
         let id = repo.mkdir(0, "install.txt", 100).unwrap();
 

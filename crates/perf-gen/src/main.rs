@@ -1,7 +1,7 @@
 //! `perf-gen <size> <seed>` writes exactly `<size>` bytes of a fast, seeded pseudo-random stream to
-//! stdout - a shared content generator for `performance/scripts/file*-{create,read}.{ps1,sh}`
-//! (see `developer-todos/perf-gen-shared-content-generator.md`), so both the PowerShell and shell
-//! variants of the file-content workloads write genuinely, uniformly random per-file content
+//! stdout - a shared content generator for `performance/scripts/file*-{create,read}.{ps1,sh}`, so
+//! both the PowerShell and shell variants of the file-content workloads write genuinely, uniformly
+//! random per-file content
 //! without a slow in-shell generator (PowerShell's `System.Random`) dominating the timed loop at
 //! larger file sizes, and without comparing two different platform RNG implementations at the
 //! largest size the way `/dev/urandom` on Linux vs. `RNGCryptoServiceProvider` on Windows would.

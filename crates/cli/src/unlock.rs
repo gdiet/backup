@@ -140,8 +140,9 @@ mod tests {
 
         // Simulates a database this process cannot actually open - e.g. a WAL write-open failing
         // outright over a filesystem that does not support it
-        // (agent-todos/network-fs-sqlite-reliability-docs.md) - exactly the situation `dfs unlock`
-        // exists to recover from, so its own guard must not need to open the database at all.
+        // (agent-todos/done/network-fs-sqlite-reliability-docs.md) - exactly the situation `dfs
+        // unlock` exists to recover from, so its own guard must not need to open the database at
+        // all.
         std::fs::write(
             db::meta_dir(&repo_path).join("repository.sqlite3"),
             b"not a real sqlite file",

@@ -3,7 +3,7 @@
 //! `argv[2]` - used by `tests/rename_noreplace.rs` to empirically confirm
 //! what bit convention WinFSP's `cygfuse` layer actually uses for its
 //! `rename` callback's `flags` parameter (see
-//! `agent-todos/verify-rename-noreplace-against-real-winfsp.md`).
+//! `agent-todos/done/verify-rename-noreplace-against-real-winfsp.md`).
 //!
 //! `rename` always returns `Ok(())` regardless of `no_replace` - this
 //! binary only observes what the dispatch layer derived from the real

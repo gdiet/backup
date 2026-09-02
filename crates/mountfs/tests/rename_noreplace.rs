@@ -5,9 +5,9 @@
 //!
 //! Empirically confirms what bit convention WinFSP's `cygfuse`
 //! compatibility layer actually uses for its `rename` callback's `flags`
-//! parameter, closing `agent-todos/verify-rename-noreplace-against-real-
-//! winfsp.md` - see `RENAME_NOREPLACE`'s doc comment in `src/lib.rs` for
-//! the confirmed result.
+//! parameter, closing `agent-todos/done/verify-rename-noreplace-against-
+//! real-winfsp.md` - see `RENAME_NOREPLACE`'s doc comment in `src/lib.rs`
+//! for the confirmed result.
 
 #![cfg(target_os = "windows")]
 
