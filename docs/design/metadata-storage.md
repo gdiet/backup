@@ -675,7 +675,7 @@ DESIGN-METADATA-003's fuller "reads split onto their own connection(s)" end stat
 concurrent read-only connections backing a single `Repository`, or read concurrency within a
 read-write session); worth revisiting once real read concurrency under a mount actually needs it.
 
-`crates/db/src/name_cache.rs`'s experimental per-directory name cache (DESIGN-MOUNT-017 in
+`crates/db/src/name_cache.rs`'s per-directory name cache (DESIGN-MOUNT-017 in
 [`tree-namespace-case-sensitivity.md`](tree-namespace-case-sensitivity.md)) leans on exactly this
 one-connection-per-`Repository` property for its own correctness: it holds no lock of its own at
 all, living as a plain field alongside the connection inside the same `Mutex` (a `Locked { conn,

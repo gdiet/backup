@@ -1,5 +1,5 @@
-//! An experimental (DESIGN-MOUNT-017 in `tree-namespace-case-sensitivity.md`, not yet decided),
-//! small LRU cache of a handful of recently-touched directories' live children - meant to spare
+//! DESIGN-MOUNT-017's (`tree-namespace-case-sensitivity.md`) small LRU cache of a handful of
+//! recently-touched directories' live children - meant to spare
 //! [`crate::tree`]'s Windows-only case-insensitive lookup fallback its unindexed full scan on
 //! every miss when the same directory is visited repeatedly in a row (the common case for a bulk
 //! `mkdir`/`create` run into one directory). See that design entry for the background this targets,

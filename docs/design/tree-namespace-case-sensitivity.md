@@ -108,7 +108,9 @@ same-process SQLite connection on a cross-compiled binary.
 
 ## DESIGN-MOUNT-017: An in-memory name cache for the case-insensitive lookup fallback
 
-Status: draft
+Status: decided
+
+Implemented on branch `write-cache` (not yet merged into `mount-read-write`) - `crates/db/src/name_cache.rs`.
 
 ### Background
 
@@ -229,10 +231,13 @@ selectivity the large, patterned directories this cache targets need most.
 - `NAME_CACHE_CAPACITY` is a private, hardcoded constant - not exposed via `RepositorySettings` or
   the CLI, so there is no way to disable or resize it without a code change.
 
-Revisit if: this graduates from an experiment (branch `write-cache`) to something actually kept -
-at minimum, decide whether per-directory memory needs its own bound (e.g. a total cached-entry
-budget, or skipping caching entirely for a directory beyond some size), and whether
-`NAME_CACHE_CAPACITY` should be measured/tuned rather than left as a feel-based guess.
+Revisit if: a workload's cold-path cost (the first, not-yet-cached touch of an already-large
+directory - see "Known limitations" above) turns out to matter in practice, which would favor
+building the persisted-fold-column alternative in DESIGN-MOUNT-005 alongside or instead of this
+cache; or if per-directory memory actually needs its own bound (e.g. a total cached-entry budget, or
+skipping caching entirely for a directory beyond some size) rather than being left unbounded; or if
+`NAME_CACHE_CAPACITY` ever needs to be measured/tuned rather than left as the current feel-based
+guess.
 
 ### Verification
 
@@ -241,5 +246,20 @@ the fallback path on non-Windows hardware: the pre-cache monotonic decline (428.
 shape, reproduced locally as 588.3 -> 146.0 ops/s) became, after this cache
 (`HashMap`-keyed, pre-folded), essentially flat across all 5 runs (~12,000-13,000 ops/s, no
 discernible decline) - consistent with a warm lookup no longer scaling with the parent's live child
-count. Correctness verification is the white-box mutation-path audit described under "Decision"
-above, not a separate section, since it is part of what this decision actually commits to.
+count.
+
+Confirmed afterward on the actual target platform, not only in simulation:
+`performance/measurements/2026-09-02-julius-db-direct-mkdir-native-with-name-cache.md`, a real
+`db-direct` `mkdir` run on `julius` (native Windows/WinFSP), directly A/B'd against the pre-cache
+baseline (`2026-09-01-julius-db-direct-mkdir-native.md`, same tool/machine/power profile/IO device).
+The baseline's monotonic decline (428.0 -> 108.5 ops/s over 19,602 siblings) is gone: this run stays
+flat (3583.7-3696.3 ops/s, no trend) across 363,421 siblings - roughly 18.5x more than the baseline
+ever reached - with a ~18.5x higher mean throughput (3633.8 vs. 196.0 ops/s) at that scale, and the
+gap still widening for any directory large enough to have hit the baseline's worst rungs. This was
+the one open question before treating this decision as settled - whether the simulated result held
+on real Windows/WinFSP, not just on non-Windows hardware with the platform gate bypassed - and it
+does, qualitatively exactly (decline eliminated) even though the absolute ops/s naturally differs
+from the simulation (different hardware).
+
+Correctness verification is the white-box mutation-path audit described under "Decision" above, not
+a separate section, since it is part of what this decision actually commits to.

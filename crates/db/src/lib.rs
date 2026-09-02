@@ -91,7 +91,7 @@ pub enum Error {
     /// The root entry cannot be removed.
     CannotRemoveRoot,
     /// Another thread using this [`Repository`] panicked while holding its internal lock (guarding
-    /// the connection and, experimentally - DESIGN-MOUNT-017 - the name cache alongside it).
+    /// the connection and DESIGN-MOUNT-017's name cache alongside it).
     Poisoned,
     /// [`acquire_write_lock`] found the repository's write lock file already present - either
     /// genuinely held by another process, or left behind by one that exited without releasing it
@@ -246,7 +246,7 @@ impl From<rusqlite_migration::Error> for Error {
     }
 }
 
-/// [`Repository`]'s connection and (experimental, DESIGN-MOUNT-017) name cache, held together
+/// [`Repository`]'s connection and DESIGN-MOUNT-017's name cache, held together
 /// behind one [`Mutex`] rather than two separately-locked fields - see [`Repository`]'s own doc
 /// comment and `crates/db/src/name_cache.rs` for why: the cache's own correctness depends on never
 /// being reached except while the connection is already locked, and putting both behind the same

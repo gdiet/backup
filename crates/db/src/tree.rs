@@ -133,7 +133,7 @@ fn insert_keeping_highest_id(candidates: &mut HashMap<String, i64>, folded_key: 
 /// (not itself `#[cfg(windows)]`) so its actual query-and-match logic can be exercised by tests on
 /// any platform, even though [`find_child_id`] only ever calls it on a real Windows build.
 ///
-/// Consults `cache` first - DESIGN-MOUNT-017's experimental mitigation for the unindexed full scan
+/// Consults `cache` first - DESIGN-MOUNT-017's mitigation for the unindexed full scan
 /// below being O(n) in the parent's live child count on every miss. The cached form is keyed by
 /// folded name (`HashMap<String, i64>`, not a linearly-scanned list), so a lookup against an
 /// already-warm entry is an `O(1)` average hash lookup, not another `O(n)` scan.

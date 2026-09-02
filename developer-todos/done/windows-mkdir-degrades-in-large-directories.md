@@ -74,3 +74,18 @@ scan; short-circuit/cap the fallback scan; or reconsider whether the fallback ne
 unconditionally on every miss versus some cheaper pre-check. Whatever the fix, it should get a
 `db-direct` `mkdir` measurement re-run afterward (large-sibling-count regime specifically) to
 confirm the O(n^2) shape is actually gone, not just "looks faster."
+
+## Done (2026-09-02)
+
+Went with an in-memory per-directory name cache rather than an indexed column - DESIGN-MOUNT-017 in
+`docs/design/tree-namespace-case-sensitivity.md` (`Status: decided`, implemented on branch
+`write-cache`, not yet merged into `mount-read-write`). Re-measured as suggested above, both
+simulated (Linux, `cfg!(windows)` gate bypassed) and for real on `julius` (native Windows/WinFSP):
+the O(n^2) shape is confirmed gone in both, most conclusively in the real `db-direct` `mkdir` A/B
+against this file's own baseline data (`performance/measurements/2026-09-02-julius-db-direct-mkdir-native-with-name-cache.md`
+vs. `2026-09-01-julius-db-direct-mkdir-native.md`) - flat 3583.7-3696.3 ops/s across 363,421
+siblings (~18.5x more than the original baseline ever reached), instead of the original monotonic
+428.0 -> 108.5 ops/s decline. See DESIGN-MOUNT-017's own "Decision"/"Known limitations" for what the
+chosen approach does and does not cover (notably: still pays the full scan on a directory's first,
+not-yet-cached touch - the persisted-column alternative documented in DESIGN-MOUNT-005 would also
+fix that, and remains on record as a "revisit if" trigger there).
