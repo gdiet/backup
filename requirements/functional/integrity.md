@@ -14,7 +14,7 @@ by REQ-PERFORMANCE-001 in
 
 Rationale: a backup system's core promise is that stored data is still what it claims to be - that
 needs a way to actually check it, not just assume it. A thorough, hash-verifying check reads every
-byte back from disk, which can take a long time over a large repository; that cost should be chosen
+byte back from disk, which can take a long time over a large repository. That cost should be chosen
 deliberately, not paid every time just to confirm data physically exists. Making thoroughness a
 depth on one capability keeps "is my data OK" a single question with an adjustable confidence
 level, rather than two separately named tools whose difference needs explaining.
@@ -43,8 +43,8 @@ step in normal operation, which stored content is no longer referenced by any tr
 therefore safe to purge.
 
 Rationale: this knowledge silently drifting out of sync with what is actually referenced would risk
-purging content still in use, or never being able to reclaim content that is genuinely unused - or,
-short of either extreme, would force a purge operation to verify references itself before trusting
-anything it deletes, turning what should be a cheap, already-known lookup into a slow,
-full-repository scan every time it runs. All three are unacceptable when users are trusting the
-system to keep their data safe.
+purging content still in use. It could also mean never being able to reclaim content that is
+genuinely unused. Short of either extreme, it would force a purge operation to verify references
+itself before trusting anything it deletes, turning what should be a cheap, already-known lookup
+into a slow, full-repository scan every time it runs. All three are unacceptable when users are
+trusting the system to keep their data safe.

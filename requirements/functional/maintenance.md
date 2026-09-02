@@ -49,11 +49,11 @@ running.
 
 Rationale: an operation that physically allocates or relocates stored bytes, or wholesale-replaces
 the metadata store, would corrupt the repository if run concurrently with another such operation.
-One that only writes metadata would not — the database engine's own cross-process locking already
-serializes those — but requiring the same exclusivity for every mutating operation is simpler to
-reason about than a rule depending on which kind of write is involved, and does not rely on that
-safety margin holding indefinitely as the code changes. An occasional unnecessary refusal is a far
-smaller cost than the alternative.
+One that only writes metadata would not corrupt the repository this way — the database engine's own
+cross-process locking already serializes those. Requiring the same exclusivity for every mutating
+operation is nonetheless simpler to reason about than a rule depending on which kind of write is
+involved, and it does not rely on that safety margin holding indefinitely as the code changes. An
+occasional unnecessary refusal is a far smaller cost than the alternative.
 
 ### REQ-MAINTENANCE-005: Local usage logging
 Status: agreed
@@ -89,8 +89,8 @@ wrong physical bytes.
 
 Rationale: without this warning, restoring an outdated-but-not-obviously-outdated backup after such
 an operation would silently read back wrong bytes for some entries, with no symptom pointing at the
-cause — this directly undermines the trust REQ-MAINTENANCE-001/002 exist to provide in the first
-place, not just a convenience gap.
+cause. This directly undermines the trust REQ-MAINTENANCE-001/002 exist to provide in the first
+place — it is not just a convenience gap.
 
 ### REQ-MAINTENANCE-008: Manual stale-lock recovery
 Status: agreed

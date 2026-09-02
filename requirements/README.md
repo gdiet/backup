@@ -46,11 +46,11 @@ different words for "settled" (`agreed` here, `decided` there).
 once assigned: a rejected, superseded, or relocated requirement keeps its ID and gets an updated
 `Status` rather than being deleted or renumbered, so any `REQ-...` reference elsewhere stays valid.
 
-`superseded-by` and `moved-to` mark different things - keep them distinct rather than using
-`superseded-by` for both: `superseded-by` means the requirement itself changed (a new decision
-replaces the old one, with different content); `moved-to` means the content is unchanged, only its
-`<AREA>` is - filed at a new ID because it turned out to belong under a different topic area, not
-because anything about the requirement was reconsidered.
+`superseded-by` and `moved-to` mark different things, so keep them distinct rather than using
+`superseded-by` for both. `superseded-by` means the requirement itself changed: a new decision
+replaces the old one with different content. `moved-to` means the content is unchanged and only its
+`<AREA>` is - the requirement was filed at a new ID because it turned out to belong under a
+different topic area, not because anything about the requirement was reconsidered.
 
 ## Cross-Referencing Another Requirement
 

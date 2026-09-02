@@ -107,6 +107,6 @@ deleted-entry browsing and REQ-MOUNT-008's disambiguation, for a caller that doe
 at all.
 
 Rationale: REQ-RESTORE-002 and REQ-CLI-004 both act on a specific soft-deleted entry addressed by
-its history-entry identity, but neither one discovers that identity itself; without a way to list
+its history-entry identity, but neither one discovers that identity itself. Without a way to list
 soft-deleted entries outside a mount, a caller in the same position REQ-CLI-003 already covers for
 live entries - a headless host, an automation script - has no way to find which entry to name.

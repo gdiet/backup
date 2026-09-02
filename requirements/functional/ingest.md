@@ -87,9 +87,9 @@ instead of silently proceeding. An explicit override lets a caller force the ref
 regardless of this check.
 
 Rationale: REQ-INGEST-003's whole benefit disappears silently if the supplied reference does not
-actually correspond to what is being backed up - every source file simply falls back to a full read
-one at a time, with no signal that anything is wrong until the run is noticed to have taken far
-longer than expected. Catching a plainly mismatched reference immediately turns a silent
+actually correspond to what is being backed up. Every source file then simply falls back to a full
+read, one at a time, with no signal that anything is wrong until the run is noticed to have taken
+far longer than expected. Catching a plainly mismatched reference immediately turns a silent
 performance regression into an actionable error at the point a caller can still do something about
 it.
 
@@ -106,6 +106,6 @@ directory tree instead of failing outright.
 
 Rationale: a caller automating repeated ingest runs (a nightly backup script, in particular)
 otherwise has to compute the same timestamped-path and existence-checking logic itself before every
-call; folding it into the target-path syntax removes a whole category of scripting boilerplate and,
-for the existence-assertion half, catches a class of accidental-directory-creation mistakes before
-they happen rather than after.
+call. Folding it into the target-path syntax removes a whole category of scripting boilerplate.
+For the existence-assertion half specifically, it also catches a class of
+accidental-directory-creation mistakes before they happen rather than after.
