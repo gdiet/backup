@@ -32,46 +32,20 @@ libfuse3, Windows via WinFSP, behind a single trait - see
 
 ## Known Limitations
 
-- **SQLite metadata reliability on network or bridged filesystems**: opening a repository's
-  database at all - not only the write lock covered below - depends on the underlying filesystem
-  correctly supporting SQLite's WAL journal mode and its locking. This is reliable on local or
-  removable storage (an internal disk, an external/USB drive, in any filesystem format, FAT
-  included). It is not guaranteed across a network mount, and is actively broken across a
-  WSL<->Windows boundary specifically (both directions go through the `9p`/`v9fs` protocol,
-  whether reached as `\\wsl.localhost\...` from Windows or `/mnt/c/...` from WSL): a repository
-  whose storage physically lives on one side can fail outright when opened from the other -
-  `error: database is locked` or `error: disk I/O error`, even for a single read, before any write
-  lock is even attempted - and reliability is asymmetric (worse once the WAL side-files, `-wal`/
-  `-shm`, already exist) and direction-dependent. SMB has tested reliably for single-process access
-  (both a local loopback share and a real mapped network drive on a corporate DFS namespace);
-  concurrent multi-process access over any network filesystem is untested and stays under the
-  write-locking caveat below regardless. Guidance: run `dfs` from the machine that the
-  repository's storage physically lives on, and prefer keeping a repository on real local or
-  removable storage over a network mount or a WSL<->Windows bridge.
-- **Repository write locking on network-mounted storage**: opening a repository for writing (a
-  read-write mount, in particular) takes an operating-system advisory lock to keep two writing
-  sessions from running against the same repository at once. This is reliably enforced by the
-  operating system for a repository on local or removable storage (an internal disk, an external/
-  USB drive, in any filesystem format, FAT included) - it is *not* guaranteed on a
-  network-mounted repository, where reliability depends on the network filesystem protocol's own
-  locking support and how the client/server happen to be configured (a distinct, narrower case of
-  the broader limitation above - one specifically about the write-lock mechanism itself, not
-  database access in general). Keeping a repository on local or removable storage avoids this
-  limitation entirely. Whoever currently holds the lock is recorded (hostname, process id,
-  acquisition time) in the lock file itself, inside the repository's `meta/` directory, for a human
-  diagnosing an "already locked" report to check.
-- **A crashed or forcibly killed process leaves the write lock in place, on any storage**: a
-  process that opened a repository for writing and then exited without cleanly unmounting (a
-  crash, a hard kill) leaves the lock file behind, and the next `mount --read-write` attempt is
-  refused even though nothing is actually still using the repository - this is deliberate, not
-  automatically recovered from, so that recovery is never a guess (see "Repository write locking
-  on network-mounted storage" above for why). Run `dfs unlock PATH` to check whether the lock is
-  actually still held and clear it if it is not; it reports who it was previously held by before
-  removing it, and never touches a lock that genuinely is still held.
-- **Deleting a file right after writing it can be resurrected by a lagging background settle**:
-  a write's chunking/hashing/storage happens in the background after the file is closed; deleting
-  the file before that finishes can still let it reappear once the background job completes,
-  unaware the name was removed in the meantime. See DESIGN-MOUNT-015's "Known limitation" in
+- **Network mounts and the WSL↔Windows bridge are unreliable**: DedupFS works reliably on local or
+  removable storage (an internal disk, an external/USB drive, any filesystem format including
+  FAT). Over a network mount, or across the WSL↔Windows bridge specifically, both basic database
+  access and the write lock that keeps two writing sessions apart can fail unpredictably. Keep a
+  repository on local or removable storage; if you must use a network mount, run `dfs` from the
+  machine the storage physically lives on, and avoid two write sessions from different machines at
+  once. Technical detail: [`docs/design/metadata-storage.md`](docs/design/metadata-storage.md) and
+  [`docs/design/repository-locking.md`](docs/design/repository-locking.md).
+- **A crash or forced kill can leave a repository locked**: run `dfs unlock PATH` to check for and
+  clear a stale write lock left behind by a process that did not exit cleanly - it reports who
+  held it, and never touches a lock that is genuinely still held.
+- **Deleting a file right after writing it can occasionally undo the delete**: a short background
+  step finishes committing the write after the file is closed; deleting the file in that narrow
+  window can let it reappear once that step completes. See DESIGN-MOUNT-015's "Known limitation" in
   [`docs/design/mount-write-path.md`](docs/design/mount-write-path.md) for the details.
 
 ## System Requirements

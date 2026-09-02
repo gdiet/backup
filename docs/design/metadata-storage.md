@@ -598,9 +598,19 @@ again:**
    I/O-category SQLite error. That case surfaces as `Error::ConnectionUnreliable` instead (see
    `crates/db/src/connection.rs`'s `wrap_unreliable_connection_error`) - a distinct failure mode
    from the silent-fallback one this pragma check exists to catch. See
-   [`../../README.md`](../../README.md)'s "Known Limitations" for the user-facing description,
+   [`../../README.md`](../../README.md)'s "Known Limitations" for the short, user-facing summary,
    the same cross-reference [`repository-locking.md`](repository-locking.md) already carries for
    the separate write-lock limitation.
+
+   In practice, this surfaces as `error: database is locked` or `error: disk I/O error`, sometimes
+   for a single read, before any write lock is even attempted. Reliability is asymmetric (worse
+   once the WAL side-files, `-wal`/`-shm`, already exist) and direction-dependent between the two
+   sides of a WSL<->Windows bridge - a repository whose storage physically lives on one side can
+   fail outright when opened from the other. SMB has tested reliably for single-process access
+   (both a local loopback share and a real mapped network drive on a corporate DFS namespace);
+   concurrent multi-process access over any network filesystem is untested and stays under
+   DESIGN-MAINTENANCE-001's separate write-locking limitation
+   ([`repository-locking.md`](repository-locking.md)) regardless.
 
 Deliberately left untouched, since nothing has measured a need to: `cache_size`, `mmap_size`,
 `temp_store`, `wal_autocheckpoint`.
