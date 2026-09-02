@@ -166,26 +166,21 @@ means for the rest of the session - not every systemic failure is the same shape
   doomed equally, reads included, not just writes - the read-only-degradation response above would
   be misleading here, since it implies the mount is still readable. Read-only degradation therefore
   does not apply to this case at all; instead, the first such occurrence in a session - from a
-  background job or a synchronous FUSE call alike, both funnel through the same classification -
-  gets one additional, explicit log line plus a matching stderr notice, so an operator with the
-  console visible sees directly that the process needs restarting, without having to notice a
-  string of otherwise-unremarkable `EIO` results and go looking for why. Every further call keeps
-  returning its own `EIO` independently, on its own merits, with nothing further logged - there is
-  nothing left to gate, since the connection was already what was broken.
+  background job or a synchronous FUSE call (`mkdir`/`rmdir`/`rename`/`unlink`/`utimens`/a path
+  lookup) alike, both funnel through the same classification - gets one additional, explicit log
+  line plus a matching stderr notice, so an operator with the console visible sees directly that
+  the process needs restarting, without having to notice a string of otherwise-unremarkable `EIO`
+  results and go looking for why. A synchronous call still returns its own ordinary `errno` for the
+  one call that hit the failure - there is no better FUSE-layer response to a failure that already
+  happened - and every further call, from either source, keeps returning its own `EIO`
+  independently on its own merits, with nothing further logged: there is nothing left to gate,
+  since the connection was already what was broken.
 
 `io::ErrorKind` (`StorageFull`, and I/O errors generally) from `crates/store` is what marks a
 failure as the first, write-degrading kind above; a `db::Error` variant tied to the shared
 connection itself (an I/O, SQLite, or migration failure reported by `crates/db`, or a poisoned
 connection mutex) marks it as the second, connection-dead kind - both are still logged with the
 same "systemic" category text as before, distinguished only by which response they trigger.
-
-A synchronous FUSE call (`mkdir`/`rmdir`/`rename`/`unlink`/`utimens`/a path lookup) that itself hits
-one of these connection-dead `db::Error` variants was, before this, invisible beyond whatever
-`EIO`/`ENOTDIR`/etc. it returned to its immediate caller - no log line, no operator-visible signal
-that the mount as a whole, not just that one call, had stopped working. It still returns that same
-per-call `errno` (there is no other sensible FUSE-layer response to a failure that already
-happened), but now goes through the same one-time connection-dead report as a background job's
-failure would.
 
 ### Alternative considered and rejected: attempting transient/permanent detection for systemic failures
 
