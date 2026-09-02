@@ -23,7 +23,7 @@ turns an accidental or premature deletion into a recoverable event instead of a 
 without requiring a restore from an older backup.
 
 ### REQ-TREE-003: Deletion history and recovery
-Status: draft
+Status: agreed
 Importance: must
 
 A given tree location has at most one live entry at a time, but any number (0..N) of deleted
@@ -36,8 +36,9 @@ to disk without first reactivating it.
 
 How deleted entries and their history are displayed and addressed through a specific interface -
 including disambiguating same-location repeat deletions in a listing - is covered separately:
-REQ-MOUNT-004 in [`mount.md`](mount.md) for the mount; a CLI-listing requirement is not yet
-specified. See REQ-TREE-008 for whether a directory delete cascades to its children.
+REQ-MOUNT-004 in [`mount.md`](mount.md) for the mount, REQ-CLI-007 in
+[`cli-commands.md`](cli-commands.md) for a command-line listing. See REQ-TREE-008 for whether a
+directory delete cascades to its children.
 
 Rationale: recovering a deleted file should not require restoring the whole repository to an
 earlier point in time, and not every recovery should require touching the repository's live state

@@ -94,3 +94,19 @@ reasoning - in short, this only makes sense together with distributing the execu
 portable download the operator places wherever they keep the repository (often removable/external
 storage), rather than through a system installer; it satisfies REQ-OPERABILITY-003's general
 "reasonable defaults" principle for this specific, recurring parameter.
+
+### REQ-CLI-007: List soft-deleted entries without mounting
+Status: draft
+Importance: should
+
+A command lists soft-deleted entries - at a given tree location, or repository-wide - without
+requiring a mount session first. Each listed entry shows its history-entry identity (REQ-TREE-004
+in [`tree.md`](tree.md)) and deletion timestamp, sufficient to address it for REQ-RESTORE-002's
+direct restore or REQ-CLI-004's permanent delete. This is the CLI counterpart to REQ-MOUNT-004's
+deleted-entry browsing and REQ-MOUNT-008's disambiguation, for a caller that does not want to mount
+at all.
+
+Rationale: REQ-RESTORE-002 and REQ-CLI-004 both act on a specific soft-deleted entry addressed by
+its history-entry identity, but neither one discovers that identity itself; without a way to list
+soft-deleted entries outside a mount, a caller in the same position REQ-CLI-003 already covers for
+live entries - a headless host, an automation script - has no way to find which entry to name.
