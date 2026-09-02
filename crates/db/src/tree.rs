@@ -111,13 +111,18 @@ fn fold_key(name: &str) -> String {
     name.to_uppercase()
 }
 
-/// Among `candidates`, the highest-`id` (most recently created) entry whose name
-/// case-insensitively equals `target`, if any - DESIGN-MOUNT-005's deterministic tiebreak.
-fn case_insensitive_match(candidates: &[(i64, String)], target: &str) -> Option<i64> {
-    let target_key = fold_key(target);
+/// Among `candidates` - already-folded `(id, folded_name)` pairs - the highest-`id` (most recently
+/// created) entry whose folded name equals `target_key` (itself already folded by the caller), if
+/// any - DESIGN-MOUNT-005's deterministic tiebreak.
+///
+/// Deliberately takes pre-folded input on both sides rather than folding here: every caller either
+/// already has the folded form or can fold it once when it is first computed, and re-folding a
+/// candidate on every single lookup against an otherwise-warm cache would throw away exactly the
+/// point of caching it (`fold_key` allocates a new `String` per call).
+fn case_insensitive_match(candidates: &[(i64, String)], target_key: &str) -> Option<i64> {
     candidates
         .iter()
-        .filter(|(_, name)| fold_key(name) == target_key)
+        .filter(|(_, folded_name)| folded_name == target_key)
         .map(|(id, _)| *id)
         .max()
 }
@@ -134,19 +139,29 @@ fn find_child_id_case_insensitive(
     parent_id: i64,
     name: &str,
 ) -> Result<Option<i64>, Error> {
+    let target_key = fold_key(name);
     cache.with_cached_or_populate(
         parent_id,
         || {
+            // Folds each candidate's name once here, at population time - not the raw `name`, so
+            // a lookup against an already-warm cache entry never has to fold again.
             let mut stmt = conn.prepare(
                 "SELECT id, name FROM tree_entries \
                  WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
             )?;
             let candidates: Vec<(i64, String)> = stmt
-                .query_map(params![parent_id], |row| Ok((row.get(0)?, row.get(1)?)))?
-                .collect::<Result<_, _>>()?;
+                .query_map(params![parent_id], |row| {
+                    let id: i64 = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    Ok((id, name))
+                })?
+                .collect::<Result<Vec<(i64, String)>, rusqlite::Error>>()?
+                .into_iter()
+                .map(|(id, name)| (id, fold_key(&name)))
+                .collect();
             Ok(candidates)
         },
-        |candidates| case_insensitive_match(candidates, name),
+        |candidates| case_insensitive_match(candidates, &target_key),
     )
 }
 
@@ -235,7 +250,7 @@ pub(crate) fn mkdir(
     match result {
         Ok(_) => {
             let id = conn.last_insert_rowid();
-            cache.note_inserted(parent_id, id, name);
+            cache.note_inserted(parent_id, id, &fold_key(name));
             touch(conn, parent_id, time_millis)?;
             Ok(id)
         }
@@ -344,7 +359,7 @@ fn settle_file_impl(
         params![parent_id, name, time_millis, content_id, KIND_FILE],
     )?;
     let id = conn.last_insert_rowid();
-    cache.note_inserted(parent_id, id, name);
+    cache.note_inserted(parent_id, id, &fold_key(name));
 
     if replaced.is_none() {
         touch(conn, parent_id, time_millis)?;
@@ -981,32 +996,52 @@ mod tests {
     // DESIGN-MOUNT-005: the fold/tiebreak logic itself, platform-independent - runs on every
     // platform regardless of which one actually reaches it through `find_child_id`.
 
+    // `case_insensitive_match` now takes already-folded input on both sides (see its doc comment) -
+    // these tests fold their literals through `super::fold_key` themselves, exactly as every real
+    // caller does, rather than relying on the function to fold internally.
+
     #[test]
     fn case_insensitive_match_finds_an_ascii_case_variant() {
-        let candidates = vec![(1, "Foo".to_string())];
-        assert_eq!(super::case_insensitive_match(&candidates, "foo"), Some(1));
+        let candidates = vec![(1, super::fold_key("Foo"))];
+        let target_key = super::fold_key("foo");
+        assert_eq!(
+            super::case_insensitive_match(&candidates, &target_key),
+            Some(1)
+        );
     }
 
     #[test]
     fn case_insensitive_match_ignores_a_genuinely_different_name() {
-        let candidates = vec![(1, "bar".to_string())];
-        assert_eq!(super::case_insensitive_match(&candidates, "foo"), None);
+        let candidates = vec![(1, super::fold_key("bar"))];
+        let target_key = super::fold_key("foo");
+        assert_eq!(
+            super::case_insensitive_match(&candidates, &target_key),
+            None
+        );
     }
 
     #[test]
     fn case_insensitive_match_picks_the_highest_id_among_several_matches() {
         let candidates = vec![
-            (3, "foo".to_string()),
-            (7, "Foo".to_string()),
-            (5, "FOO".to_string()),
+            (3, super::fold_key("foo")),
+            (7, super::fold_key("Foo")),
+            (5, super::fold_key("FOO")),
         ];
-        assert_eq!(super::case_insensitive_match(&candidates, "foo"), Some(7));
+        let target_key = super::fold_key("foo");
+        assert_eq!(
+            super::case_insensitive_match(&candidates, &target_key),
+            Some(7)
+        );
     }
 
     #[test]
     fn case_insensitive_match_folds_non_ascii_case_too() {
-        let candidates = vec![(1, "café".to_string())];
-        assert_eq!(super::case_insensitive_match(&candidates, "CAFÉ"), Some(1));
+        let candidates = vec![(1, super::fold_key("café"))];
+        let target_key = super::fold_key("CAFÉ");
+        assert_eq!(
+            super::case_insensitive_match(&candidates, &target_key),
+            Some(1)
+        );
     }
 
     // DESIGN-MOUNT-005's query-and-match fallback, called directly (bypassing `find_child_id`'s

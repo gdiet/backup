@@ -674,3 +674,11 @@ with two variants of that one connection depending on how it was opened - not ye
 DESIGN-METADATA-003's fuller "reads split onto their own connection(s)" end state (multiple
 concurrent read-only connections backing a single `Repository`, or read concurrency within a
 read-write session); worth revisiting once real read concurrency under a mount actually needs it.
+
+`crates/db/src/name_cache.rs`'s experimental per-directory name cache (see
+`developer-todos/windows-mkdir-degrades-in-large-directories.md`) leans on exactly this
+one-connection-per-`Repository` property for its own correctness without a contended lock: it
+lives behind its own `Mutex`, but every access happens while a caller already holds the single
+connection lock above, so that lock is never actually contended. A future split to multiple
+concurrent connections backing one `Repository` would put more than one connection behind a single
+cache and needs to revisit that cache's own locking alongside the split, not after it.
