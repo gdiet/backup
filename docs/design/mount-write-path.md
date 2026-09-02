@@ -128,8 +128,8 @@ that outlived the FUSE call that spawned it (the concern DESIGN-MOUNT-006's non-
 raised) - it stays refused (or waiting) for the whole time the mount is up, regardless of whether
 any specific write is actually active at that instant.
 
-## DESIGN-MOUNT-009: Background write failures are logged to a file in `meta/`; a systemic failure degrades the mount to read-only
-Status: implemented (crates/cli/src/failure_log.rs, crates/cli/src/dedup_fs.rs)
+## DESIGN-MOUNT-009: Background write failures are logged to a file in `meta/`; a `crates/store` I/O failure degrades the mount to read-only
+Status: implemented (crates/cli/src/failure_log.rs, crates/cli/src/dedup_fs.rs, crates/cli/src/settle_pool.rs)
 
 A background chunking/hashing/storage-write job (DESIGN-MOUNT-006) can fail after `release()` has
 already returned success, with no FUSE call left to report it through. The first version of this
@@ -143,19 +143,49 @@ on later without re-deriving it from surrounding context: which file the job was
 category, the underlying error message, and when it happened.
 
 Failures are treated differently depending on whether they are systemic or isolated. A systemic
-failure - the kind where the underlying cause (storage full, the underlying volume gone) dooms
-every other queued or future job just as certainly as the one that just failed - immediately
-degrades the mount session to read-only: new write-intent opens fail with an actionable error
-instead of queuing more work behind a job that would only fail the same way, and any jobs already
-in flight run to completion or failure, landing in the same log either way. Recovering write access
-means unmounting, addressing the underlying cause, and mounting again - there is no automatic
-retry, and no attempt to tell a transient systemic blip (e.g. a network mount reconnecting on its
-own) apart from a permanent one; both are treated the same way and left to the operator to
-diagnose. `io::ErrorKind` (`StorageFull`, and I/O errors generally) is what marks a failure as
-systemic; this project's own typed logic errors (a bug tied to one file's content) mark it as
-isolated instead. An isolated failure only logs that one file's outcome and otherwise does not
-affect the session - nothing else in flight is treated as suspect just because one file's job
-failed.
+failure - the kind where the underlying cause dooms every other queued or future job just as
+certainly as the one that just failed - is logged with that category; an isolated failure (this
+project's own typed logic error, a bug tied to one file's content) only logs that one file's
+outcome and otherwise does not affect the session - nothing else in flight is treated as suspect
+just because one file's job failed.
+
+A systemic failure's actual response then splits further, by what its underlying cause actually
+means for the rest of the session - not every systemic failure is the same shape of problem:
+
+- A `crates/store` I/O failure (storage full, the underlying volume gone) leaves the metadata
+  connection - and therefore every read - unaffected; only a future write would repeat the same
+  doomed cause. This immediately degrades the mount session to read-only: new write-intent opens
+  fail with an actionable error instead of queuing more work behind a job that would only fail the
+  same way, and any jobs already in flight run to completion or failure, landing in the same log
+  either way. Recovering write access means unmounting, addressing the underlying cause, and
+  mounting again - there is no automatic retry, and no attempt to tell a transient systemic blip
+  (e.g. a network mount reconnecting on its own) apart from a permanent one; both are treated the
+  same way and left to the operator to diagnose.
+- A failure of the single shared `db::Repository` connection itself (a poisoned connection mutex
+  and the like) is not that shape of problem: every future call through that one connection is
+  doomed equally, reads included, not just writes - the read-only-degradation response above would
+  be misleading here, since it implies the mount is still readable. Read-only degradation therefore
+  does not apply to this case at all; instead, the first such occurrence in a session - from a
+  background job or a synchronous FUSE call alike, both funnel through the same classification -
+  gets one additional, explicit log line plus a matching stderr notice, so an operator with the
+  console visible sees directly that the process needs restarting, without having to notice a
+  string of otherwise-unremarkable `EIO` results and go looking for why. Every further call keeps
+  returning its own `EIO` independently, on its own merits, with nothing further logged - there is
+  nothing left to gate, since the connection was already what was broken.
+
+`io::ErrorKind` (`StorageFull`, and I/O errors generally) from `crates/store` is what marks a
+failure as the first, write-degrading kind above; a `db::Error` variant tied to the shared
+connection itself (an I/O, SQLite, or migration failure reported by `crates/db`, or a poisoned
+connection mutex) marks it as the second, connection-dead kind - both are still logged with the
+same "systemic" category text as before, distinguished only by which response they trigger.
+
+A synchronous FUSE call (`mkdir`/`rmdir`/`rename`/`unlink`/`utimens`/a path lookup) that itself hits
+one of these connection-dead `db::Error` variants was, before this, invisible beyond whatever
+`EIO`/`ENOTDIR`/etc. it returned to its immediate caller - no log line, no operator-visible signal
+that the mount as a whole, not just that one call, had stopped working. It still returns that same
+per-call `errno` (there is no other sensible FUSE-layer response to a failure that already
+happened), but now goes through the same one-time connection-dead report as a background job's
+failure would.
 
 ### Alternative considered and rejected: attempting transient/permanent detection for systemic failures
 

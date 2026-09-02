@@ -53,20 +53,44 @@ impl std::error::Error for JobError {}
 impl JobError {
     /// Whether this failure's underlying cause would just as certainly doom every other queued
     /// or future job, not only this one - DESIGN-MOUNT-009's systemic/isolated split
-    /// (`docs/design/mount-write-path.md`). An I/O failure (`crates/store` or, via `crates/db`,
-    /// the metadata database itself becoming unusable) is systemic; this project's own typed
-    /// logic errors, tied to this one settle attempt's specific file/parent/name, are isolated.
+    /// (`docs/design/mount-write-path.md`). True for either of [`Self::write_degrades_session`]
+    /// or [`Self::kills_connection`]; this project's own typed logic errors, tied to this one
+    /// settle attempt's specific file/parent/name, are isolated instead.
     pub fn is_systemic(&self) -> bool {
-        match self {
-            JobError::Settle(crate::settle::SettleError::Io(_)) => true,
-            JobError::Settle(crate::settle::SettleError::Db(err)) | JobError::Commit(err) => {
-                is_systemic_db_error(err)
-            }
-        }
+        self.write_degrades_session() || self.kills_connection().is_some()
+    }
+
+    /// Whether this failure degrades the whole session's future write-intent opens to read-only
+    /// (DESIGN-MOUNT-009) - true only for a `crates/store` I/O failure (e.g. storage full).
+    /// Deliberately narrower than [`Self::is_systemic`]: a `crates/store` failure leaves the
+    /// metadata connection - and therefore every read - unaffected, so read-only degradation is
+    /// an accurate signal here. A systemic `db::Error` ([`Self::kills_connection`]) does not set
+    /// this, since it is not that shape of failure at all.
+    pub fn write_degrades_session(&self) -> bool {
+        matches!(self, JobError::Settle(crate::settle::SettleError::Io(_)))
+    }
+
+    /// The underlying [`db::Error`], if this failure means the single shared `Repository`
+    /// connection itself has become unusable (`is_systemic_db_error`) - e.g. a poisoned
+    /// connection mutex, which stays poisoned forever. Unlike [`Self::write_degrades_session`],
+    /// this affects every future call through that connection equally, reads included, not just
+    /// writes - so it is not the read-only-degradation case; DESIGN-MOUNT-009's actual response is
+    /// a one-time [`crate::failure_log::FailureLog::report_connection_dead_once`] instead, not a
+    /// flag that would make future write-intent opens the only ones refused.
+    pub fn kills_connection(&self) -> Option<&db::Error> {
+        let err = match self {
+            JobError::Settle(crate::settle::SettleError::Db(err)) | JobError::Commit(err) => err,
+            JobError::Settle(crate::settle::SettleError::Io(_)) => return None,
+        };
+        is_systemic_db_error(err).then_some(err)
     }
 }
 
-fn is_systemic_db_error(err: &db::Error) -> bool {
+/// Whether `err` means the single shared `Repository` connection itself has become unusable -
+/// every future call through it, read or write alike, is doomed the same way, not only this one.
+/// Shared with [`crate::dedup_fs`]'s synchronous FUSE calls, which hit the same connection through
+/// the same `db::Error` variants (DESIGN-MOUNT-009).
+pub(crate) fn is_systemic_db_error(err: &db::Error) -> bool {
     matches!(
         err,
         db::Error::Io(_)

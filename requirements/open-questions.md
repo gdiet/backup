@@ -56,8 +56,8 @@ Status: idea
 
 DESIGN-MOUNT-009 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)
 gives background write failures (DESIGN-MOUNT-006) a first version: a plain log file in `meta/`,
-plus an unconditional read-only degradation on any systemic failure. Left open as a later
-expansion stage: a queryable record of failures (e.g. a database table) and/or a dedicated
-mount-browsable path for surfacing them, so a caller can notice and enumerate failures without
-reading a log file - not needed for a first version, but a natural next step once real usage shows
-the plain log is not enough.
+plus a read-only degradation on a systemic `crates/store` failure. Left open as a later expansion
+stage: a queryable record of failures (e.g. a database table) and/or a dedicated mount-browsable
+path for surfacing them, so a caller can notice and enumerate failures without reading a log file -
+not needed for a first version, but a natural next step once real usage shows the plain log is not
+enough.

@@ -5,8 +5,11 @@
 //! [`crate::pending_files::PendingFiles`], `write`/`truncate` land in its write-cache chain, and
 //! `release` hands a fully-released generation off to [`crate::settle_pool::JobPool`]'s background
 //! settle job - never blocking the releasing call itself (DESIGN-MOUNT-006). A job that fails is
-//! recorded in [`crate::failure_log::FailureLog`], degrading the session to read-only on a
-//! systemic failure (DESIGN-MOUNT-009).
+//! recorded in [`crate::failure_log::FailureLog`] (DESIGN-MOUNT-009), degrading the session's
+//! future write-intent opens to read-only on a `crates/store` I/O failure specifically; a failure
+//! of the shared metadata connection itself, from either a background job or a synchronous call
+//! (`to_errno_reporting_connection_death`), is reported once instead of degrading a flag, since it
+//! affects every future call equally, reads included.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -62,11 +65,15 @@ impl DedupFs {
             cdc_target_size_bits,
             move |job: &SettleJob, err| {
                 if let Some(log) = &failure_log_for_pool {
+                    if let Some(db_err) = err.kills_connection() {
+                        log.report_connection_dead_once(now_millis(), &db_err.to_string());
+                    }
                     log.record(Failure {
                         parent_id: job.parent_id,
                         name: &job.name,
                         time_millis: now_millis(),
                         systemic: err.is_systemic(),
+                        degrades_writes: err.write_degrades_session(),
                         message: err.to_string(),
                     });
                 }
@@ -147,7 +154,7 @@ impl DedupFs {
     fn resolve_required(&self, path: &str) -> Result<db::Entry, Errno> {
         self.repo
             .resolve_path(path)
-            .map_err(to_errno)?
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?
             .ok_or(Errno::ENOENT)
     }
 
@@ -159,12 +166,14 @@ impl DedupFs {
         }
     }
 
-    /// DESIGN-MOUNT-009: refuses a new content write once a systemic background settle failure
-    /// has degraded this session to read-only - checked by a write-intent `open`/`create`, a bare
-    /// `truncate`, and `write` itself (for a handle that was already open before the session
-    /// degraded). Directory structure operations (`mkdir`/`rmdir`/`rename`/`utimens`) and
-    /// `unlink` are unaffected: none of them need `crates/store` space, so none of them are
-    /// doomed to repeat whatever systemic cause (e.g. storage full) triggered the degradation.
+    /// DESIGN-MOUNT-009: refuses a new content write once a `crates/store` I/O failure (e.g.
+    /// storage full) has degraded this session to read-only - checked by a write-intent
+    /// `open`/`create`, a bare `truncate`, and `write` itself (for a handle that was already open
+    /// before the session degraded). Directory structure operations (`mkdir`/`rmdir`/`rename`/
+    /// `utimens`) and `unlink` are unaffected: none of them need `crates/store` space, so none of
+    /// them are doomed to repeat this same cause. A failure of the shared metadata connection
+    /// itself (a poisoned lock and the like) does not degrade this flag either - see
+    /// [`Self::to_errno_reporting_connection_death`].
     fn require_not_degraded(&self) -> Result<(), Errno> {
         if self
             .failure_log
@@ -177,6 +186,23 @@ impl DedupFs {
         }
     }
 
+    /// [`to_errno`], plus DESIGN-MOUNT-009's one-time report if `err` means the shared
+    /// `db::Repository` connection itself has become unusable
+    /// (`crate::settle_pool::is_systemic_db_error`) - every call reaches this the same way a
+    /// background job's [`db::Error`] does, so both sides of DESIGN-MOUNT-009 go through the same
+    /// classification. Deliberately still returns [`to_errno`]'s ordinary mapping (`EIO` for every
+    /// variant this classifies as systemic) rather than `EROFS`: unlike a `crates/store` failure,
+    /// this affects every future call through the connection equally, reads included, so there is
+    /// nothing to gate - only to report once.
+    fn to_errno_reporting_connection_death(&self, err: db::Error) -> Errno {
+        if let Some(log) = &self.failure_log
+            && crate::settle_pool::is_systemic_db_error(&err)
+        {
+            log.report_connection_dead_once(now_millis(), &err.to_string());
+        }
+        to_errno(err)
+    }
+
     /// `file_id`'s durably committed content, as [`NewGeneration`]'s `base_content_id`/
     /// `base_size` need it - skipped (and left as the harmless `(None, 0)`, since unused) when a
     /// writable generation already exists, so a tight sequence of `write` calls on the same
@@ -185,7 +211,10 @@ impl DedupFs {
         if self.pending.has_writable(file_id) {
             return Ok((None, 0));
         }
-        let entry = self.repo.entry_by_id(file_id).map_err(to_errno)?;
+        let entry = self
+            .repo
+            .entry_by_id(file_id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
         Ok(entry.map_or((None, 0), |entry| (entry.content_id, entry.size)))
     }
 
@@ -244,7 +273,10 @@ impl MountFilesystem for DedupFs {
         if entry.kind != db::EntryKind::Dir {
             return Err(Errno::ENOTDIR);
         }
-        let children = self.repo.list_children(entry.id).map_err(to_errno)?;
+        let children = self
+            .repo
+            .list_children(entry.id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
         Ok(children
             .into_iter()
             .map(|(name, kind)| DirEntry {
@@ -284,7 +316,7 @@ impl MountFilesystem for DedupFs {
         let entry = self
             .repo
             .entry_by_id(file_id)
-            .map_err(to_errno)?
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?
             .ok_or(Errno::EIO)?;
         let content_id = entry.content_id.expect(
             "kind=File entries always have a content_id (chk_tree_entries_kind_content_id)",
@@ -310,7 +342,7 @@ impl MountFilesystem for DedupFs {
         let parent = self.resolve_required(parent_path)?;
         self.repo
             .mkdir(parent.id, name, now_millis())
-            .map_err(to_errno)?;
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
         Ok(())
     }
 
@@ -333,7 +365,7 @@ impl MountFilesystem for DedupFs {
         let id = self
             .repo
             .settle_file(parent.id, name, now_millis(), empty_content_id)
-            .map_err(to_errno)?;
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
         // DESIGN-MOUNT-016: marks this row eligible for collapsing (hard delete instead of
         // history) once its first real write settles, still untouched.
         self.pending.open_freshly_created(id);
@@ -348,13 +380,15 @@ impl MountFilesystem for DedupFs {
         }
         self.repo
             .unlink_file(entry.id, now_millis())
-            .map_err(to_errno)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))
     }
 
     fn rmdir(&self, path: &str) -> Result<(), Errno> {
         self.require_read_write()?;
         let entry = self.resolve_required(path)?;
-        self.repo.rmdir(entry.id, now_millis()).map_err(to_errno)
+        self.repo
+            .rmdir(entry.id, now_millis())
+            .map_err(|e| self.to_errno_reporting_connection_death(e))
     }
 
     fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
@@ -372,7 +406,7 @@ impl MountFilesystem for DedupFs {
                 no_replace,
                 now_millis(),
             )
-            .map_err(to_errno)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))
     }
 
     fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
@@ -380,7 +414,7 @@ impl MountFilesystem for DedupFs {
         let entry = self.resolve_required(path)?;
         self.repo
             .set_mtime(entry.id, mtime_millis)
-            .map_err(to_errno)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))
     }
 
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
@@ -638,5 +672,40 @@ mod tests {
             .expect("the failure log file must exist");
         assert!(log.contains("systemic"), "log contents: {log}");
         assert!(log.contains("a.txt"), "log contents: {log}");
+    }
+
+    #[test]
+    fn a_systemic_db_error_from_a_synchronous_call_is_reported_once_without_degrading_writes() {
+        // Exercises `to_errno_reporting_connection_death` directly with a synthetic
+        // `db::Error::Poisoned`, the same way `tree.rs`'s own tests bypass a platform gate to
+        // reach the logic underneath it: there is no way to actually poison `db::Repository`'s
+        // internal lock through its public API from here, and doing so is `db`'s own concern, not
+        // this method's - what this method owns is the mapping/reporting once a systemic
+        // `db::Error` surfaces, which this reaches directly.
+        let (fs, _verify_repo, _store, repo_dir) = setup(true);
+        let repo_root = repo_dir.path().join("repo");
+
+        let errno = fs.to_errno_reporting_connection_death(db::Error::Poisoned);
+        assert_eq!(errno, Errno::EIO);
+        assert!(
+            !fs.failure_log.as_ref().unwrap().is_degraded(),
+            "a connection-dead report must not degrade write-intent opens - reads are equally \
+             broken, unlike a crates/store I/O failure"
+        );
+
+        let log_path = db::meta_dir(&repo_root).join("write-failures.log");
+        let log = std::fs::read_to_string(&log_path).expect("the failure log file must exist");
+        assert_eq!(log.lines().count(), 1, "log contents: {log}");
+        assert!(log.contains("connection dead"), "log contents: {log}");
+
+        // A second occurrence still maps to the same errno, but must not add a second line.
+        let errno_again = fs.to_errno_reporting_connection_death(db::Error::Poisoned);
+        assert_eq!(errno_again, Errno::EIO);
+        let log_after_second = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(
+            log_after_second.lines().count(),
+            1,
+            "log contents: {log_after_second}"
+        );
     }
 }

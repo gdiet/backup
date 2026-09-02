@@ -46,3 +46,25 @@ just `JobPool`'s `on_failure` hook); a lighter-weight fix (log the *first* occur
 `db::Error` variant via `eprintln!`/a log crate, without the full read-only-degradation semantics);
 or a deliberate decision that synchronous-call visibility is out of scope for DESIGN-MOUNT-009 and
 this is fine as-is, recorded as such rather than left implicit.
+
+## Done (2026-09-02)
+
+Went with the lighter-weight option, but sharpened by a design question the developer raised while
+reviewing it: does read-only degradation (`EROFS`) actually still make sense for a systemic
+`db::Error`, given the single shared `Repository` connection means such a failure kills reads too,
+not only writes - unlike the `crates/store` I/O case (storage full) `is_systemic_db_error`/
+`JobError::is_systemic` originally lumped it together with? It does not: `EROFS` conventionally
+implies "still readable", which would be actively misleading for a poisoned-connection-style
+failure. `JobError::is_systemic()` was split into `write_degrades_session()` (only a `crates/store`
+I/O failure - keeps the existing DESIGN-MOUNT-009 read-only-degradation behavior unchanged, exactly
+where it is accurate) and `kills_connection()` (a systemic `db::Error` - reported once per session
+via the new `FailureLog::report_connection_dead_once`, a log line plus an `eprintln!` to stderr, but
+deliberately *not* flipping any degradation flag, since every future call already independently
+returns its own correct `EIO`). `dedup_fs.rs`'s synchronous call sites now go through
+`to_errno_reporting_connection_death` (wrapping `to_errno`) instead of `to_errno` directly, so a
+synchronous call hitting a systemic `db::Error` gets exactly the same one-time report a background
+job's equivalent failure already did. This also corrected the pre-existing background-job path,
+which previously degraded to `EROFS` on a systemic `db::Error` too (the same misleading-reads
+problem, just not yet noticed). See DESIGN-MOUNT-009 in `docs/design/mount-write-path.md` for the
+resulting decision text, and `crates/cli/src/failure_log.rs`/`settle_pool.rs`/`dedup_fs.rs` for the
+implementation and its tests.
