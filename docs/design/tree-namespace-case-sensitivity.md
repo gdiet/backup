@@ -261,5 +261,13 @@ on real Windows/WinFSP, not just on non-Windows hardware with the platform gate 
 does, qualitatively exactly (decline eliminated) even though the absolute ops/s naturally differs
 from the simulation (different hardware).
 
+The cold-path cost flagged under "Known limitations" - the first, not-yet-cached touch of an
+already-large directory - was also measured directly, calling `find_child_id_case_insensitive`
+once against a freshly populated, not-yet-cached 10,000-entry directory (40-character names, the
+same query-and-fold logic the cache falls back to on any miss): ~4.0-5.5 ms in a release build,
+~20-23 ms in a debug build. A one-time, per-directory cost of that size is small enough, next to any
+single filesystem operation's own latency, that the "Revisit if" trigger above continues to track an
+actual usage-relevant regression rather than a cost this decision already knowingly carries.
+
 Correctness verification is the white-box mutation-path audit described under "Decision" above, not
 a separate section, since it is part of what this decision actually commits to.
