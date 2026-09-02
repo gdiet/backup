@@ -32,13 +32,9 @@ libfuse3, Windows via WinFSP, behind a single trait - see
 
 ## Known Limitations
 
-- **Network mounts and the WSL↔Windows bridge are unreliable**: DedupFS works reliably on local or
-  removable storage (an internal disk, an external/USB drive, any filesystem format including
-  FAT). Over a network mount, or across the WSL↔Windows bridge specifically, both basic database
-  access and the write lock that keeps two writing sessions apart can fail unpredictably. Keep a
-  repository on local or removable storage; if you must use a network mount, run `dfs` from the
-  machine the storage physically lives on, and avoid two write sessions from different machines at
-  once. Technical detail: [`docs/design/metadata-storage.md`](docs/design/metadata-storage.md) and
+- **Some network mounts are unreliable**: over certain network mounts, and in particular across the
+  WSL↔Windows bridge, DedupFS operations can fail. Technical detail:
+  [`docs/design/metadata-storage.md`](docs/design/metadata-storage.md) and
   [`docs/design/repository-locking.md`](docs/design/repository-locking.md).
 - **A crash or forced kill can leave a repository locked**: run `dfs unlock PATH` to check for and
   clear a stale write lock left behind by a process that did not exit cleanly - it reports who
