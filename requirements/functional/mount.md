@@ -57,7 +57,7 @@ An explicit opt-in trades away some discoverability for a user unaware the featu
 exchange for never surprising a tool that has not asked for this view.
 
 ### REQ-MOUNT-005: Configurable handling of missing data on read
-Status: draft
+Status: agreed
 Importance: should
 
 By default, a read that overlaps missing or incomplete stored data fails visibly (an I/O error)
@@ -69,7 +69,7 @@ read error — but once a user already knows a file is affected and specifically
 partial data remains (e.g. a mostly-intact image), that should still be possible on request.
 
 ### REQ-MOUNT-006: WinFSP attribution wherever it is required
-Status: draft
+Status: agreed
 Importance: must
 
 Wherever a build links against WinFSP (directly or dynamically) to provide Windows mount support,

@@ -42,24 +42,31 @@ even that overhead is not worth paying.
 Status: draft
 Importance: must
 
-Storage occupied by content no longer referenced by any file can be reclaimed. Reclaimed byte
-ranges are tracked and reused by future writes before the store grows further, so repeated
-delete/write cycles do not make storage grow without bound. Reclaiming a range makes it eligible
-for reuse without itself altering any byte still on disk - this is what creates the staleness risk
-REQ-MAINTENANCE-007 in [`maintenance.md`](maintenance.md) requires a warning for, whether or not
-the range is ever actually reused afterward.
+Storage occupied by content no longer referenced by any file can be reclaimed, on demand via a
+dedicated command a caller explicitly runs - never automatically or silently as a side effect of
+ordinary use (a mount session, an ingest run). Reclaimed byte ranges are tracked and reused by
+future writes before the store grows further, so repeated delete/write cycles do not make storage
+grow without bound. Reclaiming a range makes it eligible for reuse without itself altering any byte
+still on disk - this is what creates the staleness risk REQ-MAINTENANCE-007 in
+[`maintenance.md`](maintenance.md) requires a warning for, whether or not the range is ever
+actually reused afterward.
 
 A soft-deleted entry (REQ-TREE-002 in [`tree.md`](tree.md)) only becomes eligible for reclamation
 once it has stayed soft-deleted for at least a caller-chosen minimum age, defaulting to reclaiming
-immediately (no minimum) when a caller does not specify one. This lets a routine or scheduled
-reclamation run preserve a recent-deletion recovery window on its own, without the operator having
-to time reclaim runs around it manually.
+immediately (no minimum) when a caller does not specify one. This lets a caller who invokes
+reclamation routinely or on a self-managed schedule (e.g. their own cron job calling the command
+above) still preserve a recent-deletion recovery window, without having to time those invocations
+around it manually.
 
 Rationale: without reuse, a repository under continuous use (files added and removed over years)
-would grow monotonically even though its live content stays roughly constant. Without a
-caller-chosen minimum age, an operator who wants both routine, automated reclamation and a
-guaranteed recovery window for a recent accidental deletion would have to choose one or the other,
-or build the timing logic themselves outside the tool.
+would grow monotonically even though its live content stays roughly constant. Making reclamation
+explicit rather than automatic keeps its timing - and therefore REQ-MAINTENANCE-007's staleness
+window - something the operator always decides and can correlate with a command they actually ran,
+not a background process acting invisibly; REQ-MAINTENANCE-001/002's whole trust model already
+depends on the operator being able to reason about exactly when the repository's physical layout
+could have changed. Without a caller-chosen minimum age on top of that, an operator who wants both
+routine reclamation and a guaranteed recovery window for a recent accidental deletion would have to
+choose one or the other, or build the timing logic themselves outside the tool.
 
 ### REQ-STORAGE-005: On-demand store compaction
 Status: draft
