@@ -100,12 +100,20 @@ Importance: could
 A target path passed to ingest can contain a placeholder resolved against the current date/time at
 run start (e.g. a `[yyyy-MM-dd]`-style segment), so a scheduled or repeated run writes into a fresh,
 self-naming location each time without the caller precomputing and passing a fully-resolved path
-itself. Independently, a path segment can be marked as required to already exist versus created if
-missing, so a typo'd or unexpectedly absent parent does not silently grow a deep, unintended
-directory tree instead of failing outright.
+itself.
+
+Independently, each path segment can be marked with one of three existence requirements: required
+to already exist (the default), created on demand if missing and otherwise reused as-is, or
+required to be freshly created, failing if the segment already exists. Marking a segment with
+either creatable form also makes every segment below it creatable by default, so a caller need not
+mark each level of a multi-segment templated path (e.g. year/month/day) individually.
 
 Rationale: a caller automating repeated ingest runs (a nightly backup script, in particular)
 otherwise has to compute the same timestamped-path and existence-checking logic itself before every
-call. Folding it into the target-path syntax removes a whole category of scripting boilerplate.
-For the existence-assertion half specifically, it also catches a class of
-accidental-directory-creation mistakes before they happen rather than after.
+call. Folding it into the target-path syntax removes a whole category of scripting boilerplate. The
+default, required-to-exist behavior catches a typo'd or unexpectedly absent parent outright, instead
+of silently growing a deep, unintended directory tree. Required-to-be-freshly-created catches the
+opposite mistake: silently reusing an already-existing target directory when a run was actually
+meant to land in a new one, e.g. after an unexpected re-run or a placeholder that resolved
+unexpectedly. Letting a marked segment's creatability carry down to the segments below it avoids
+having to mark every level of a multi-segment templated path individually.
