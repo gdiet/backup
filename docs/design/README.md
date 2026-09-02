@@ -66,8 +66,8 @@ rather than being deleted or renumbered, so any `DESIGN-...` reference elsewhere
 from code) stays valid.
 
 If a decision turns out to belong under a different `<AREA>` than the one it was first filed under,
-it gets a new ID there - the original ID is not reused or deleted, only turned into a one-line
-pointer to the new one (e.g. `DESIGN-MOUNT-004 moved to DESIGN-LICENSE-001`), so an existing
+it gets a new ID there. The original ID is not reused or deleted; it is only turned into a one-line
+pointer to the new one (e.g. `DESIGN-MOUNT-004 moved to DESIGN-LICENSE-001`). This way, an existing
 `DESIGN-...` reference does not silently point at nothing.
 
 The ID goes at the start of the heading that states the decision, the same place `REQ-...` IDs go

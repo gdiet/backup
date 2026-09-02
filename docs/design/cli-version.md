@@ -34,9 +34,9 @@ crate, baking the values in as compile-time constants. After that, the compiled 
 never shells out to `git` or needs it installed. No build-info crate (e.g. `vergen`) is added for
 this — package version needs no such step, `CARGO_PKG_VERSION` is already provided by Cargo
 itself. If `git`/`.git` is unavailable at build time (e.g. building from a source archive with no
-history), the short hash falls back to a fixed placeholder (`unknown`); the date instead falls
-back to the wall-clock build date — still more useful than a placeholder, and reproducibility is
-already unavailable in this case regardless of what the date field does.
+history), the short hash falls back to a fixed placeholder (`unknown`). The date instead falls
+back to the wall-clock build date, which is still more useful than a placeholder. Reproducibility
+is already unavailable in this case regardless of what the date field does.
 
 ### Alternative considered and rejected: wall-clock build timestamp instead of commit date
 
@@ -75,9 +75,9 @@ condition is about the software carrying the notice, not about a particular invo
 WinFSP. A non-Windows build never compiles in the code path that could link WinFSP at all, so the
 notice would be noise there.
 
-Only this two-line notice is printed, not the full FLOSS exception text quoted in `NOTICE.md` —
-the exception's own condition 2 requires exactly "the copyright notice ... and a link to the WinFsp
-repository", which this satisfies verbatim; the surrounding legal reasoning belongs in
+Only this two-line notice is printed, not the full FLOSS exception text quoted in `NOTICE.md`. The
+exception's own condition 2 requires exactly "the copyright notice ... and a link to the WinFsp
+repository", which this satisfies verbatim. The surrounding legal reasoning belongs in
 `NOTICE.md`/`README.md` for whoever wants it, not repeated on every `--version` invocation.
 
 ### Alternative considered and rejected: full FLOSS exception text in `--version` output

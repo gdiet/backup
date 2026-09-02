@@ -20,7 +20,7 @@ Fixed-size chunking (splitting every N bytes) breaks under insertion or deletion
 added near the start of a file shifts every following chunk boundary, so a file that changed only
 slightly re-chunks as entirely new content on the next backup. Content-defined boundaries are a
 function of local content rather than a running byte count, so an edit only disturbs the one or
-two boundaries nearest it — everything before and after keeps the same boundaries, and therefore
+two boundaries nearest it. Everything before and after keeps the same boundaries, and therefore
 the same chunk hashes, as before the edit. For a backup workload with files that grow or change
 incrementally (logs, documents, databases), this is what makes chunk-level dedup actually pay off
 run over run, not just on the first backup of an unchanged tree.
@@ -31,10 +31,11 @@ Status: implemented
 
 A fixed-window rolling hash (boundary decided purely by a hash of the last ~48-64 bytes, with no
 memory of how long the current chunk has grown) can be evaluated at arbitrary offsets
-independently — in principle parallelizable across a single large file, at the cost of a wider,
-exponentially-tailed chunk size distribution (some large, resistant to dedup, would occur where a
-normalized scheme would have forced a boundary sooner). Normalized chunking gives a tighter,
-more predictable size distribution in exchange for being inherently sequential per stream:
+independently, so it is in principle parallelizable across a single large file. This comes at the
+cost of a wider, exponentially-tailed chunk size distribution: some chunks would come out large and
+resistant to dedup, where a normalized scheme would have forced a boundary sooner. Normalized
+chunking gives a tighter, more predictable size distribution in exchange for being inherently
+sequential per stream:
 whether a boundary is even eligible to be considered at a given position depends on how many bytes
 have accumulated since the last one.
 

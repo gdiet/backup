@@ -8,17 +8,16 @@ Status: implemented
 operator places it, rather than through a package manager or an installer that puts it in a fixed,
 often system-owned location (`Program Files`, `/usr/...`, a `cargo install` toolchain directory). A
 single, self-contained Rust binary needs no accompanying runtime or library directory alongside it
-to make this work, so it can sit directly next to a repository - no wrapping app-folder structure
-required, which is exactly what DESIGN-CLI-004 below relies on.
+to make this work. So it can sit directly next to a repository, with no wrapping app-folder
+structure required - exactly what DESIGN-CLI-004 below relies on.
 
 This directly enables REQ-CLI-006 in
 [`../../requirements/functional/cli-commands.md`](../../requirements/functional/cli-commands.md)'s
-default repository location, and matches a common, still-current personal-backup pattern: the
+default repository location. It also matches a common, still-current personal-backup pattern: the
 executable lives alongside the repository itself, often on the same removable/external drive the
-repository is stored on, and travels with it between machines - REQ-OPERABILITY-002 in
+repository is stored on, and travels with it between machines. This extends REQ-OPERABILITY-002 in
 [`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)'s
-"repository is portable, sync-able, machine-independent" goal, extended to the tool that manages
-it.
+"repository is portable, sync-able, machine-independent" goal to the tool that manages it.
 
 Where the same repository (and therefore the same drive) may move between a Windows and a Linux
 machine, bundling both platform builds together in one download is worth doing deliberately -
@@ -40,8 +39,8 @@ Status: implemented
 
 REQ-CLI-006's default resolves via `std::env::current_exe()`, then that path's parent directory,
 then a `dedupfs-repository` child of it - not the current working directory the command happens to
-be invoked from, and not a subdirectory one level further up (the executable itself needs no
-wrapping app folder - DESIGN-CLI-003 above - so the repository sits directly beside it).
+be invoked from, and not a subdirectory one level further up. The executable itself needs no
+wrapping app folder (DESIGN-CLI-003 above), so the repository sits directly beside it.
 
 ### Alternative considered and rejected: relative to the current working directory
 

@@ -31,10 +31,10 @@ bytes through unchanged addressing.
 The scheme is otherwise independent of everything above it - chunk boundaries, hash algorithm,
 whole-file-vs-content-defined chunking - it is pure physical byte placement, so REQ-STORAGE-002's
 chunk-level deduplication (a departure from Scala's own whole-file granularity) changes nothing
-about it. `100_000_000` itself is arbitrary from first principles - any fixed bound satisfies
-REQ-STORAGE-007 - but is not free to change independently of the migration goal above: a different
-file size would place the same position in a different physical file, breaking direct reuse of an
-existing Scala `data/` directory.
+about it. `100_000_000` itself is arbitrary from first principles; any fixed bound satisfies
+REQ-STORAGE-007. But it is not free to change independently of the migration goal above: a
+different file size would place the same position in a different physical file, breaking direct
+reuse of an existing Scala `data/` directory.
 
 ### Independently justified by REQ-OPERABILITY-002, not just Scala compatibility
 
@@ -85,12 +85,12 @@ reuse of freed ranges) and deciding *what* to write (chunk/content identity, REQ
 are both concerns of the caller, not this crate.
 
 A read whose backing bytes are missing or short reports that fact back to the caller explicitly
-(not a bare `io::Result<()>` that succeeds regardless) rather than silently substituting zero bytes
-- the store-layer instance of REQ-MOUNT-005's "fail visibly by default" principle in
-[`../../requirements/functional/mount.md`](../../requirements/functional/mount.md): this is the
-layer that first discovers a gap, so it is the layer that must not paper over it before anything
-above (REQ-INTEGRITY-002's remediation, or a mount's own opt-in zero-fill) ever gets a chance to
-react to it. Reported as the affected file's own path (relative to the store's data directory),
+(not a bare `io::Result<()>` that succeeds regardless), rather than silently substituting zero
+bytes. This is the store-layer instance of REQ-MOUNT-005's "fail visibly by default" principle in
+[`../../requirements/functional/mount.md`](../../requirements/functional/mount.md). It is the layer
+that first discovers a gap, so it must not paper over it before anything above - REQ-INTEGRITY-002's
+remediation, or a mount's own opt-in zero-fill - ever gets a chance to react to it. Reported as the
+affected file's own path (relative to the store's data directory),
 not merely a byte count: REQ-INTEGRITY-002's remediation needs to know *which* files are affected
 to act on them, not just how much is missing in total.
 
@@ -98,14 +98,14 @@ Rationale for the split itself: a small, single-purpose byte-mover with no depen
 metadata database is straightforward to test in isolation (feed it positions and bytes, read them
 back) and reusable independent of allocation, which lives elsewhere - see DESIGN-STORE-003 below.
 
-Opened with an explicit read-only flag, checked once at construction rather than per call:
-a caller that only ever intends to read (`list`, `stats`, `check`, ...) opens the store that way,
-and a write or truncate attempted against it fails immediately
-(`io::ErrorKind::PermissionDenied`) rather than silently succeeding - a defensive guard against a
-bug elsewhere accidentally mutating the store during what was meant to be a read-only operation,
-not a substitute for REQ-MAINTENANCE-004's separate, cross-process exclusive lock in
-[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md),
-which this has no awareness of.
+Opened with an explicit read-only flag, checked once at construction rather than per call. A caller
+that only ever intends to read (`list`, `stats`, `check`, ...) opens the store that way; a write or
+truncate attempted against it then fails immediately (`io::ErrorKind::PermissionDenied`) rather than
+silently succeeding. This is a defensive guard against a bug elsewhere accidentally mutating the
+store during what was meant to be a read-only operation - not a substitute for
+REQ-MAINTENANCE-004's separate, cross-process exclusive lock in
+[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md), of
+which this has no awareness.
 
 `truncate_to` never scans the `data/` tree to discover what currently exists. The numbering
 scheme itself (DESIGN-STORE-001) already says which file, and which `dir1`/`dir2` directory, a
@@ -134,12 +134,12 @@ average) - the full round trip a network mount pays for every fresh open dominat
 than on local disk, exactly the mount-driven small-read scenario this cache exists for. No write
 cache was built to measure against - see "Alternative
 considered and rejected" below for why, reasoning rather than a benchmark result, since there is
-no write-side prototype here to have measured. The read/write asymmetry itself is expected: a write
+no write-side prototype here to have measured. The read/write asymmetry itself is expected. A write
 call's own I/O (writing potentially a whole chunk at once) already dominates the cost of opening a
-handle, but a single mount read at the FUSE/WinFSP layer can be much smaller than an average
-chunk - bounded by whatever block size the kernel or client requests, not by chunk boundaries - so
-reading one chunk back can mean many small read calls each independently paying the open cost
-unless it is cached.
+handle. A single mount read at the FUSE/WinFSP layer, however, can be much smaller than an average
+chunk, bounded by whatever block size the kernel or client requests rather than by chunk
+boundaries. So reading one chunk back can mean many small read calls, each independently paying the
+open cost unless it is cached.
 
 Deliberately per-thread, not one shared cache: avoids introducing a lock/contention point on what
 is otherwise a fully lock-free read path.
