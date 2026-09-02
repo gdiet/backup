@@ -89,7 +89,9 @@ pub enum Error {
     WouldCreateCycle,
     /// The root entry cannot be removed.
     CannotRemoveRoot,
-    /// Another thread using this [`Repository`] panicked while holding its connection lock.
+    /// Another thread using this [`Repository`] panicked while holding one of its internal locks -
+    /// the connection lock, or (experimental, branch `write-cache`) `crates/db/src/name_cache.rs`'s
+    /// own lock.
     Poisoned,
     /// [`acquire_write_lock`] found the repository's write lock file already present - either
     /// genuinely held by another process, or left behind by one that exited without releasing it
@@ -171,7 +173,7 @@ impl std::fmt::Display for Error {
                 write!(f, "cannot move a directory into its own subtree")
             }
             Error::CannotRemoveRoot => write!(f, "cannot remove the root entry"),
-            Error::Poisoned => write!(f, "repository connection lock was poisoned"),
+            Error::Poisoned => write!(f, "an internal repository lock was poisoned"),
             Error::AlreadyLocked(path) => {
                 write!(
                     f,

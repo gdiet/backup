@@ -65,10 +65,7 @@ impl NameCache {
         populate_miss: impl FnOnce() -> Result<CachedChildren, crate::Error>,
         use_candidates: impl FnOnce(&CachedChildren) -> T,
     ) -> Result<T, crate::Error> {
-        let mut entries = self
-            .entries
-            .lock()
-            .expect("name cache mutex poisoned by an earlier panic");
+        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
         let entry = match entries.iter().position(|(p, _)| *p == parent_id) {
             Some(pos) => entries
                 .remove(pos)
@@ -98,24 +95,25 @@ impl NameCache {
     /// always increasing - see "Why tree_entries.id is AUTOINCREMENT" in
     /// `metadata-schema-with-contents-table.md`), so it is always DESIGN-MOUNT-005's tiebreak
     /// winner for its folded key regardless of whatever was cached under that key before.
-    pub(crate) fn note_inserted(&self, parent_id: i64, id: i64, folded_name: &str) {
-        let mut entries = self
-            .entries
-            .lock()
-            .expect("name cache mutex poisoned by an earlier panic");
+    pub(crate) fn note_inserted(
+        &self,
+        parent_id: i64,
+        id: i64,
+        folded_name: &str,
+    ) -> Result<(), crate::Error> {
+        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
         if let Some((_, candidates)) = entries.iter_mut().find(|(p, _)| *p == parent_id) {
             candidates.insert(folded_name.to_string(), id);
         }
+        Ok(())
     }
 
     /// Drops `parent_id`'s cached list entirely, if present - used wherever a child is removed or
     /// renamed away. Simpler and safer than patching the cached list in place for those less
     /// common, more intricate mutation shapes; the next miss just repopulates it from the database.
-    pub(crate) fn invalidate(&self, parent_id: i64) {
-        let mut entries = self
-            .entries
-            .lock()
-            .expect("name cache mutex poisoned by an earlier panic");
+    pub(crate) fn invalidate(&self, parent_id: i64) -> Result<(), crate::Error> {
+        let mut entries = self.entries.lock().map_err(|_| crate::Error::Poisoned)?;
         entries.retain(|(p, _)| *p != parent_id);
+        Ok(())
     }
 }
