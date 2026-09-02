@@ -70,8 +70,8 @@ enum Commands {
         /// creates it itself and removes it again on unmount.
         mountpoint: PathBuf,
         // REQ-MOUNT-002/003.
-        /// Allow structural changes (currently: directories only) through the mount. Without this,
-        /// the mount is read-only.
+        /// Allow structural changes, content writes, and modification-time updates through the
+        /// mount. Without this, the mount is read-only.
         #[arg(long)]
         read_write: bool,
     },
