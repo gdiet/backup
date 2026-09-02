@@ -1114,7 +1114,7 @@ mod tests {
     fn find_child_id_case_insensitive_does_not_resurrect_a_sibling_removed_after_the_cache_was_warmed()
      {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
 
         let a = repo
             .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
@@ -1152,7 +1152,7 @@ mod tests {
     #[test]
     fn mkdir_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
 
         let a = repo
             .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
@@ -1184,7 +1184,7 @@ mod tests {
     #[test]
     fn settle_file_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 
@@ -1219,7 +1219,7 @@ mod tests {
     #[test]
     fn settle_file_replacing_an_existing_file_keeps_the_cache_correct() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 
@@ -1261,7 +1261,7 @@ mod tests {
     #[test]
     fn unlink_file_does_not_resurrect_a_file_removed_after_the_cache_was_warmed() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
         let content_id = insert_content(&repo, 1, 0xAA);
 
         let id = repo
@@ -1293,7 +1293,7 @@ mod tests {
     #[test]
     fn rename_within_the_same_directory_keeps_the_cache_correct_for_the_new_name() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
 
         let a = repo
             .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "a", 100))
@@ -1333,7 +1333,7 @@ mod tests {
     #[test]
     fn rename_across_directories_keeps_the_cache_correct_in_both_parents() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
 
         let source = repo
             .with_transaction(|conn, _cache| super::mkdir(conn, &mut cache, 0, "source", 100))
@@ -1387,7 +1387,7 @@ mod tests {
     #[test]
     fn rename_replacing_an_existing_file_keeps_the_cache_correct() {
         let (repo, _dir) = repo();
-        let mut cache = super::NameCache::new(16);
+        let mut cache = super::NameCache::with_active(16, true);
         let content_a = insert_content(&repo, 1, 0xAA);
         let content_b = insert_content(&repo, 2, 0xBB);
 

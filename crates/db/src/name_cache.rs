@@ -7,6 +7,15 @@
 //! `developer-todos/windows-mkdir-degrades-in-large-directories.md` for where the problem itself
 //! was first found.
 //!
+//! A Windows-only feature end to end, on both sides: [`crate::tree::find_child_id_case_insensitive`]
+//! (the only reader, via [`NameCache::with_cached_or_populate`]) is itself only ever reached through
+//! [`crate::tree::find_child_id`]'s `cfg!(windows)` gate, so it already never runs on another
+//! platform - but [`NameCache::note_inserted`]/[`NameCache::invalidate`] (the writers) are called
+//! unconditionally from every `tree_entries` mutation, regardless of platform, so *they* each carry
+//! their own `cfg!(windows)` no-op guard. Keeping a cache updated that nothing ever reads on that
+//! platform would be silent, pointless work - and worse, would leave a reader wondering why a
+//! Windows-only cache is being populated at all on a Linux build.
+//!
 //! Holds no lock of its own - [`NameCache`] lives as a plain field alongside the connection inside
 //! [`crate::Repository`]'s single [`std::sync::Mutex`] (see that struct's own doc comment), so it
 //! is unreachable at all except from within [`crate::Repository::with_connection`]/
@@ -45,6 +54,12 @@ type CachedChildren = HashMap<String, i64>;
 pub(crate) struct NameCache {
     capacity: usize,
     entries: VecDeque<(i64, CachedChildren)>,
+    /// Whether [`Self::note_inserted`]/[`Self::invalidate`] actually do anything - `cfg!(windows)`
+    /// via [`Self::new`] in production, forced explicitly via [`Self::with_active`] so a test can
+    /// exercise the maintenance bookkeeping itself on any platform, the same way
+    /// `find_child_id_case_insensitive` stays testable off Windows despite `find_child_id` gating
+    /// it - see this module's doc comment for why the gate exists at all.
+    active: bool,
 }
 
 /// A fill-level summary (directory count, total cached entries) rather than the derived dump of
@@ -67,9 +82,16 @@ impl std::fmt::Debug for NameCache {
 
 impl NameCache {
     pub(crate) fn new(capacity: usize) -> Self {
+        Self::with_active(capacity, cfg!(windows))
+    }
+
+    /// Like [`Self::new`], but takes the "should this actually cache" decision explicitly instead
+    /// of hardcoding `cfg!(windows)` - see the `active` field's own doc comment above.
+    pub(crate) fn with_active(capacity: usize, active: bool) -> Self {
         Self {
             capacity,
             entries: VecDeque::with_capacity(capacity),
+            active,
         }
     }
 
@@ -117,7 +139,13 @@ impl NameCache {
     /// always increasing - see "Why tree_entries.id is AUTOINCREMENT" in
     /// `metadata-schema-with-contents-table.md`), so it is always DESIGN-MOUNT-005's tiebreak
     /// winner for its folded key regardless of whatever was cached under that key before.
+    ///
+    /// A no-op outside a Windows build - see this module's doc comment for why keeping this cache
+    /// updated on a platform that never reads it would be pure waste.
     pub(crate) fn note_inserted(&mut self, parent_id: i64, id: i64, folded_name: &str) {
+        if !self.active {
+            return;
+        }
         if let Some((_, candidates)) = self.entries.iter_mut().find(|(p, _)| *p == parent_id) {
             candidates.insert(folded_name.to_string(), id);
         }
@@ -126,7 +154,13 @@ impl NameCache {
     /// Drops `parent_id`'s cached list entirely, if present - used wherever a child is removed or
     /// renamed away. Simpler and safer than patching the cached list in place for those less
     /// common, more intricate mutation shapes; the next miss just repopulates it from the database.
+    ///
+    /// A no-op outside a Windows build - see this module's doc comment for why keeping this cache
+    /// updated on a platform that never reads it would be pure waste.
     pub(crate) fn invalidate(&mut self, parent_id: i64) {
+        if !self.active {
+            return;
+        }
         self.entries.retain(|(p, _)| *p != parent_id);
     }
 }
@@ -134,6 +168,44 @@ impl NameCache {
 #[cfg(test)]
 mod tests {
     use super::NameCache;
+
+    #[test]
+    fn note_inserted_and_invalidate_are_no_ops_off_windows() {
+        // Meaningful only on a non-Windows build - `cfg!(windows)` is false here, matching this
+        // crate's own CI/development platform. The Windows-side "these calls actually take effect"
+        // behavior is covered by tree.rs's #[cfg(windows)]-gated tests instead, compiled only there.
+        if cfg!(windows) {
+            return;
+        }
+        let mut cache = NameCache::new(16);
+        cache
+            .with_cached_or_populate(
+                0,
+                || {
+                    let mut candidates = std::collections::HashMap::new();
+                    candidates.insert("FOO".to_string(), 1);
+                    Ok(candidates)
+                },
+                |_| (),
+            )
+            .unwrap();
+
+        cache.note_inserted(0, 2, "BAR");
+        cache.invalidate(0);
+
+        let (has_foo, has_bar) = cache
+            .with_cached_or_populate(
+                0,
+                || panic!("invalidate() must have been a no-op - the entry must still be cached"),
+                |c| (c.contains_key("FOO"), c.contains_key("BAR")),
+            )
+            .unwrap();
+        assert!(
+            has_foo,
+            "the originally populated entry must still be there"
+        );
+        assert!(!has_bar, "note_inserted() must have been a no-op");
+    }
 
     #[test]
     fn debug_output_is_a_fill_level_summary_not_the_cached_names() {
