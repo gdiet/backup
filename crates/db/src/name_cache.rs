@@ -42,10 +42,27 @@ type CachedChildren = HashMap<String, i64>;
 /// tens at most, just enough to keep the few directories a caller is actively working in warm, not
 /// to cache the whole tree - independent of how large any one cached directory's own children map
 /// is.
-#[derive(Debug)]
 pub(crate) struct NameCache {
     capacity: usize,
     entries: VecDeque<(i64, CachedChildren)>,
+}
+
+/// A fill-level summary (directory count, total cached entries) rather than the derived dump of
+/// every cached name - real file/directory names, from a real filesystem being backed up, have no
+/// business appearing unredacted in a debug log line.
+impl std::fmt::Debug for NameCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let total_entries: usize = self
+            .entries
+            .iter()
+            .map(|(_, children)| children.len())
+            .sum();
+        f.debug_struct("NameCache")
+            .field("capacity", &self.capacity)
+            .field("directories_cached", &self.entries.len())
+            .field("total_entries", &total_entries)
+            .finish()
+    }
 }
 
 impl NameCache {
@@ -111,5 +128,36 @@ impl NameCache {
     /// common, more intricate mutation shapes; the next miss just repopulates it from the database.
     pub(crate) fn invalidate(&mut self, parent_id: i64) {
         self.entries.retain(|(p, _)| *p != parent_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NameCache;
+
+    #[test]
+    fn debug_output_is_a_fill_level_summary_not_the_cached_names() {
+        let mut cache = NameCache::new(16);
+        cache
+            .with_cached_or_populate(
+                0,
+                || {
+                    let mut candidates = std::collections::HashMap::new();
+                    candidates.insert("SECRET-FILENAME".to_string(), 1);
+                    candidates.insert("OTHER-FILENAME".to_string(), 2);
+                    Ok(candidates)
+                },
+                |_| (),
+            )
+            .unwrap();
+        cache
+            .with_cached_or_populate(1, || Ok(std::collections::HashMap::new()), |_| ())
+            .unwrap();
+
+        let debug = format!("{cache:?}");
+        assert!(!debug.contains("SECRET-FILENAME"));
+        assert!(!debug.contains("OTHER-FILENAME"));
+        assert!(debug.contains("directories_cached: 2"));
+        assert!(debug.contains("total_entries: 2"));
     }
 }
