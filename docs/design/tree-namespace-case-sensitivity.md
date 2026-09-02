@@ -99,7 +99,7 @@ currently unanswered question of what "large enough to matter" actually is on re
 
 Verification split by what a Linux development machine can actually exercise: the fold/tiebreak
 logic and the SQLite query behind it are covered by ordinary, always-compiled unit tests
-(`crates/db/src/tree.rs`'s `tree::tests` module - `insert_keeping_highest_id_*`,
+(`crates/db/src/tree/case_insensitive.rs`'s own `tests` module - `insert_keeping_highest_id_*`,
 `find_child_id_case_insensitive_*`), since neither is itself `#[cfg(windows)]`-gated. The full
 stack through `Repository::mkdir`/`rename` is covered by `#[cfg(windows)]`-gated tests in the same
 module, compiled and checked only on a Windows build (the Docker cross-compile check, and real
@@ -179,7 +179,8 @@ mutation path's effect on it, by inspection, whenever a new one is added or an e
 shape - and covering each with a test that actually exercises the cache (not a fresh instance per
 call, which would mask exactly this class of bug), not merely one that passes.
 
-`crates/db/src/tree.rs`'s `tree::tests` module does this today for every current mutation path
+`crates/db/src/tree/case_insensitive.rs`'s own `tests` module does this today for every current
+mutation path
 (`mkdir_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling`,
 `settle_file_keeps_an_already_warmed_directory_correct_for_a_newly_created_sibling`,
 `settle_file_replacing_an_existing_file_keeps_the_cache_correct`,

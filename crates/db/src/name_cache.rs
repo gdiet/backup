@@ -7,8 +7,9 @@
 //! `developer-todos/windows-mkdir-degrades-in-large-directories.md` for where the problem itself
 //! was first found.
 //!
-//! A Windows-only feature end to end, on both sides: [`crate::tree::find_child_id_case_insensitive`]
-//! (the only reader, via [`NameCache::with_cached_or_populate`]) is itself only ever reached through
+//! A Windows-only feature end to end, on both sides:
+//! [`crate::tree::case_insensitive::find_child_id_case_insensitive`] (the only reader, via
+//! [`NameCache::with_cached_or_populate`]) is itself only ever reached through
 //! [`crate::tree::find_child_id`]'s `cfg!(windows)` gate, so it already never runs on another
 //! platform - but [`NameCache::note_inserted`]/[`NameCache::invalidate`] (the writers) are called
 //! unconditionally from every `tree_entries` mutation, regardless of platform, so *they* each carry
