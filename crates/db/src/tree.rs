@@ -17,6 +17,8 @@
 //! running on a Windows build cannot itself introduce a case-only-differing pair, while one
 //! already present (e.g. written from Linux) stays representable and reachable.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
@@ -111,20 +113,20 @@ fn fold_key(name: &str) -> String {
     name.to_uppercase()
 }
 
-/// Among `candidates` - already-folded `(id, folded_name)` pairs - the highest-`id` (most recently
-/// created) entry whose folded name equals `target_key` (itself already folded by the caller), if
-/// any - DESIGN-MOUNT-005's deterministic tiebreak.
-///
-/// Deliberately takes pre-folded input on both sides rather than folding here: every caller either
-/// already has the folded form or can fold it once when it is first computed, and re-folding a
-/// candidate on every single lookup against an otherwise-warm cache would throw away exactly the
-/// point of caching it (`fold_key` allocates a new `String` per call).
-fn case_insensitive_match(candidates: &[(i64, String)], target_key: &str) -> Option<i64> {
+/// Inserts `id` under `folded_key` into `candidates`, keeping the higher id if one is already
+/// present there - DESIGN-MOUNT-005's deterministic tiebreak (the most recently created entry wins
+/// a case-only collision). Used while populating a cache entry from an unordered `SELECT`, where
+/// more than one live sibling can fold to the same key (e.g. a pair written from Linux, where
+/// case-only collisions are not prevented - REQ-MOUNT-010).
+fn insert_keeping_highest_id(candidates: &mut HashMap<String, i64>, folded_key: String, id: i64) {
     candidates
-        .iter()
-        .filter(|(_, folded_name)| folded_name == target_key)
-        .map(|(id, _)| *id)
-        .max()
+        .entry(folded_key)
+        .and_modify(|existing| {
+            if id > *existing {
+                *existing = id;
+            }
+        })
+        .or_insert(id);
 }
 
 /// [`find_child_id`]'s Windows-only fallback body, factored out and left unconditionally compiled
@@ -132,7 +134,9 @@ fn case_insensitive_match(candidates: &[(i64, String)], target_key: &str) -> Opt
 /// any platform, even though [`find_child_id`] only ever calls it on a real Windows build.
 ///
 /// Consults `cache` first - an experimental mitigation for the unindexed full scan below being
-/// O(n) in the parent's live child count on every miss (see `crates/db/src/name_cache.rs`).
+/// O(n) in the parent's live child count on every miss (see `crates/db/src/name_cache.rs`). The
+/// cached form is keyed by folded name (`HashMap<String, i64>`, not a linearly-scanned list), so a
+/// lookup against an already-warm entry is an `O(1)` average hash lookup, not another `O(n)` scan.
 fn find_child_id_case_insensitive(
     conn: &Connection,
     cache: &NameCache,
@@ -149,19 +153,19 @@ fn find_child_id_case_insensitive(
                 "SELECT id, name FROM tree_entries \
                  WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
             )?;
-            let candidates: Vec<(i64, String)> = stmt
-                .query_map(params![parent_id], |row| {
-                    let id: i64 = row.get(0)?;
-                    let name: String = row.get(1)?;
-                    Ok((id, name))
-                })?
-                .collect::<Result<Vec<(i64, String)>, rusqlite::Error>>()?
-                .into_iter()
-                .map(|(id, name)| (id, fold_key(&name)))
-                .collect();
+            let rows = stmt.query_map(params![parent_id], |row| {
+                let id: i64 = row.get(0)?;
+                let name: String = row.get(1)?;
+                Ok((id, name))
+            })?;
+            let mut candidates = HashMap::new();
+            for row in rows {
+                let (id, name) = row?;
+                insert_keeping_highest_id(&mut candidates, fold_key(&name), id);
+            }
             Ok(candidates)
         },
-        |candidates| case_insensitive_match(candidates, &target_key),
+        |candidates| candidates.get(&target_key).copied(),
     )
 }
 
@@ -996,52 +1000,31 @@ mod tests {
     // DESIGN-MOUNT-005: the fold/tiebreak logic itself, platform-independent - runs on every
     // platform regardless of which one actually reaches it through `find_child_id`.
 
-    // `case_insensitive_match` now takes already-folded input on both sides (see its doc comment) -
-    // these tests fold their literals through `super::fold_key` themselves, exactly as every real
-    // caller does, rather than relying on the function to fold internally.
-
     #[test]
-    fn case_insensitive_match_finds_an_ascii_case_variant() {
-        let candidates = vec![(1, super::fold_key("Foo"))];
-        let target_key = super::fold_key("foo");
-        assert_eq!(
-            super::case_insensitive_match(&candidates, &target_key),
-            Some(1)
-        );
+    fn fold_key_folds_ascii_case() {
+        assert_eq!(super::fold_key("Foo"), super::fold_key("foo"));
     }
 
     #[test]
-    fn case_insensitive_match_ignores_a_genuinely_different_name() {
-        let candidates = vec![(1, super::fold_key("bar"))];
-        let target_key = super::fold_key("foo");
-        assert_eq!(
-            super::case_insensitive_match(&candidates, &target_key),
-            None
-        );
+    fn fold_key_folds_non_ascii_case_too() {
+        assert_eq!(super::fold_key("café"), super::fold_key("CAFÉ"));
     }
 
     #[test]
-    fn case_insensitive_match_picks_the_highest_id_among_several_matches() {
-        let candidates = vec![
-            (3, super::fold_key("foo")),
-            (7, super::fold_key("Foo")),
-            (5, super::fold_key("FOO")),
-        ];
-        let target_key = super::fold_key("foo");
-        assert_eq!(
-            super::case_insensitive_match(&candidates, &target_key),
-            Some(7)
-        );
+    fn insert_keeping_highest_id_keeps_the_only_id_present() {
+        let mut candidates = std::collections::HashMap::new();
+        super::insert_keeping_highest_id(&mut candidates, super::fold_key("foo"), 1);
+        assert_eq!(candidates.get(&super::fold_key("FOO")), Some(&1));
     }
 
     #[test]
-    fn case_insensitive_match_folds_non_ascii_case_too() {
-        let candidates = vec![(1, super::fold_key("café"))];
-        let target_key = super::fold_key("CAFÉ");
-        assert_eq!(
-            super::case_insensitive_match(&candidates, &target_key),
-            Some(1)
-        );
+    fn insert_keeping_highest_id_keeps_the_higher_id_regardless_of_insertion_order() {
+        let key = super::fold_key("foo");
+        let mut candidates = std::collections::HashMap::new();
+        super::insert_keeping_highest_id(&mut candidates, key.clone(), 3);
+        super::insert_keeping_highest_id(&mut candidates, key.clone(), 7);
+        super::insert_keeping_highest_id(&mut candidates, key.clone(), 5);
+        assert_eq!(candidates.get(&key), Some(&7));
     }
 
     // DESIGN-MOUNT-005's query-and-match fallback, called directly (bypassing `find_child_id`'s
@@ -1058,6 +1041,36 @@ mod tests {
             .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
             .unwrap();
         assert_eq!(found, Some(id));
+    }
+
+    #[test]
+    fn find_child_id_case_insensitive_prefers_the_highest_id_among_pre_existing_case_variants() {
+        let (repo, _dir) = repo();
+        // Two live siblings differing only by case, as if written from Linux (REQ-MOUNT-010 does
+        // not prevent that there - only `find_child_id`'s Windows-only fallback prevents
+        // *creating* a second one once a build reaches it). Inserted directly via SQL since
+        // `mkdir` itself would refuse the second one, even running this test on a non-Windows
+        // platform - this exercises the real population path in `find_child_id_case_insensitive`
+        // itself, not just the standalone `insert_keeping_highest_id` tiebreak helper above.
+        let higher_id = repo
+            .with_transaction(|conn| {
+                conn.execute(
+                    "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'foo', 100, 0)",
+                    [],
+                )?;
+                conn.execute(
+                    "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'Foo', 100, 0)",
+                    [],
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .unwrap();
+
+        let cache = super::NameCache::new(16);
+        let found = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, &cache, 0, "FOO"))
+            .unwrap();
+        assert_eq!(found, Some(higher_id));
     }
 
     #[test]
