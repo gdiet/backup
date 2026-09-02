@@ -37,7 +37,10 @@
 //! lock again; or a cache per connection in the pool instead of per `Repository`) before or
 //! alongside implementing that split, not after.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
 
 /// A directory's live children, keyed by [`crate::tree`]'s folded name (`fold_key` output, not the
 /// entry's raw stored name) and mapped to the id currently holding that folded name - `O(1)`
@@ -46,14 +49,17 @@ use std::collections::{HashMap, VecDeque};
 type CachedChildren = HashMap<String, i64>;
 
 /// Bounded, most-recently-used-first cache of the live children (see [`CachedChildren`]) of a
-/// handful of directories, keyed by `parent_id`. The list of cached *directories* itself is
-/// deliberately small and linearly scanned by `parent_id` - `capacity` is meant to stay in the low
-/// tens at most, just enough to keep the few directories a caller is actively working in warm, not
-/// to cache the whole tree - independent of how large any one cached directory's own children map
-/// is.
+/// handful of directories, keyed by `parent_id` - a thin wrapper around the `lru` crate's
+/// [`LruCache`] (MIT-licensed, one dependency of its own - `hashbrown`, already indirectly present
+/// in this workspace - actively maintained: 74 published versions, latest within days of when this
+/// was adopted) rather than a hand-rolled eviction list, for exactly the LRU-over-directories
+/// bookkeeping this needs (move-to-front on access, evict-oldest on overflow) without reimplementing
+/// it. The list of cached *directories* itself is deliberately small - capacity is meant to stay in
+/// the low tens at most, just enough to keep the few directories a caller is actively working in
+/// warm, not to cache the whole tree - independent of how large any one cached directory's own
+/// children map is.
 pub(crate) struct NameCache {
-    capacity: usize,
-    entries: VecDeque<(i64, CachedChildren)>,
+    entries: LruCache<i64, CachedChildren>,
     /// Whether [`Self::note_inserted`]/[`Self::invalidate`] actually do anything - `cfg!(windows)`
     /// via [`Self::new`] in production, forced explicitly via [`Self::with_active`] so a test can
     /// exercise the maintenance bookkeeping itself on any platform, the same way
@@ -73,7 +79,7 @@ impl std::fmt::Debug for NameCache {
             .map(|(_, children)| children.len())
             .sum();
         f.debug_struct("NameCache")
-            .field("capacity", &self.capacity)
+            .field("capacity", &self.entries.cap())
             .field("directories_cached", &self.entries.len())
             .field("total_entries", &total_entries)
             .finish()
@@ -89,8 +95,10 @@ impl NameCache {
     /// of hardcoding `cfg!(windows)` - see the `active` field's own doc comment above.
     pub(crate) fn with_active(capacity: usize, active: bool) -> Self {
         Self {
-            capacity,
-            entries: VecDeque::with_capacity(capacity),
+            entries: LruCache::new(
+                NonZeroUsize::new(capacity)
+                    .expect("NAME_CACHE_CAPACITY must be nonzero for an LruCache to exist at all"),
+            ),
             active,
         }
     }
@@ -109,21 +117,10 @@ impl NameCache {
         populate_miss: impl FnOnce() -> Result<CachedChildren, crate::Error>,
         use_candidates: impl FnOnce(&CachedChildren) -> T,
     ) -> Result<T, crate::Error> {
-        let entry = match self.entries.iter().position(|(p, _)| *p == parent_id) {
-            Some(pos) => self
-                .entries
-                .remove(pos)
-                .expect("pos just came back from position() above"),
-            None => {
-                if self.entries.len() >= self.capacity {
-                    self.entries.pop_back();
-                }
-                (parent_id, populate_miss()?)
-            }
-        };
-        let result = use_candidates(&entry.1);
-        self.entries.push_front(entry);
-        Ok(result)
+        let candidates = self
+            .entries
+            .try_get_or_insert_mut(parent_id, populate_miss)?;
+        Ok(use_candidates(candidates))
     }
 
     /// Records a newly inserted child under `parent_id`'s cached entry, if it is currently cached -
@@ -140,13 +137,18 @@ impl NameCache {
     /// `metadata-schema-with-contents-table.md`), so it is always DESIGN-MOUNT-005's tiebreak
     /// winner for its folded key regardless of whatever was cached under that key before.
     ///
+    /// Uses [`LruCache::peek_mut`], not `get_mut` - a mutation to an already-cached entry's
+    /// *contents* is not itself a fresh "use" of that directory worth re-promoting to
+    /// most-recently-used on its own; [`Self::with_cached_or_populate`] is what actually reflects
+    /// use.
+    ///
     /// A no-op outside a Windows build - see this module's doc comment for why keeping this cache
     /// updated on a platform that never reads it would be pure waste.
     pub(crate) fn note_inserted(&mut self, parent_id: i64, id: i64, folded_name: &str) {
         if !self.active {
             return;
         }
-        if let Some((_, candidates)) = self.entries.iter_mut().find(|(p, _)| *p == parent_id) {
+        if let Some(candidates) = self.entries.peek_mut(&parent_id) {
             candidates.insert(folded_name.to_string(), id);
         }
     }
@@ -161,7 +163,7 @@ impl NameCache {
         if !self.active {
             return;
         }
-        self.entries.retain(|(p, _)| *p != parent_id);
+        self.entries.pop(&parent_id);
     }
 }
 
