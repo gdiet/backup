@@ -27,8 +27,7 @@ enum Base {
 
 /// Either still being written/settled in memory (or spilled to disk), or already durably
 /// committed under a `content_id` - DESIGN-MOUNT-013's per-generation state, transitioning from
-/// `Cache` to `Settled` exactly once, when the background job (DESIGN-MOUNT-006, not yet built)
-/// finishes.
+/// `Cache` to `Settled` exactly once, when the background job (DESIGN-MOUNT-006) finishes.
 enum SlotState {
     Cache(WriteCache),
     Settled { content_id: i64, size: u64 },
@@ -74,8 +73,8 @@ impl GenerationSlot {
         *self.state.lock().expect("not poisoned") = SlotState::Settled { content_id, size };
     }
 
-    /// This generation's logical size - what a settle job (DESIGN-MOUNT-006, not yet built)
-    /// needs to know how many bytes [`Self::read`] can cover.
+    /// This generation's logical size - what a settle job (DESIGN-MOUNT-006) needs to know how
+    /// many bytes [`Self::read`] can cover.
     pub fn size(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.size(),
@@ -86,7 +85,7 @@ impl GenerationSlot {
     /// The bytes currently spilled to disk for this generation specifically - `0` once settled,
     /// since a settled generation no longer holds a [`WriteCache`] at all. DESIGN-MOUNT-010's
     /// backpressure signal, for a generation that has already been released and is queued or
-    /// being processed by the settle job pool (DESIGN-MOUNT-006, not yet built).
+    /// being processed by the settle job pool (DESIGN-MOUNT-006).
     pub fn spilled_bytes(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.spilled_bytes(),
