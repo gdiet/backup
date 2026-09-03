@@ -388,6 +388,29 @@ impl Repository {
         })
     }
 
+    /// REQ-MAINTENANCE-003: compacts this repository's metadata store, reclaiming space freed by
+    /// past deletions - `PRAGMA incremental_vacuum`, since this repository's database is always
+    /// created with `auto_vacuum = INCREMENTAL` (`connection::configure_write_connection`). Unlike
+    /// a full `VACUUM` (which rewrites the entire database file under a long exclusive lock),
+    /// incremental vacuum only moves already-free pages to the end of the file and truncates them
+    /// off, in ordinary write transactions - no long exclusive lock, matching REQ-MAINTENANCE-003's
+    /// own requirement. Refuses a `Repository` opened read-only, the same as every other mutating
+    /// method.
+    pub fn compact(&self) -> Result<CompactionResult, Error> {
+        if self.read_only {
+            return Err(Error::ReadOnlyRepository);
+        }
+        self.with_connection(|conn, _cache| {
+            let before_bytes = database_size_bytes(conn)?;
+            conn.execute_batch("PRAGMA incremental_vacuum;")?;
+            let after_bytes = database_size_bytes(conn)?;
+            Ok(CompactionResult {
+                before_bytes,
+                after_bytes,
+            })
+        })
+    }
+
     /// REQ-TREE-009's `[deleted]` addressing: `parent_id`'s own soft-deleted children.
     /// `parent_id` may itself be a live directory or an already soft-deleted one - REQ-TREE-008
     /// guarantees a soft-deleted directory's own children are always soft-deleted too, so nested
@@ -703,6 +726,22 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
         }),
         read_only: true,
     })
+}
+
+/// [`Repository::compact`]'s own result - the metadata store's size in bytes, before and after.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactionResult {
+    pub before_bytes: u64,
+    pub after_bytes: u64,
+}
+
+/// The database's current on-disk size, in bytes (`page_count * page_size`) - matches
+/// `fs::metadata`'s own `len()` for this database file, without needing this crate's narrow public
+/// interface (DESIGN-METADATA-006) to expose that file's raw path to a caller just to measure it.
+fn database_size_bytes(conn: &Connection) -> Result<u64, Error> {
+    let page_count: i64 = conn.query_row("PRAGMA page_count", (), |row| row.get(0))?;
+    let page_size: i64 = conn.query_row("PRAGMA page_size", (), |row| row.get(0))?;
+    Ok((page_count * page_size) as u64)
 }
 
 /// Reads back the single `repository_settings` row - shared by [`open_repository`] and
@@ -1264,5 +1303,67 @@ mod tests {
 
         let err = restore_metadata(&repo_root, &unrelated_path).unwrap_err();
         assert!(matches!(err, Error::InvalidBackup(_)));
+    }
+
+    #[test]
+    fn compact_refuses_a_read_only_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository_read_only(&repo_root).expect("open must succeed");
+
+        let err = repo.compact().unwrap_err();
+        assert!(matches!(err, Error::ReadOnlyRepository));
+    }
+
+    #[test]
+    fn compact_succeeds_on_a_repository_with_nothing_to_reclaim() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let result = repo
+            .compact()
+            .expect("compact must succeed even with nothing to reclaim");
+        assert_eq!(result.before_bytes, result.after_bytes);
+    }
+
+    #[test]
+    fn compact_shrinks_the_database_after_a_large_purge() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        // Insert first, purge second - as two separate passes, not interleaved one row at a
+        // time. Interleaving lets SQLite immediately reuse each just-freed row's own slot for the
+        // very next insert, so no page ever actually empties out; separating the passes instead
+        // leaves entire tree_entries pages empty once every row on them has been purged, which is
+        // what incremental_vacuum can actually reclaim (verified empirically - see the commit this
+        // test was added in).
+        let mut ids = Vec::with_capacity(2000);
+        for n in 0u32..2000 {
+            let mut hash = [0u8; 20];
+            hash[..4].copy_from_slice(&n.to_le_bytes());
+            let (chunk_id, _ranges) = repo.reserve_and_insert_chunk(10, &hash).unwrap();
+            let content_id = repo.find_or_create_content(10, &hash, &[chunk_id]).unwrap();
+            ids.push(
+                repo.settle_file(0, &format!("file-{n}.txt"), 100, content_id)
+                    .unwrap(),
+            );
+        }
+        for id in ids {
+            repo.unlink_file(id, 200).unwrap();
+            repo.purge_deleted_entry(id).unwrap();
+        }
+
+        let result = repo.compact().expect("compact must succeed");
+        assert!(
+            result.after_bytes < result.before_bytes,
+            "expected compaction to actually shrink the file: before={}, after={}",
+            result.before_bytes,
+            result.after_bytes
+        );
     }
 }

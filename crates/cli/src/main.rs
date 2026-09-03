@@ -2,6 +2,7 @@ mod backpressure;
 mod content_reader;
 mod create_repo;
 mod db_backup;
+mod db_compact;
 mod db_restore;
 mod dedup_fs;
 mod del;
@@ -117,6 +118,14 @@ enum Commands {
         repo: Option<PathBuf>,
         /// The backup file to restore from (produced by `dfs db-backup`).
         backup: PathBuf,
+    },
+    // REQ-MAINTENANCE-003.
+    /// Compacts a repository's metadata store, reclaiming space freed by past deletions.
+    DbCompact {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
     },
     // REQ-CLI-003.
     /// Deletes a tree entry directly against the repository, without mounting.
@@ -333,6 +342,11 @@ fn main() {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             db_restore::run(&repo, default_path_used, &backup);
+        }
+        Commands::DbCompact { repo } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            db_compact::run(&repo, default_path_used);
         }
         Commands::Del {
             repo,
