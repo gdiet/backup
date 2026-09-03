@@ -16,6 +16,7 @@ mod lock;
 mod migrations;
 mod name_cache;
 mod settings;
+mod stats;
 mod tree;
 
 use std::fs;
@@ -27,6 +28,7 @@ use rusqlite::{Connection, OpenFlags};
 pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
+pub use stats::Stats;
 pub use tree::{DeletedEntry, Entry, EntryKind};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
@@ -339,6 +341,18 @@ impl Repository {
     /// from the root.
     pub fn find(&self, name_pattern: &str) -> Result<Vec<(String, Entry)>, Error> {
         self.with_connection(|conn, _cache| tree::find(conn, name_pattern))
+    }
+
+    /// REQ-QUERY-003: repository-wide item counts and size statistics. Repository age is not part
+    /// of this - read it directly from [`Self::settings`] instead.
+    pub fn stats(&self) -> Result<Stats, Error> {
+        self.with_connection(|conn, _cache| stats::stats(conn))
+    }
+
+    /// REQ-QUERY-003: item counts and size statistics scoped to the live directory `dir_id`'s own
+    /// recursive descendants - `dir_id` itself is not counted.
+    pub fn stats_for(&self, dir_id: i64) -> Result<Stats, Error> {
+        self.with_connection(|conn, _cache| stats::stats_for(conn, dir_id))
     }
 
     /// REQ-TREE-009's `[deleted]` addressing: `parent_id`'s own soft-deleted children.

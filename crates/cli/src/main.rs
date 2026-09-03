@@ -16,6 +16,7 @@ mod repo_path;
 mod restore;
 mod settle;
 mod settle_pool;
+mod stats;
 mod time_format;
 mod unlock;
 mod usage_log;
@@ -143,6 +144,18 @@ enum Commands {
         /// Name pattern to search for - case-insensitive, `*` matches any run of characters and
         /// `?` matches exactly one.
         pattern: String,
+    },
+    // REQ-QUERY-003.
+    /// Reports item counts and size statistics, repository-wide or for one directory's own
+    /// subtree, without mounting.
+    Stats {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Repository path to report on. Repository age is only reported for the default, `/`.
+        #[arg(default_value = "/")]
+        path: String,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -311,6 +324,11 @@ fn main() {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             find::run(&repo, default_path_used, &pattern);
+        }
+        Commands::Stats { repo, path } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            stats::run(&repo, default_path_used, &path);
         }
         Commands::Restore {
             repo,
