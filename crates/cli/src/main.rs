@@ -3,15 +3,17 @@ mod content_reader;
 mod create_repo;
 mod dedup_fs;
 mod failure_log;
+mod list;
 mod mount;
 mod pending_files;
 mod repo_path;
+mod restore;
 mod settle;
 mod settle_pool;
 mod unlock;
 mod write_cache;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 
@@ -83,6 +85,34 @@ enum Commands {
         /// executable when omitted.
         path: Option<PathBuf>,
     },
+    // REQ-QUERY-001.
+    /// Lists a directory's live, direct contents, without mounting.
+    List {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Repository path to list.
+        #[arg(default_value = "/")]
+        path: String,
+    },
+    // REQ-RESTORE-001/003/004.
+    /// Restores one or more repository paths to a real directory on disk, without mounting.
+    Restore {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Overwrite a file that already exists at the destination. Off by default
+        /// (REQ-RESTORE-004): restoring never overwrites a file that is already there unless
+        /// told to.
+        #[arg(long)]
+        overwrite: bool,
+        /// One or more repository paths to restore, followed by the target directory on disk
+        /// (which must already exist).
+        #[arg(required = true, num_args = 2..)]
+        paths: Vec<String>,
+    },
 }
 
 #[derive(Parser)]
@@ -152,6 +182,25 @@ fn main() {
         Commands::Unlock { path } => {
             let (path, default_path_used) = resolve_repo_path(path);
             unlock::run(&path, default_path_used);
+        }
+        Commands::List { repo, path } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            list::run(&repo, default_path_used, &path);
+        }
+        Commands::Restore {
+            repo,
+            overwrite,
+            paths,
+        } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            let (sources, target) = paths.split_at(paths.len() - 1);
+            restore::run(
+                &repo,
+                default_path_used,
+                sources,
+                Path::new(&target[0]),
+                overwrite,
+            );
         }
     }
 }

@@ -4,10 +4,14 @@
 Status: agreed
 Importance: must
 
-One or more repository paths can be restored to a real directory on disk, preserving directory
-structure and each file's recorded last-modified time.
+One or more repository paths can be restored to a real directory on disk, without mounting the
+repository. Directory structure is preserved beneath each restored path, and each file's recorded
+last-modified time is preserved on the restored copy. Restoring several paths in one call places
+each one directly under the target directory, named by its own last path component.
 
-Rationale: a backup that cannot be restored is not a backup.
+Rationale: a backup that cannot be restored is not a backup. Restoring should not need a mount's
+overhead and platform-specific setup either - the same reasoning REQ-QUERY-001's listing and
+REQ-CLI-003's delete already apply.
 
 ### REQ-RESTORE-002: Restore a deleted entry directly
 Status: agreed
