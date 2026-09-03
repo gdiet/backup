@@ -132,17 +132,31 @@ pub(crate) fn resolve_path(
 pub(crate) fn list_children(
     conn: &Connection,
     parent_id: i64,
-) -> Result<Vec<(String, EntryKind)>, Error> {
+) -> Result<Vec<(String, Entry)>, Error> {
     require_dir(conn, parent_id)?;
 
     let mut stmt = conn.prepare(
-        "SELECT name, kind FROM tree_entries \
-         WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
+        "SELECT te.id, te.name, te.kind, te.time, te.content_id, c.length \
+         FROM tree_entries te LEFT JOIN contents c ON c.id = te.content_id \
+         WHERE te.parent_id = ?1 AND te.deleted_at IS NULL AND te.id != 0",
     )?;
     let rows = stmt.query_map(params![parent_id], |row| {
-        let name: String = row.get(0)?;
-        let kind: i64 = row.get(1)?;
-        Ok((name, EntryKind::from_db(kind)))
+        let id: i64 = row.get(0)?;
+        let name: String = row.get(1)?;
+        let kind: i64 = row.get(2)?;
+        let time_millis: i64 = row.get(3)?;
+        let content_id: Option<i64> = row.get(4)?;
+        let length: Option<i64> = row.get(5)?;
+        Ok((
+            name,
+            Entry {
+                id,
+                kind: EntryKind::from_db(kind),
+                time_millis,
+                content_id,
+                size: length.unwrap_or(0) as u64,
+            },
+        ))
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
 }

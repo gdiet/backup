@@ -318,8 +318,9 @@ impl Repository {
         self.with_connection(|conn, cache| tree::resolve_path(conn, cache, path))
     }
 
-    /// Lists the live, direct children of the directory entry `parent_id`.
-    pub fn list_children(&self, parent_id: i64) -> Result<Vec<(String, EntryKind)>, Error> {
+    /// Lists the live, direct children of the directory entry `parent_id`, each paired with its
+    /// own [`Entry`] (so a caller gets kind/size/mtime without a separate lookup per child).
+    pub fn list_children(&self, parent_id: i64) -> Result<Vec<(String, Entry)>, Error> {
         self.with_connection(|conn, _cache| tree::list_children(conn, parent_id))
     }
 

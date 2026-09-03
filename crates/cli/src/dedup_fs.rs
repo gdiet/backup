@@ -279,9 +279,9 @@ impl MountFilesystem for DedupFs {
             .map_err(|e| self.to_errno_reporting_connection_death(e))?;
         Ok(children
             .into_iter()
-            .map(|(name, kind)| DirEntry {
+            .map(|(name, entry)| DirEntry {
                 name,
-                kind: kind_to_mountfs(kind),
+                kind: kind_to_mountfs(entry.kind),
             })
             .collect())
     }
