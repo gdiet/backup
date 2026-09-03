@@ -1,9 +1,7 @@
-//! `dfs ingest` - REQ-INGEST-001/002/003/004/005/006 in `requirements/functional/ingest.md`.
-//! Recursively imports one or more real filesystem paths into an existing repository directory,
-//! deduplicating their content along the way. REQ-INGEST-007's templated target paths and
-//! per-segment existence flags are not yet implemented: the target path passed here is a plain
-//! repository directory that must already exist, matching what REQ-INGEST-007 itself describes as
-//! every segment's default in the absence of an explicit existence marker.
+//! `dfs ingest` - REQ-INGEST-001/002/003/004/005/006/007 in `requirements/functional/ingest.md`.
+//! Recursively imports one or more real filesystem paths into a repository target directory,
+//! deduplicating their content along the way. The target path is resolved via `crate::target_path`
+//! (REQ-INGEST-007's templated/creatable segments, DESIGN-CLI-006).
 
 use std::collections::HashMap;
 use std::fs;
@@ -11,8 +9,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use time::OffsetDateTime;
+
 use crate::ignore_rules::{self, BackupIgnore, EffectiveRules};
 use crate::settle::{self, SettleError};
+use crate::target_path;
 
 /// The handles one ingest run needs, threaded unchanged through every level of its recursion.
 struct Ctx<'a> {
@@ -73,18 +74,9 @@ fn try_run(
         cdc_target_size_bits: repo.settings().cdc_target_size_bits(),
     };
 
-    let target_entry = match repo.resolve_path(target) {
-        Ok(Some(entry)) if entry.kind == db::EntryKind::Dir => entry,
-        Ok(Some(_)) => return Err(format!("error: {target} is not a directory")),
-        Ok(None) => {
-            return Err(format!(
-                "error: no such repository path: {target} (the target directory must already \
-                 exist - REQ-INGEST-007's templated/creatable target-path syntax is not yet \
-                 supported)"
-            ));
-        }
-        Err(err) => return Err(format!("error: {err}")),
-    };
+    // REQ-INGEST-007's own "current date/time at run start" - captured once, so every
+    // placeholder across the whole target path resolves against the same moment.
+    let resolved_target = target_path::resolve(&repo, target, OffsetDateTime::now_utc())?;
 
     let source_paths: Vec<PathBuf> = sources.iter().map(PathBuf::from).collect();
 
@@ -124,7 +116,7 @@ fn try_run(
             ingest_entry(
                 &ctx,
                 source_path,
-                target_entry.id,
+                resolved_target.id,
                 name,
                 &EffectiveRules::none(),
                 reference_dir_id,
@@ -133,7 +125,10 @@ fn try_run(
         );
     }
 
-    let mut message = format!("imported {} file(s) into {target}", outcome.imported);
+    let mut message = format!(
+        "imported {} file(s) into {}",
+        outcome.imported, resolved_target.path
+    );
     if !outcome.warnings.is_empty() {
         message.push_str(&format!(
             "\n{} warning(s):\n{}",
@@ -673,6 +668,37 @@ mod tests {
         )
         .expect_err("must fail - the target does not exist");
         assert!(message.contains("no such repository path"));
+    }
+
+    #[test]
+    fn try_run_imports_into_a_templated_creatable_target_path() {
+        let (repo, repo_dir, source_root) = setup();
+        drop(repo);
+        let repo_root = repo_dir.path().join("repo");
+        fs::write(source_root.path().join("a.txt"), b"hello").unwrap();
+
+        // REQ-INGEST-007: neither /backups nor its dated subdirectory exist yet - the leading `+`
+        // creates both, since marking one segment creatable cascades to the segments below it.
+        let message = try_run(
+            &repo_root,
+            false,
+            &[source_root.path().display().to_string()],
+            "/+backups/[yyyy]",
+            None,
+            false,
+        )
+        .expect("must succeed - the target path is creatable");
+        assert!(message.contains("imported"));
+
+        let repo = db::open_repository(&repo_root).unwrap();
+        let backups = repo.resolve_path("/backups").unwrap().unwrap();
+        assert_eq!(backups.kind, db::EntryKind::Dir);
+        let year = time::OffsetDateTime::now_utc().year();
+        let dated = repo
+            .resolve_path(&format!("/backups/{year}"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(dated.kind, db::EntryKind::Dir);
     }
 
     #[test]

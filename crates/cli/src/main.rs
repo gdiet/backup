@@ -20,6 +20,7 @@ mod restore;
 mod settle;
 mod settle_pool;
 mod stats;
+mod target_path;
 mod time_format;
 mod unlock;
 mod usage_log;
@@ -232,8 +233,12 @@ enum Commands {
         /// ingested, and use it regardless.
         #[arg(long, requires = "reference")]
         force_reference: bool,
-        /// One or more real filesystem paths to import, followed by the target repository
-        /// directory (which must already exist).
+        /// One or more real filesystem paths to import, followed by the target repository path.
+        /// Each `/`-separated segment must already exist by default (REQ-INGEST-007); prefix a
+        /// segment with `+` to create it on demand and reuse it otherwise, or `!` to require it be
+        /// freshly created (marking one segment either way makes every segment below it default to
+        /// `+`). A segment may also contain `[...]` date/time placeholders (`yyyy`/`MM`/`dd`/`HH`/
+        /// `mm`/`ss`, e.g. `[yyyy-MM-dd]`), resolved once against this run's own start time.
         #[arg(required = true, num_args = 2..)]
         paths: Vec<String>,
     },
