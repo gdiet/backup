@@ -12,7 +12,7 @@ use cdc::{Chunker, ChunkerConfig, ConfiguredChunker};
 
 /// BLAKE3 output truncated to this many bytes for both chunk and content hashes
 /// (DESIGN-METADATA-007's "Hash width", `docs/design/metadata-schema-with-contents-table.md`).
-const HASH_WIDTH: usize = 20;
+pub(crate) const HASH_WIDTH: usize = 20;
 
 /// Read window used to stream a generation's content through the chunker - bounded so settling a
 /// large file never needs its complete byte stream in memory at once, unrelated to any chunk

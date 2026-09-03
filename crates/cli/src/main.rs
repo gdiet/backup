@@ -108,6 +108,15 @@ enum Commands {
         /// told to.
         #[arg(long)]
         overwrite: bool,
+        /// Check each restored file's content against its recorded hash. Off by default
+        /// (REQ-RESTORE-003): a mismatch is never even detected unless this is given.
+        #[arg(long)]
+        verify: bool,
+        /// Restore what can be restored instead of failing an item outright: zero-fill missing
+        /// or incomplete stored data, and keep content that fails --verify anyway. Off by
+        /// default (REQ-RESTORE-003).
+        #[arg(long)]
+        best_effort: bool,
         /// One or more repository paths to restore, followed by the target directory on disk
         /// (which must already exist).
         #[arg(required = true, num_args = 2..)]
@@ -190,6 +199,8 @@ fn main() {
         Commands::Restore {
             repo,
             overwrite,
+            verify,
+            best_effort,
             paths,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
@@ -200,6 +211,8 @@ fn main() {
                 sources,
                 Path::new(&target[0]),
                 overwrite,
+                verify,
+                best_effort,
             );
         }
     }
