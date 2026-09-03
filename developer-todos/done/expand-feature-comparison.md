@@ -15,3 +15,15 @@ each marked implemented / planned / explicitly not planned with a one-line reaso
 per the file's existing format. Deliberately not attempted alongside the repo-init session that
 noticed the gap - this is a large, separate effort spanning the whole Scala feature set, not
 something to squeeze in alongside an unrelated implementation task.
+
+## Done (2026-09-03)
+
+Read every `fsc` subcommand and separate `@main` in `.local/scala/src/main/scala/dedup/` (`Main.scala`,
+`db/maintenance.scala`, `FSTools.scala`, `BackupTool.scala`) and cross-referenced each against this
+project's own `requirements/` (commit `613afd91`). Added 14 new rows covering `check`, `db-backup`/
+`db-restore`, `db-compact`, `del`, `find`, `stats`, `reclaimSpace`, `blacklist`, mount's `gui`/
+`copyWhenMoving`/`dbBackup` options, mount's default mountpoint (not planned), graceful interrupt,
+and `dbMigrateStep1`/`dbMigrateStep2` (not planned). Two genuine gaps found along the way (graceful
+interrupt, default mountpoint) were also added to `requirements/open-questions.md`. Every Scala
+feature is now accounted for in a deliberate, explained state, per AGENTS.md's release-gate wording
+this todo's own "Context" section quotes.
