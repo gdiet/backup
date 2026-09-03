@@ -126,6 +126,9 @@ fn to_errno(err: db::Error) -> Errno {
         | db::Error::LockUnavailable { .. }
         | db::Error::LockFileInaccessible { .. }
         | db::Error::ConnectionUnreliable(_)
+        // Never actually reaches here either: `DedupFs` never calls `purge_deleted_entry`
+        // (REQ-CLI-003's `--purge` case is CLI-only, not exposed through the mount).
+        | db::Error::NotSoftDeleted(_)
         | db::Error::Io(_)
         | db::Error::Sqlite(_)
         | db::Error::Migration(_) => Errno::EIO,

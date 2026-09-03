@@ -2,6 +2,7 @@ mod backpressure;
 mod content_reader;
 mod create_repo;
 mod dedup_fs;
+mod del;
 mod deleted;
 mod failure_log;
 mod ignore_rules;
@@ -90,6 +91,27 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         path: Option<PathBuf>,
+    },
+    // REQ-CLI-003.
+    /// Deletes a tree entry directly against the repository, without mounting.
+    Del {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// When the target is a live directory that still has live children, delete them too
+        /// (deepest first) instead of refusing. Has no effect when the target instead resolves
+        /// to a soft-deleted entry.
+        #[arg(long)]
+        recursive: bool,
+        /// When the target is a specific soft-deleted entry (reached through REQ-TREE-009's
+        /// `[deleted]` segment - see `dfs list --show-deleted`), permanently remove it instead of
+        /// refusing. Without this, such a target is left untouched: an irreversible removal never
+        /// happens just because the given path happened to resolve under `[deleted]`.
+        #[arg(long)]
+        purge: bool,
+        /// Repository path to delete - a live path, or one reached through `[deleted]`.
+        path: String,
     },
     // REQ-QUERY-001, REQ-CLI-007.
     /// Lists a directory's live, direct contents, without mounting.
@@ -251,6 +273,16 @@ fn main() {
             let (path, default_path_used) = resolve_repo_path(path);
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
             unlock::run(&path, default_path_used);
+        }
+        Commands::Del {
+            repo,
+            recursive,
+            purge,
+            path,
+        } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            del::run(&repo, default_path_used, &path, recursive, purge);
         }
         Commands::List {
             repo,

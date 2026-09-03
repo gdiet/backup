@@ -457,6 +457,52 @@ pub(crate) fn unlink_file(
     Ok(())
 }
 
+/// Permanently removes the soft-deleted entry `id` from the tree - REQ-CLI-003's `--purge` case.
+/// Refuses an `id` that does not exist ([`Error::NoSuchEntry`]) or that is still live
+/// ([`Error::NotSoftDeleted`]) - only an entry already reached through REQ-TREE-009's `[deleted]`
+/// addressing is eligible. If `id` is a directory, its own soft-deleted children are purged first,
+/// recursively (REQ-TREE-008 guarantees none of them are live) - `tree_entries.parent_id`'s foreign
+/// key would otherwise refuse deleting a row still referenced by a child.
+///
+/// The `tree_entries_ref_count_del` trigger (`migrations.rs`) decrements each purged file's
+/// `contents.ref_count` as a side effect of its row's own deletion. Reaching zero there does not
+/// itself reclaim any stored bytes - REQ-STORAGE-004's bulk reclaim sweep is the separate, later
+/// step for that; this only removes the tree entry (and, once nothing else references it, the
+/// `contents`/`chunks` bookkeeping rows) that was keeping it referenced.
+pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<(), Error> {
+    if id == 0 {
+        // tree_entries_protect_root's own DELETE trigger would already refuse this (unlike
+        // rmdir/unlink_file's soft-delete UPDATE, which it does not cover), but only as a raw
+        // SQLite abort - guarded here explicitly instead, for the same clear error every other
+        // root-removal attempt gets.
+        return Err(Error::CannotRemoveRoot);
+    }
+    let (kind, deleted_at): (i64, Option<i64>) = conn
+        .query_row(
+            "SELECT kind, deleted_at FROM tree_entries WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or(Error::NoSuchEntry(id))?;
+    if deleted_at.is_none() {
+        return Err(Error::NotSoftDeleted(id));
+    }
+
+    if kind == KIND_DIR {
+        let child_ids: Vec<i64> = conn
+            .prepare("SELECT id FROM tree_entries WHERE parent_id = ?1")?
+            .query_map(params![id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for child_id in child_ids {
+            purge_deleted_entry(conn, child_id)?;
+        }
+    }
+
+    conn.execute("DELETE FROM tree_entries WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 /// Whether `ancestor_id` is `descendant_id` itself, or one of its ancestors (walking up via
 /// `parent_id` toward the root).
 fn is_ancestor_or_self(
@@ -957,6 +1003,102 @@ mod tests {
         let (repo, _dir) = repo();
         let err = repo.unlink_file(999, 200).unwrap_err();
         assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn purge_deleted_entry_hard_deletes_a_soft_deleted_file() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        repo.purge_deleted_entry(id).expect("purge must succeed");
+
+        assert_eq!(
+            row_count(&repo, id),
+            0,
+            "the purged row must be gone entirely, not merely soft-deleted"
+        );
+    }
+
+    #[test]
+    fn purge_deleted_entry_decrements_the_content_ref_count() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+        let ref_count_before: i64 = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT ref_count FROM contents WHERE id = ?1",
+                    [content_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+
+        repo.purge_deleted_entry(id).unwrap();
+
+        let ref_count_after: i64 = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT ref_count FROM contents WHERE id = ?1",
+                    [content_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(ref_count_after, ref_count_before - 1);
+    }
+
+    #[test]
+    fn purge_deleted_entry_refuses_a_live_entry() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+
+        let err = repo.purge_deleted_entry(id).unwrap_err();
+        assert!(matches!(err, Error::NotSoftDeleted(_)));
+        assert_eq!(
+            row_count(&repo, id),
+            1,
+            "a refused purge must not touch the row"
+        );
+    }
+
+    #[test]
+    fn purge_deleted_entry_refuses_a_nonexistent_id() {
+        let (repo, _dir) = repo();
+        let err = repo.purge_deleted_entry(999).unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn purge_deleted_entry_refuses_the_root() {
+        let (repo, _dir) = repo();
+        let err = repo.purge_deleted_entry(0).unwrap_err();
+        assert!(matches!(err, Error::CannotRemoveRoot));
+    }
+
+    #[test]
+    fn purge_deleted_entry_recursively_purges_a_soft_deleted_directorys_own_children() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "a", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let file_id = repo.settle_file(dir_id, "f.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 150).unwrap();
+        repo.rmdir(dir_id, 200).unwrap();
+
+        repo.purge_deleted_entry(dir_id)
+            .expect("purge of the directory must also purge its own deleted child");
+
+        assert_eq!(row_count(&repo, dir_id), 0);
+        assert_eq!(
+            row_count(&repo, file_id),
+            0,
+            "a soft-deleted directory's own soft-deleted child must be purged along with it - \
+             otherwise its parent_id foreign key would refuse the parent's own deletion"
+        );
     }
 
     #[test]

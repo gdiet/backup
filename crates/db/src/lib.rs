@@ -81,6 +81,9 @@ pub enum Error {
     /// [`Repository::rmdir`] was called against a directory that still has live children
     /// (REQ-TREE-008).
     DirectoryNotEmpty(i64),
+    /// [`Repository::purge_deleted_entry`] was called against an entry that exists but is still
+    /// live - only a soft-deleted entry can be permanently purged.
+    NotSoftDeleted(i64),
     /// The target name is already taken by another live entry in the same directory.
     EntryAlreadyExists {
         parent_id: i64,
@@ -167,6 +170,12 @@ impl std::fmt::Display for Error {
             Error::NoSuchEntry(id) => write!(f, "no live entry with id {id}"),
             Error::WrongKind(id) => write!(f, "entry {id} is not the expected kind"),
             Error::DirectoryNotEmpty(id) => write!(f, "directory {id} is not empty"),
+            Error::NotSoftDeleted(id) => {
+                write!(
+                    f,
+                    "entry {id} is not soft-deleted - only a soft-deleted entry can be purged"
+                )
+            }
             Error::EntryAlreadyExists { parent_id, name } => {
                 write!(f, "{name:?} already exists in directory {parent_id}")
             }
@@ -353,6 +362,14 @@ impl Repository {
     /// change (REQ-TREE-005). A directory at `id` is refused.
     pub fn unlink_file(&self, id: i64, time_millis: i64) -> Result<(), Error> {
         self.with_transaction(|conn, cache| tree::unlink_file(conn, cache, id, time_millis))
+    }
+
+    /// Permanently removes the soft-deleted entry `id` - REQ-CLI-003's `--purge` case, addressed
+    /// through REQ-TREE-009's `[deleted]` resolution rather than a live path. Refuses an `id` that
+    /// does not exist or is still live; if it is a directory, its own soft-deleted children are
+    /// purged along with it (REQ-TREE-008 guarantees none of them are live).
+    pub fn purge_deleted_entry(&self, id: i64) -> Result<(), Error> {
+        self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id))
     }
 
     /// Looks up the live entry by its own id, rather than by path - `Ok(None)` if it does not
