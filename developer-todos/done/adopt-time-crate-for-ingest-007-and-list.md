@@ -24,3 +24,15 @@ instead - the `time` crate is the recommended pick over `chrono` (leaner, better
 security/maintenance history, `no_std`-friendly if that ever matters here). At that point, also
 refactor `list.rs`'s `format_time`/`civil_from_days` to use it, rather than keeping two separate
 date-handling approaches in the same crate.
+
+## Done (2026-09-03)
+
+Confirmed with the developer at the point REQ-INGEST-007 was actually picked up (a fresh
+confirmation, per this note's own "Size" field). Added `time` (`std`/`alloc` features only,
+`cargo add`) to `crates/cli/Cargo.toml`. `crates/cli/src/time_format.rs`'s `format_time`/
+`format_deletion_suffix` now build a `time::OffsetDateTime` and format its own accessors, replacing
+`civil_from_days` entirely - `time_format.rs` no longer has its own calendar-arithmetic
+implementation. REQ-INGEST-007's own `[yyyy-MM-dd]`-style placeholder resolution
+(`crates/cli/src/target_path.rs`) also builds on `time::OffsetDateTime` directly rather than the
+crate's runtime format-description parser - see DESIGN-CLI-006 in
+`docs/design/ingest-target-template-syntax.md` for why.
