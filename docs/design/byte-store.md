@@ -166,8 +166,10 @@ every cached `File`, closing its descriptor - a shrinking pool does not leak han
 the underlying OS thread actually exits cleanly rather than being forcibly terminated. Confirmed by
 reasoning about Linux's `pthread`-based TLS specifically, not yet confirmed for WinFSP's own
 worker-thread lifecycle on Windows, where TLS destructors are documented to not run for some
-abnormal termination paths (e.g. `TerminateThread`) - revisit, ideally with an actual check against
-a real WinFSP mount under load, once `store` is wired in on Windows.
+abnormal termination paths (e.g. `TerminateThread`). `store` already runs unmodified on both
+platforms (`crates/cli/src/dedup_fs.rs`'s read path carries no platform-specific gating at all),
+so this is not blocked on more code - only on actually observing a real WinFSP mount under load on
+Windows, which no environment working on this project has done yet.
 
 ### A cached handle is never invalidated - depends on the caller
 
