@@ -6,7 +6,7 @@ Status values: `implemented` | `planned` | `not planned` (requires a one-line re
 
 | Scala Feature | Status | Notes |
 |---|---|---|
-| Whole-file content deduplication (MD5-based) | planned | non-CDC, whole-file chunking exists as a library building block (see REQ-STORAGE-003), using `blake3` instead of MD5, but is not yet reachable through any command |
+| Whole-file content deduplication (MD5-based) | implemented | non-CDC, whole-file chunking (REQ-STORAGE-003), using `blake3` instead of MD5 - `dfs create-repo --whole-file`, then `dfs ingest`/a read-write mount use it automatically for that repository (`crates/cli/src/settle.rs`) |
 | Mount read-write (real content writes: create/write/truncate/unlink) | implemented | `crates/cli/src/dedup_fs.rs`, DESIGN-MOUNT-006/007/008/009/010/012/013/015 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md); DESIGN-MOUNT-009's failure log is a plain file only, not yet queryable |
 | `list` command (directory listing without mounting) | implemented | `crates/cli/src/list.rs`, REQ-QUERY-001, REQ-CLI-007's `--show-deleted` |
 | `backup`/`restore` commands' restore direction (repository paths to a real directory on disk) | implemented | `crates/cli/src/restore.rs`, REQ-RESTORE-001/002/003/004 |
