@@ -12,12 +12,15 @@ mod repo_path;
 mod restore;
 mod settle;
 mod settle_pool;
+mod time_format;
 mod unlock;
+mod usage_log;
 mod write_cache;
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
 /// REQ-CLI-005's default when neither `--cdc-target-size-bits` nor `--whole-file` is given -
 /// content-defined chunking with an average chunk size a little above 1 MiB.
@@ -196,13 +199,37 @@ fn resolve_repo_path(path: Option<PathBuf>) -> (PathBuf, bool) {
     }
 }
 
+/// Unix epoch milliseconds for right now - used only for [`usage_log::log_invocation`]'s own
+/// timestamp column, one per process invocation, so a fresh call per command (rather than a
+/// shared helper) is not worth factoring out.
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is after the Unix epoch")
+        .as_millis() as i64
+}
+
 fn main() {
-    match Cli::parse().command {
+    // The two-step equivalent of `Cli::parse()`, kept apart so `matches` (which flags were
+    // actually passed on the command line) survives past parsing for `usage_log::log_invocation`
+    // - `Parser::parse()` itself does exactly this internally, just without exposing `matches`.
+    let matches = Cli::command().get_matches();
+    let cli = Cli::from_arg_matches(&matches)
+        .expect("matches were parsed against exactly this Cli::command(), so this cannot fail");
+    // A second, distinct, unconsumed `Command` tree for the log call below - `get_matches` above
+    // already consumed its own.
+    let top = Cli::command();
+    let time_millis = now_millis();
+
+    match cli.command {
         Commands::CreateRepo { path, chunking } => {
             let cdc_target_size_bits =
                 resolve_cdc_target_size_bits(chunking.whole_file, chunking.cdc_target_size_bits);
             let (path, default_path_used) = resolve_repo_path(path);
             create_repo::run(&path, cdc_target_size_bits, default_path_used);
+            // Only reached once create_repo::run has actually succeeded (it exits the process on
+            // failure) - meta/ does not exist yet beforehand, unlike every other command below.
+            usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
         }
         Commands::Mount {
             repo,
@@ -210,14 +237,17 @@ fn main() {
             read_write,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             mount::run(&repo, &mountpoint, read_write, default_path_used);
         }
         Commands::Unlock { path } => {
             let (path, default_path_used) = resolve_repo_path(path);
+            usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
             unlock::run(&path, default_path_used);
         }
         Commands::List { repo, path } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             list::run(&repo, default_path_used, &path);
         }
         Commands::Restore {
@@ -228,6 +258,7 @@ fn main() {
             paths,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             let (sources, target) = paths.split_at(paths.len() - 1);
             restore::run(
                 &repo,
@@ -246,6 +277,7 @@ fn main() {
             paths,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             let (sources, target) = paths.split_at(paths.len() - 1);
             ingest::run(
                 &repo,
