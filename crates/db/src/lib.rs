@@ -24,6 +24,7 @@ use std::sync::Mutex;
 
 use rusqlite::{Connection, OpenFlags};
 
+pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
 pub use tree::{Entry, EntryKind};
@@ -435,6 +436,13 @@ impl Repository {
     /// empty `Vec`, the same as a genuinely zero-length content.
     pub fn resolve_extents(&self, content_id: i64) -> Result<Vec<(u64, u64)>, Error> {
         self.with_connection(|conn, _cache| content::resolve_extents(conn, content_id))
+    }
+
+    /// Like [`Self::resolve_extents`], but grouped back into `content_id`'s individual chunk
+    /// occurrences, each carrying its own recorded `(length, hash)` alongside its extents - what a
+    /// caller verifying restored bytes against their recorded hash needs.
+    pub fn resolve_chunks(&self, content_id: i64) -> Result<Vec<content::ChunkLocation>, Error> {
+        self.with_connection(|conn, _cache| content::resolve_chunks(conn, content_id))
     }
 
     /// Sets `id`'s own modification time (REQ-MOUNT-003's `utimens`).

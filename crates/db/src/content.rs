@@ -102,6 +102,68 @@ pub(crate) fn resolve_extents(
     .map_err(Error::from)
 }
 
+/// One occurrence of a chunk within a content's own chunk sequence - its recorded `(length,
+/// hash)`, the chunk's own primary key in `chunks`, plus every `chunk_extents` range backing it
+/// (more than one if the chunk is split across separate reserved ranges).
+/// Concatenating the bytes at `extents`, in order, reproduces exactly `length` bytes - the same
+/// bytes `hash` (BLAKE3 of the chunk's own raw bytes, truncated the same way `chunks.hash` is)
+/// was computed over when the chunk was first written.
+pub struct ChunkLocation {
+    pub hash: Vec<u8>,
+    pub length: u64,
+    pub extents: Vec<(u64, u64)>,
+}
+
+/// Like [`resolve_extents`], but grouped back into the individual chunk occurrences that make up
+/// `content_id`'s own chunk sequence, each carrying its own recorded hash - what a caller
+/// verifying restored bytes against their recorded hash needs that a flat extent list alone does
+/// not provide. The same chunk can appear more than once (a content repeating identical chunk
+/// content internally); each occurrence is its own [`ChunkLocation`], not merged with the others,
+/// since `content_chunks.seq` - not chunk identity - is what this groups by.
+pub(crate) fn resolve_chunks(
+    conn: &Connection,
+    content_id: i64,
+) -> Result<Vec<ChunkLocation>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT cc.seq, c.hash, c.length, ce.start, ce.stop \
+         FROM content_chunks cc \
+         JOIN chunks c ON c.id = cc.chunk_id \
+         JOIN chunk_extents ce ON ce.chunk_id = cc.chunk_id \
+         WHERE cc.content_id = ?1 \
+         ORDER BY cc.seq, ce.seq",
+    )?;
+    let rows: Vec<(i64, Vec<u8>, i64, i64, i64)> = stmt
+        .query_map([content_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+
+    let mut chunks: Vec<ChunkLocation> = Vec::new();
+    let mut current_seq: Option<i64> = None;
+    for (seq, hash, length, start, stop) in rows {
+        if current_seq != Some(seq) {
+            chunks.push(ChunkLocation {
+                hash,
+                length: length as u64,
+                extents: Vec::new(),
+            });
+            current_seq = Some(seq);
+        }
+        chunks
+            .last_mut()
+            .expect("just pushed a fresh ChunkLocation for this seq, above")
+            .extents
+            .push((start as u64, stop as u64));
+    }
+    Ok(chunks)
+}
+
 /// Finds or creates the `contents` row for the whole-content `(length, hash)`, linking
 /// `chunk_ids` (in order) via `content_chunks` if it did not already exist - an empty `chunk_ids`
 /// is valid (a zero-length content). Returns the content id.
