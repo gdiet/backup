@@ -54,9 +54,10 @@ occasional, harmless extra warning) this project has no particular reason to min
 
 ### Purging a tree entry is not, by itself, an arming point
 
-A purge (REQ-CLI-004, or reached through the mount under REQ-MOUNT-007) looks at first glance like
-it might belong alongside reclamation and compaction as a third arming trigger, since it is what
-makes a `contents` row's `ref_count` reach zero in the first place. Tracing the actual triggers in
+A purge (REQ-CLI-003's `--purge` case, or reached through the mount under REQ-MOUNT-007) looks at
+first glance like it might belong alongside reclamation and compaction as a third arming trigger,
+since it is what makes a `contents` row's `ref_count` reach zero in the first place. Tracing the
+actual triggers in
 [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) shows this is
 not the case, given the schema as currently designed: deleting a `tree_entries` row only fires
 `tree_entries_ref_count_del`, which decrements `contents.ref_count` - it does not delete the

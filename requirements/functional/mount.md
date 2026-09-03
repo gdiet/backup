@@ -98,8 +98,8 @@ to trash" step.
 
 Two independent, escalating mount-time opt-ins. The base one (REQ-MOUNT-004) makes the view visible
 and browsable, supporting the recovery move-out. A second opt-in additionally allows deleting an
-entry from inside the view, permanently purging it (REQ-CLI-004's operation, reached through the
-mount). Without the second opt-in, any delete/create/rename/move into or within the view - other
+entry from inside the view, permanently purging it (REQ-CLI-003's `--purge` operation, reached
+through the mount). Without the second opt-in, any delete/create/rename/move into or within the view - other
 than the recovery move-out - fails with a clear error (`EACCES`/`EPERM`), never a false success.
 Renaming the view itself is always refused, under either opt-in.
 

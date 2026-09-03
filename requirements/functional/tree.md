@@ -131,7 +131,7 @@ Importance: should
 Any directory's soft-deleted children (REQ-TREE-002/003) are reachable by path, through a reserved
 segment name, `[deleted]`, directly beneath it - addressable the same way as an ordinary live
 child, without a separate lookup step or an opaque identifier standing in for a path. This is the
-addressing REQ-RESTORE-002's direct restore and REQ-CLI-004's permanent delete both mean by "a
+addressing REQ-RESTORE-002's direct restore and REQ-CLI-003's `--purge` case both mean by "a
 soft-deleted entry's history-entry identity" - one convention, not two independently designed ones.
 
 If a live entry already occupies that exact name at that location, the live entry always takes

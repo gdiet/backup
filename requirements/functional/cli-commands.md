@@ -27,31 +27,41 @@ Status: agreed
 Importance: should
 
 A command deletes a file or directory directly against the repository, without requiring a mount
-session first. Deleting a directory with live (not yet deleted) children requires an explicit,
-separate opt-in to also delete them; the exact flag(s) for that opt-in, and their precise semantics
-(e.g. distinguishing "recurse into live children" from other behavior a recursive-delete flag might
-also need to control), are not yet decided.
+session first, addressing its target the same way REQ-CLI-007's listing and REQ-RESTORE-002's
+restore do: an ordinary live path, or one drilling through REQ-TREE-009's `[deleted]` segment (in
+[`tree.md`](tree.md)) down to a specific soft-deleted entry.
+
+A live target is soft-deleted, the same outcome as an ordinary mount-side delete. Deleting a
+directory with live (not yet deleted) children requires an explicit, separate opt-in to also delete
+them; the exact flag(s) for that opt-in, and their precise semantics (e.g. distinguishing "recurse
+into live children" from other behavior a recursive-delete flag might also need to control), are
+not yet decided.
+
+A target reached through `[deleted]` instead names a specific soft-deleted entry rather than a live
+one. Removing it this way is permanent - it bypasses REQ-STORAGE-004's bulk purge sweep entirely for
+that one entry - and only happens when the caller also passes an explicit `--purge` flag; without
+it, the command refuses rather than silently doing nothing. This keeps an irreversible removal from
+ever being this command's ordinary, unmarked behavior just because a passed-in path happened to
+resolve under `[deleted]` - such a path can otherwise reach the command unremarkably, e.g. pasted
+from a `dfs list --show-deleted` line.
 
 Rationale: a mount session is not always convenient for a one-off or scripted deletion - a headless
 host, an automation script. REQ-TREE-008 keeps the mount's own delete non-cascading, matching
 ordinary POSIX `rmdir`; this command covers the bulk-subtree case directly and explicitly instead,
-for a caller that does not want to mount at all.
+for a caller that does not want to mount at all. Reusing REQ-TREE-009's own addressing for the
+permanent-delete case, rather than a second command taking a different kind of argument for what to
+act on, means a caller does not need to learn a separate way to name a soft-deleted entry just to
+remove it for good - REQ-CLI-007 already established this same one-scheme-everywhere property for
+`dfs list`/`dfs restore`. Gating that case behind `--purge` keeps its irreversibility an explicit,
+deliberate choice rather than an incidental consequence of which path string happened to be passed.
+REQ-STORAGE-004's bulk purge remains the separate, repository-wide maintenance sweep for aged
+soft-deleted entries in general; a user who wants one specific soft-deleted entry gone for good
+right now - something sensitive that was accidentally backed up and then deleted, say - should not
+have to wait for, or explicitly trigger, a full sweep just to get that guarantee for the one entry
+they actually care about.
 
 ### REQ-CLI-004: Permanently delete a specific soft-deleted entry
-Status: agreed
-Importance: could
-
-A command permanently removes one or more specific soft-deleted entries, selected by their
-history-entry identity - REQ-TREE-009's `[deleted]` path-based addressing in [`tree.md`](tree.md),
-the same one REQ-RESTORE-002 uses - rather than requiring a general bulk purge sweep
-(REQ-STORAGE-004 in [`storage.md`](storage.md)) to eventually reach them. This is a distinct
-command from REQ-CLI-003's live-entry delete, since it addresses history entries rather than live
-paths - the two commands take different kinds of argument for what to act on.
-
-Rationale: REQ-STORAGE-004's bulk purge is a repository-wide maintenance sweep; a user who wants a
-specific soft-deleted entry gone for good right now - something sensitive that was accidentally
-backed up and then deleted, say - should not have to wait for, or explicitly trigger, a full sweep
-just to get that guarantee for the one entry they actually care about.
+Status: moved-to REQ-CLI-003
 
 ### REQ-CLI-005: Create a new repository
 Status: agreed
@@ -119,10 +129,10 @@ anywhere) is still worth having, now that a caller can reach any location's own 
 directly by path without first discovering an opaque identity, is not decided - see "Repository-
 wide deleted listing" in [`../open-questions.md`](../open-questions.md).
 
-Rationale: REQ-RESTORE-002 and REQ-CLI-004 both act on a specific soft-deleted entry, but neither
-discovers it. Reusing REQ-TREE-009's own addressing here - rather than a bespoke CLI-only mechanism
-that also invents its own way to name a chosen result - means a caller learns one addressing scheme
-and reuses it unchanged across `dfs list`, `dfs restore`, and REQ-CLI-004's permanent delete.
+Rationale: REQ-RESTORE-002 and REQ-CLI-003's `--purge` case both act on a specific soft-deleted
+entry, but neither discovers it. Reusing REQ-TREE-009's own addressing here - rather than a bespoke
+CLI-only mechanism that also invents its own way to name a chosen result - means a caller learns one
+addressing scheme and reuses it unchanged across `dfs list`, `dfs restore`, and `dfs del --purge`.
 Off-by-default matches REQ-MOUNT-004's own reasoning for the identical concern: a generic script
 parsing `dfs list`'s output should not see an unannounced extra row just because a deletion
 happened somewhere in that directory at some point.
