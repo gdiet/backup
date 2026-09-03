@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use crate::deleted::{self, DELETED_SEGMENT, Resolved};
-use crate::time_format::format_time;
+use crate::entry_format::{format_line, kind_label};
 
 /// The listing "kind" column value for REQ-TREE-009's `[deleted]` marker row - distinct from
 /// `dir`/`file` so it is never confused with a real, identically-named live directory (which
@@ -134,17 +134,6 @@ fn list_deleted(
         .map(|(_, line)| line)
         .collect::<Vec<_>>()
         .join("\n"))
-}
-
-fn kind_label(kind: db::EntryKind) -> &'static str {
-    match kind {
-        db::EntryKind::Dir => "dir",
-        db::EntryKind::File => "file",
-    }
-}
-
-fn format_line(kind: &str, size: u64, time_millis: i64, name: &str) -> String {
-    format!("{kind:<4} {size:>12} {} {name}", format_time(time_millis))
 }
 
 pub fn run(repo_path: &Path, default_path_used: bool, target_path: &str, show_deleted: bool) {

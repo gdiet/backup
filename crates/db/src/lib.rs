@@ -334,6 +334,13 @@ impl Repository {
         self.with_connection(|conn, _cache| tree::list_children(conn, parent_id))
     }
 
+    /// REQ-QUERY-002: live entries anywhere in the repository whose own name matches
+    /// `name_pattern` (`*`/`?` wildcards, case-insensitive), each paired with its own full path
+    /// from the root.
+    pub fn find(&self, name_pattern: &str) -> Result<Vec<(String, Entry)>, Error> {
+        self.with_connection(|conn, _cache| tree::find(conn, name_pattern))
+    }
+
     /// REQ-TREE-009's `[deleted]` addressing: `parent_id`'s own soft-deleted children.
     /// `parent_id` may itself be a live directory or an already soft-deleted one - REQ-TREE-008
     /// guarantees a soft-deleted directory's own children are always soft-deleted too, so nested

@@ -170,6 +170,86 @@ pub(crate) fn list_children(
     rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
 }
 
+/// Live entries anywhere in the repository whose own name matches `name_pattern` - REQ-QUERY-002.
+/// `name_pattern` uses shell-style `*`/`?` wildcards (translated to SQL `LIKE`'s `%`/`_`), matched
+/// case-insensitively - SQLite's own `LIKE` default, ASCII-only, the same scope REQ-MOUNT-010's own
+/// case-folding elsewhere in this codebase settles for. Each match is paired with its own full path
+/// from the root (`/`-separated, e.g. `/a/b/c.txt`), reconstructed via its ancestor chain - not the
+/// bare name [`list_children`] already returns, since a caller searching "anywhere in the
+/// repository" needs to know *where* a match actually is.
+pub(crate) fn find(conn: &Connection, name_pattern: &str) -> Result<Vec<(String, Entry)>, Error> {
+    let like_pattern = to_like_pattern(name_pattern);
+    let mut stmt = conn.prepare(
+        "SELECT te.id, te.kind, te.time, te.content_id, c.length \
+         FROM tree_entries te LEFT JOIN contents c ON c.id = te.content_id \
+         WHERE te.deleted_at IS NULL AND te.id != 0 AND te.name LIKE ?1 ESCAPE '\\'",
+    )?;
+    let rows = stmt.query_map(params![like_pattern], |row| {
+        let id: i64 = row.get(0)?;
+        let kind: i64 = row.get(1)?;
+        let time_millis: i64 = row.get(2)?;
+        let content_id: Option<i64> = row.get(3)?;
+        let length: Option<i64> = row.get(4)?;
+        Ok(Entry {
+            id,
+            kind: EntryKind::from_db(kind),
+            time_millis,
+            content_id,
+            size: length.unwrap_or(0) as u64,
+        })
+    })?;
+    let entries = rows.collect::<Result<Vec<_>, _>>()?;
+
+    let mut results = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let path = full_path(conn, entry.id)?;
+        results.push((path, entry));
+    }
+    Ok(results)
+}
+
+/// `id`'s own full path from the root, `/`-separated (e.g. `/a/b/c.txt`) - walks the live ancestor
+/// chain via `parent_id`, which is always unbroken up to the root for a live `id` (REQ-TREE-008: a
+/// live entry can never have a soft-deleted parent). `id == 0` (the root itself) yields `/`.
+fn full_path(conn: &Connection, id: i64) -> Result<String, Error> {
+    if id == 0 {
+        return Ok("/".to_string());
+    }
+    let mut segments = Vec::new();
+    let mut current_id = id;
+    while current_id != 0 {
+        let (parent_id, name): (i64, String) = conn.query_row(
+            "SELECT parent_id, name FROM tree_entries WHERE id = ?1",
+            params![current_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        segments.push(name);
+        current_id = parent_id;
+    }
+    segments.reverse();
+    Ok(format!("/{}", segments.join("/")))
+}
+
+/// Translates `pattern`'s shell-style `*`/`?` wildcards into a SQL `LIKE` pattern (`%`/`_`),
+/// backslash-escaping any of `LIKE`'s own special characters (`%`, `_`, `\`) that appear literally
+/// in `pattern` so they are matched exactly rather than as wildcards - paired with the caller's own
+/// `ESCAPE '\'` clause.
+fn to_like_pattern(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    for ch in pattern.chars() {
+        match ch {
+            '*' => out.push('%'),
+            '?' => out.push('_'),
+            '%' | '_' | '\\' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Like [`require_dir`], but also accepts a soft-deleted directory - REQ-TREE-009's `[deleted]`
 /// addressing needs to descend into an already-deleted directory's own soft-deleted children.
 /// REQ-TREE-008 guarantees every child of a soft-deleted directory is itself soft-deleted (a live
@@ -861,6 +941,93 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn find_matches_a_name_anywhere_in_the_repository_with_its_full_path() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "photos", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        repo.settle_file(dir_id, "one.jpg", 100, content_id)
+            .unwrap();
+
+        let matches = repo.find("one.jpg").unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "/photos/one.jpg");
+        assert_eq!(matches[0].1.kind, crate::EntryKind::File);
+    }
+
+    #[test]
+    fn find_supports_star_and_question_mark_wildcards() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        repo.settle_file(0, "a.jpg", 100, content_id).unwrap();
+        let content_id_2 = insert_content(&repo, 2, 0xBB);
+        repo.settle_file(0, "ab.jpg", 100, content_id_2).unwrap();
+        let content_id_3 = insert_content(&repo, 3, 0xCC);
+        repo.settle_file(0, "a.txt", 100, content_id_3).unwrap();
+
+        let star_matches: Vec<String> = repo
+            .find("*.jpg")
+            .unwrap()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(star_matches.len(), 2, "got: {star_matches:?}");
+
+        let question_matches: Vec<String> = repo
+            .find("a?jpg")
+            .unwrap()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(question_matches, vec!["/a.jpg".to_string()]);
+    }
+
+    #[test]
+    fn find_is_case_insensitive() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        repo.settle_file(0, "README.txt", 100, content_id).unwrap();
+
+        let matches = repo.find("readme.txt").unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "/README.txt");
+    }
+
+    #[test]
+    fn find_treats_a_literal_percent_or_underscore_in_the_pattern_literally() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        repo.settle_file(0, "100%_done.txt", 100, content_id)
+            .unwrap();
+        let content_id_2 = insert_content(&repo, 2, 0xBB);
+        repo.settle_file(0, "100X_done.txt", 100, content_id_2)
+            .unwrap();
+
+        let matches = repo.find("100%_done.txt").unwrap();
+        assert_eq!(
+            matches.len(),
+            1,
+            "a literal % in the pattern must not act as a SQL LIKE wildcard: {matches:?}"
+        );
+        assert_eq!(matches[0].0, "/100%_done.txt");
+    }
+
+    #[test]
+    fn find_never_matches_a_soft_deleted_entry() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "gone.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        assert!(repo.find("gone.txt").unwrap().is_empty());
+    }
+
+    #[test]
+    fn find_reports_no_matches_as_an_empty_vec_not_an_error() {
+        let (repo, _dir) = repo();
+        assert!(repo.find("nothing-like-this-exists").unwrap().is_empty());
     }
 
     #[test]

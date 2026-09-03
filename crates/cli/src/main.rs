@@ -4,7 +4,9 @@ mod create_repo;
 mod dedup_fs;
 mod del;
 mod deleted;
+mod entry_format;
 mod failure_log;
+mod find;
 mod ignore_rules;
 mod ingest;
 mod list;
@@ -130,6 +132,17 @@ enum Commands {
         /// Repository path to list.
         #[arg(default_value = "/")]
         path: String,
+    },
+    // REQ-QUERY-002.
+    /// Searches live entries anywhere in the repository by name, without mounting.
+    Find {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Name pattern to search for - case-insensitive, `*` matches any run of characters and
+        /// `?` matches exactly one.
+        pattern: String,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -293,6 +306,11 @@ fn main() {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             list::run(&repo, default_path_used, &path, show_deleted);
+        }
+        Commands::Find { repo, pattern } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            find::run(&repo, default_path_used, &pattern);
         }
         Commands::Restore {
             repo,
