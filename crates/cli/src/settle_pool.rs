@@ -61,13 +61,20 @@ impl JobError {
     }
 
     /// Whether this failure degrades the whole session's future write-intent opens to read-only
-    /// (DESIGN-MOUNT-009) - true only for a `crates/store` I/O failure (e.g. storage full).
-    /// Deliberately narrower than [`Self::is_systemic`]: a `crates/store` failure leaves the
-    /// metadata connection - and therefore every read - unaffected, so read-only degradation is
-    /// an accurate signal here. A systemic `db::Error` ([`Self::kills_connection`]) does not set
-    /// this, since it is not that shape of failure at all.
+    /// (DESIGN-MOUNT-009) - true for an I/O failure reading the write cache or writing
+    /// `crates/store` (e.g. storage full); both are this project's own local, persistent state,
+    /// not external input, so either failing is equally a backend problem. Deliberately narrower
+    /// than [`Self::is_systemic`]: such a failure leaves the metadata connection - and therefore
+    /// every read - unaffected, so read-only degradation is an accurate signal here. A systemic
+    /// `db::Error` ([`Self::kills_connection`]) does not set this, since it is not that shape of
+    /// failure at all.
     pub fn write_degrades_session(&self) -> bool {
-        matches!(self, JobError::Settle(crate::settle::SettleError::Io(_)))
+        matches!(
+            self,
+            JobError::Settle(
+                crate::settle::SettleError::Read(_) | crate::settle::SettleError::Write(_)
+            )
+        )
     }
 
     /// The underlying [`db::Error`], if this failure means the single shared `Repository`
@@ -80,7 +87,9 @@ impl JobError {
     pub fn kills_connection(&self) -> Option<&db::Error> {
         let err = match self {
             JobError::Settle(crate::settle::SettleError::Db(err)) | JobError::Commit(err) => err,
-            JobError::Settle(crate::settle::SettleError::Io(_)) => return None,
+            JobError::Settle(
+                crate::settle::SettleError::Read(_) | crate::settle::SettleError::Write(_),
+            ) => return None,
         };
         is_systemic_db_error(err).then_some(err)
     }
@@ -258,7 +267,7 @@ mod tests {
     #[test]
     fn an_io_failure_is_systemic_regardless_of_which_stage_it_came_from() {
         assert!(
-            JobError::Settle(crate::settle::SettleError::Io(io::Error::other(
+            JobError::Settle(crate::settle::SettleError::Write(io::Error::other(
                 "disk full"
             )))
             .is_systemic()

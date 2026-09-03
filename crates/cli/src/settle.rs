@@ -21,14 +21,20 @@ const READ_WINDOW: u32 = 4 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum SettleError {
-    Io(io::Error),
+    /// The `read` callback itself failed - for `crate::dedup_fs`/`crate::settle_pool`'s callers,
+    /// this reads from the write cache (project-local state, same failure shape as a `store`
+    /// write); for `crate::ingest`, it reads an external source file instead, where a failure
+    /// means only that one item, not every future call, is doomed (REQ-INGEST-004).
+    Read(io::Error),
+    /// A `crates/store` write failed while committing a chunk's bytes.
+    Write(io::Error),
     Db(db::Error),
 }
 
 impl std::fmt::Display for SettleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SettleError::Io(err) => write!(f, "{err}"),
+            SettleError::Read(err) | SettleError::Write(err) => write!(f, "{err}"),
             SettleError::Db(err) => write!(f, "{err}"),
         }
     }
@@ -59,7 +65,7 @@ pub fn settle(
     let mut position = 0u64;
     while position < size {
         let window_len = (size - position).min(u64::from(READ_WINDOW)) as u32;
-        let data = read(position, window_len).map_err(SettleError::Io)?;
+        let data = read(position, window_len).map_err(SettleError::Read)?;
         settler.feed(&data)?;
         position += u64::from(window_len);
     }
@@ -130,7 +136,8 @@ impl<'a> Settler<'a> {
                     .repo
                     .reserve_and_insert_chunk(length, chunk_hash)
                     .map_err(SettleError::Db)?;
-                write_ranges(self.store, &self.chunk_buffer, &ranges).map_err(SettleError::Io)?;
+                write_ranges(self.store, &self.chunk_buffer, &ranges)
+                    .map_err(SettleError::Write)?;
                 id
             }
         };
@@ -287,6 +294,6 @@ mod tests {
             Err(io::Error::other("simulated read failure"))
         })
         .unwrap_err();
-        assert!(matches!(err, SettleError::Io(_)));
+        assert!(matches!(err, SettleError::Read(_)));
     }
 }
