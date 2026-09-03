@@ -123,3 +123,41 @@ REQ-TREE-005's general goal of not surprising tools that already assume them - a
 subtree gone through the mount already gets that for free via any ordinary recursive tool (`rm -rf`
 deletes leaves before their parent directories); REQ-CLI-003 covers the same goal for a caller that
 does not want to mount at all.
+
+### REQ-TREE-009: Path-based addressing for a location's soft-deleted entries
+Status: agreed
+Importance: should
+
+Any directory's soft-deleted children (REQ-TREE-002/003) are reachable by path, through a reserved
+segment name, `[deleted]`, directly beneath it - addressable the same way as an ordinary live
+child, without a separate lookup step or an opaque identifier standing in for a path. This is the
+addressing REQ-RESTORE-002's direct restore and REQ-CLI-004's permanent delete both mean by "a
+soft-deleted entry's history-entry identity" - one convention, not two independently designed ones.
+
+If a live entry already occupies that exact name at that location, the live entry always takes
+precedence: `[deleted]` continues to name it, as any other live name would, and that location's
+soft-deleted children become unreachable through this convention until the live entry is itself
+renamed or removed. Nothing about the soft-deleted entries themselves is lost - only this one
+specific path-based route to them is unavailable at that location, for as long as the collision
+lasts.
+
+Within `[deleted]`, more than one soft-deleted entry can share the same original name (REQ-TREE-004
+- delete, recreate, delete again) - each is disambiguated with a deletion-timestamp suffix before
+its extension (e.g. `photo [2026-08-22_140414].jpg`; `.env [2026-08-22_140414]` for a dot-file,
+which has no splittable extension), falling back to the entry's own id (`photo [42].jpg`) if the
+timestamp-suffixed form does not fit a length constraint the calling context imposes, and further
+truncating the base name - never the id suffix, the part actually meant to be unique - if even that
+does not fit. An entry whose bare name is not shared by any other soft-deleted entry at that same
+location is shown as-is, no suffix needed.
+
+Rationale: REQ-MOUNT-004/008 in [`mount.md`](mount.md) needed exactly this same addressing already,
+to let a mounted file manager browse and disambiguate a directory's deletion history in place;
+REQ-CLI-007 in [`cli-commands.md`](cli-commands.md) needs it too, to let `dfs list`/`dfs restore`
+name a specific soft-deleted entry without mounting. Two independently designed addressing schemes
+for the same underlying need - one path-shaped inside a mount, one built around an opaque id
+outside it - would cost callers a second mental model and this project a second implementation to
+keep consistent, for no benefit either design alone does not already provide. A live entry always
+winning a name collision, rather than the reserved segment shadowing it, follows directly from
+REQ-MOUNT-004's own reasoning for the mount case: a synthetic, addressing-only feature must never
+make real, user-created data invisible or unreachable, even in the rare case its owner happened to
+pick this exact reserved name themselves.

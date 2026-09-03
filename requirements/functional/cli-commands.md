@@ -42,10 +42,11 @@ Status: agreed
 Importance: could
 
 A command permanently removes one or more specific soft-deleted entries, selected by their
-history-entry identity (the same addressing REQ-RESTORE-002 uses), rather than requiring a general
-bulk purge sweep (REQ-STORAGE-004 in [`storage.md`](storage.md)) to eventually reach them. This is
-a distinct command from REQ-CLI-003's live-entry delete, since it addresses history entries rather
-than live paths - the two commands take different kinds of argument for what to act on.
+history-entry identity - REQ-TREE-009's `[deleted]` path-based addressing in [`tree.md`](tree.md),
+the same one REQ-RESTORE-002 uses - rather than requiring a general bulk purge sweep
+(REQ-STORAGE-004 in [`storage.md`](storage.md)) to eventually reach them. This is a distinct
+command from REQ-CLI-003's live-entry delete, since it addresses history entries rather than live
+paths - the two commands take different kinds of argument for what to act on.
 
 Rationale: REQ-STORAGE-004's bulk purge is a repository-wide maintenance sweep; a user who wants a
 specific soft-deleted entry gone for good right now - something sensitive that was accidentally
@@ -96,17 +97,32 @@ storage), rather than through a system installer; it satisfies REQ-OPERABILITY-0
 "reasonable defaults" principle for this specific, recurring parameter.
 
 ### REQ-CLI-007: List soft-deleted entries without mounting
-Status: draft
+Status: agreed
 Importance: should
 
-A command lists soft-deleted entries - at a given tree location, or repository-wide - without
-requiring a mount session first. Each listed entry shows its history-entry identity (REQ-TREE-004
-in [`tree.md`](tree.md)) and deletion timestamp, sufficient to address it for REQ-RESTORE-002's
-direct restore or REQ-CLI-004's permanent delete. This is the CLI counterpart to REQ-MOUNT-004's
-deleted-entry browsing and REQ-MOUNT-008's disambiguation, for a caller that does not want to mount
-at all.
+`dfs list` reveals REQ-TREE-009's `[deleted]` addressing segment (in [`tree.md`](tree.md)) as part
+of an ordinary directory listing when a caller passes `--show-deleted`; without the flag, a listing
+never shows it, so a script parsing plain `dfs list` output is never surprised by an extra entry
+the moment some history exists somewhere in that directory. The listing clearly distinguishes the
+segment from a real, identically-named directory - REQ-TREE-009 lets a real entry win that name, so
+the two must never be shown indistinguishably.
 
-Rationale: REQ-RESTORE-002 and REQ-CLI-004 both act on a specific soft-deleted entry addressed by
-its history-entry identity, but neither one discovers that identity itself. Without a way to list
-soft-deleted entries outside a mount, a caller in the same position REQ-CLI-003 already covers for
-live entries - a headless host, an automation script - has no way to find which entry to name.
+Once a caller names `[deleted]` explicitly as part of the path given to `dfs list` (or `dfs
+restore`), that request works without needing `--show-deleted` too - naming the reserved segment is
+already exactly as explicit a request as the flag would be, and requiring both would only add
+friction, not clarity. This is the CLI counterpart to REQ-MOUNT-004's deleted-entry browsing, using
+REQ-TREE-009's own addressing directly instead of a separate, CLI-specific mechanism - for a caller
+that does not want to mount at all.
+
+Whether a repository-wide variant (not scoped to one location, listing every soft-deleted entry
+anywhere) is still worth having, now that a caller can reach any location's own deletion history
+directly by path without first discovering an opaque identity, is not decided - see "Repository-
+wide deleted listing" in [`../open-questions.md`](../open-questions.md).
+
+Rationale: REQ-RESTORE-002 and REQ-CLI-004 both act on a specific soft-deleted entry, but neither
+discovers it. Reusing REQ-TREE-009's own addressing here - rather than a bespoke CLI-only mechanism
+that also invents its own way to name a chosen result - means a caller learns one addressing scheme
+and reuses it unchanged across `dfs list`, `dfs restore`, and REQ-CLI-004's permanent delete.
+Off-by-default matches REQ-MOUNT-004's own reasoning for the identical concern: a generic script
+parsing `dfs list`'s output should not see an unannounced extra row just because a deletion
+happened somewhere in that directory at some point.

@@ -41,10 +41,12 @@ Agreed here means this design is the wanted answer, conditioned on confirming RE
 details against real file managers before they count as settled - behavior this dependent on real
 tools cannot be fully validated on paper.
 
-A directory's deletion history is visible and browsable in place through the mount, off by default
-and enabled only by an explicit mount-time opt-in; on a read-write mount, an entry can be recovered
-by moving it out of that view into the live tree. REQ-MOUNT-007 covers other mutating operations
-against the view; REQ-MOUNT-008 covers how entries are displayed and disambiguated.
+A directory's deletion history is visible and browsable in place through the mount, at
+REQ-TREE-009's `[deleted]` path in [`tree.md`](tree.md) directly beneath it, off by default and
+enabled only by an explicit mount-time opt-in; on a read-write mount, an entry can be recovered by
+moving it out of that view into the live tree. REQ-MOUNT-007 covers other mutating operations
+against the view; REQ-MOUNT-008 covers how entries are displayed within it, beyond REQ-TREE-009's
+own addressing.
 
 Rationale: recovering a deleted file should be possible with the same ordinary file-manager
 gesture (drag, cut-and-paste) a user would already reach for, not only via a separate command-line
@@ -123,25 +125,23 @@ Agreed carries the same conditioning as REQ-MOUNT-004: a wanted design, not yet 
 real Explorer/Thunar/Nautilus listing actually displays and sorts the suffixed/prefixed names as
 assumed here is unverified.
 
-Within the view, an entry whose bare name collides with another deleted entry at the same location
-is shown with a deletion-timestamp suffix before its extension (`photo [2026-08-22_140414].jpg`;
-`.env [2026-08-22_140414]` for a dot-file, since it has no splittable extension) - an unambiguous
-name is shown as-is. If the timestamp-suffixed name would not fit `mountfs::MAX_NAME_BYTES`, the
-shorter id-only form (`photo [42].jpg`) is used instead; if even that does not fit, the base name is
-truncated, but the id suffix is always kept intact - it, unlike a truncated or timestamp-only name,
-is the part meant to be unique (`tree_entries.id`, which can realistically reach 8-9 digits, not
-just the one or two a short example suggests).
+Disambiguating more than one same-named deleted entry within the view is REQ-TREE-009's own
+convention in [`tree.md`](tree.md), not a separate mount-specific one - this requirement covers
+only what the mount adds on top of it. The "length constraint the calling context imposes" that
+decides when REQ-TREE-009's timestamp suffix gives way to its shorter id-only form is
+`mountfs::MAX_NAME_BYTES` here specifically.
 
 The view is additionally reachable at a `[time]` path directly under it, listing the same entries
 with the timestamp always prefixed instead - a second presentation of the same data, not a
 different one. `st_mtime` for any entry is always its own real, stored modification time, never the
 deletion time, in either presentation.
 
-Rationale: a deletion timestamp is more informative at a glance than an opaque id. Sorting by name
-only gives a meaningful chronological order when the timestamp is always present and at the start,
-which conflicts with keeping an unambiguous entry's original name intact. Offering both -
-suffix-only-when-needed for recognizability, always-prefixed under `[time]` for chronological
-browsing - serves both needs rather than picking one purpose for a single view to serve badly.
+Rationale: a deletion timestamp is more informative at a glance than an opaque id, which is why
+REQ-TREE-009 already leads with it. Sorting by name only gives a meaningful chronological order
+when the timestamp is always present and at the start, which conflicts with keeping an unambiguous
+entry's original name intact. Offering both - suffix-only-when-needed for recognizability,
+always-prefixed under `[time]` for chronological browsing - serves both needs rather than picking
+one purpose for a single view to serve badly.
 
 Rejected: repurposing `st_mtime` to show deletion time inside the view. This would contradict
 REQ-TREE-005's "mtime is genuine content-modification time" guarantee for exactly the entries being

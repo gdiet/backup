@@ -51,6 +51,32 @@ Is a graphical entry point (for mounting, or for routine operations) in scope, o
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
 
+### Numbered fallback for a colliding `[deleted]` name
+Status: idea
+
+REQ-TREE-009's `[deleted]` addressing segment yields to a real, identically-named live entry at the
+same location - the real entry wins, and that location's soft-deleted children become unreachable
+through this convention until the real entry is itself renamed or removed. Should a colliding
+location instead fall back to `[deleted-1]`, `[deleted-2]`, and so on, trying each in turn until an
+unused name is found, so the deleted view stays reachable everywhere regardless?
+
+This trades away a fixed, universally memorable segment name for a per-location one a caller can
+only discover by listing first - real cost for what should be an exceedingly rare collision. For a
+mount specifically, it also raises a harder question a one-shot CLI call does not have: if a real
+`[deleted]` is created while a session that already shows the plain `[deleted]` segment is still
+running, does the visible segment need to rename itself under a still-open handle? Worth revisiting
+only if the plain "real wins" rule turns out to matter in practice.
+
+### Repository-wide deleted listing
+Status: idea
+
+REQ-CLI-007 in [`functional/cli-commands.md`](functional/cli-commands.md) lets a caller list and
+address a *given location's* soft-deleted children directly, via REQ-TREE-009's `[deleted]` path
+segment - drilling down level by level finds any specific deleted entry without an opaque
+identifier. Is a separate, repository-wide listing (every soft-deleted entry anywhere, in one
+command, not scoped to a location a caller already suspects) still worth having on top of that, for
+a caller who does not know or suspect where a deleted entry used to live?
+
 ### Queryable/mount-browsable surfacing of background write failures
 Status: idea
 

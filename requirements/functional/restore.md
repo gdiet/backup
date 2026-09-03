@@ -17,8 +17,9 @@ REQ-CLI-003's delete already apply.
 Status: agreed
 Importance: should
 
-A soft-deleted entry can be restored straight to disk by its history-entry identity, without first
-reactivating it in the repository.
+A soft-deleted entry can be restored straight to disk by its history-entry identity - REQ-TREE-009's
+`[deleted]` path-based addressing in [`tree.md`](tree.md), not a separate mechanism of its own -
+without first reactivating it in the repository.
 
 Rationale: getting the bytes of something that was deleted should not require changing the
 repository's live state first, especially when the goal is a one-off look at old content.
