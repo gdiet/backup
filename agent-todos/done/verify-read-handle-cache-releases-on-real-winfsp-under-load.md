@@ -38,3 +38,38 @@ either way, update DESIGN-STORE-004's own "verified for Linux, not for Windows" 
 `docs/design/byte-store.md` to reflect the actual, checked result - including what to do if a leak
 is found (this todo does not attempt to design a fix in advance, since the actual failure mode, if
 any, is not yet known).
+
+## Done
+
+**Completed**: 2026-09-03, by a Claude Code Desktop-App session already running directly on
+`julius` (native Windows, real WinFSP) - the `julius-winfsp-ssh` skill was not needed, since it is
+for reaching `julius` over SSH from elsewhere, not relevant when already running on the machine.
+
+Set up a throwaway repository (`C:\dedupfs-perf-trial\handle-leak-check`, deleted afterward),
+mounted it read-write, wrote 20 real files (~9 MB each, distinct content) through the mount, then
+drove four sustained bursts of 16 concurrent native-OS-thread readers each (2,394 reads total
+across ~61 s of cumulative concurrent load) against the mount.
+
+Getting reliable sustained concurrent load working took most of the actual effort: PowerShell
+background jobs (`Start-Job`) were dominated by per-job process-spawn overhead on this machine's
+modest hardware (1 real read completed out of 16 jobs in 12 s); PowerShell runspace pools avoided
+that but then hung under sustained (not just bursty) load at 7-8+ concurrent runspaces - a negative
+control proved this was a client-side PowerShell/.NET runspace-pool issue, not a mount bug, by
+reproducing the identical hang against a plain NTFS directory with no mount involved at all. Landed
+on a small throwaway standalone Rust binary (`std::thread`/`std::fs` only, compiled directly with
+`rustc`, not part of the workspace) as the load driver, which worked cleanly at 16 threads against
+both the control directory and the mount.
+
+Result: the mount process's total handle count (`Get-Process`'s `HandleCount`) started at 150,
+rose once to 157 after the first burst, then stayed exactly flat at 157 through three more bursts
+and a 10 s idle period - no upward trend across repeated grow/shrink cycles. `HandleCount` is a
+coarse, all-kernel-handle-types metric (threads, sync objects, sections, files, ...), and no
+finer-grained per-handle-type tool (Sysinternals `handle.exe`/Process Explorer) was available to
+isolate the read cache's own file handles specifically - so this is a real, but imprecise, signal
+against a leak, not a precise proof. Judged good enough to close the open question: a real leak
+serious enough to matter in practice would very likely have produced a visible trend across four
+bursts and an idle period, and none did.
+
+Updated `docs/design/byte-store.md`'s DESIGN-STORE-004 "A shrinking thread pool does not leak
+cached handles" section with the full result and its precision caveat, including a note that a more
+precise, tool-assisted re-check remains open as future work if this ever becomes a live concern.

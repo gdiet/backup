@@ -156,7 +156,7 @@ exists for REQ-PERFORMANCE-003's steady-state per-call overhead, not to smooth o
 itself, and nothing currently measures how much churn a real mount session actually sees. Revisit
 if that turns out to matter once `store` is actually wired into a mount.
 
-### A shrinking thread pool does not leak cached handles - verified for Linux, not for Windows
+### A shrinking thread pool does not leak cached handles - verified for Linux and, empirically, for Windows
 
 When a worker thread that has used this cache exits, Rust's `thread_local!` destructor runs the
 same way regardless of which library created that thread: on Linux, it rides on `pthread`'s own
@@ -164,12 +164,32 @@ TLS-destructor mechanism, which fires for any `pthread` that exits cleanly, incl
 C-created worker threads, not only ones this process's own Rust code spawned directly. That drops
 every cached `File`, closing its descriptor - a shrinking pool does not leak handles, as long as
 the underlying OS thread actually exits cleanly rather than being forcibly terminated. Confirmed by
-reasoning about Linux's `pthread`-based TLS specifically, not yet confirmed for WinFSP's own
-worker-thread lifecycle on Windows, where TLS destructors are documented to not run for some
-abnormal termination paths (e.g. `TerminateThread`). `store` already runs unmodified on both
-platforms (`crates/cli/src/dedup_fs.rs`'s read path carries no platform-specific gating at all),
-so this is not blocked on more code - only on actually observing a real WinFSP mount under load on
-Windows, which no environment working on this project has done yet.
+reasoning about Linux's `pthread`-based TLS specifically.
+
+Windows' TLS destructors are documented to not run for some abnormal termination paths (e.g.
+`TerminateThread`), so this needed its own check rather than assuming the Linux reasoning transfers
+- `store` already ran unmodified on both platforms beforehand (`crates/cli/src/dedup_fs.rs`'s read
+path carries no platform-specific gating at all), so nothing about the check itself needed new code.
+Checked empirically on real WinFSP (`julius`, native Windows): a repository mounted read-write, 20
+files (~9 MB each) written through the mount, then driven with four sustained bursts of 16
+concurrent native-OS-thread readers each (2,394 reads total across ~61 s of cumulative concurrent
+load, via a throwaway standalone probe - `std::thread`/`std::fs` only, no PowerShell-runspace
+involvement after an early attempt using PowerShell runspace pools turned out to hang even against
+a *plain NTFS directory* with no mount involved at all, ruling that mechanism out as the load driver
+rather than implicating the mount). The mount process's total open-handle count (`Get-Process`'s
+`HandleCount`) stayed flat at 157 throughout every burst and a 10 s idle period afterward, after one
+small one-time rise from the initial 150 baseline - no upward trend across repeated grow/shrink
+cycles, which is what a leak would look like even under this coarse a metric.
+
+This is a real, if imprecise, signal against a leak, not a precise confirmation that cached handles
+specifically survive a shrink-then-grow cycle: `HandleCount` totals every kernel handle type in the
+process (threads, sync objects, sections, files, ...), not just this cache's own `File` handles, and
+no finer-grained per-handle-type tool (e.g. Sysinternals `handle.exe`/Process Explorer) was
+available in the environment this check ran in to isolate the file-handle contribution specifically.
+Good enough to close the open question this decision was blocked on - a real leak serious enough to
+matter in practice would very likely have shown up as a trend across four bursts and an idle period,
+and none did - but a more precise, tool-assisted re-check remains open as future work if this ever
+becomes a live concern (e.g. a real deployment reporting handle exhaustion).
 
 ### A cached handle is never invalidated - depends on the caller
 
