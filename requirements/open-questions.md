@@ -77,6 +77,28 @@ identifier. Is a separate, repository-wide listing (every soft-deleted entry any
 command, not scoped to a location a caller already suspects) still worth having on top of that, for
 a caller who does not know or suspect where a deleted entry used to live?
 
+### Graceful interrupt during a long-running ingest or restore run
+
+Status: idea
+
+Should `dfs ingest`/`dfs restore` catch an interrupt signal (Ctrl+C/SIGTERM) during a long,
+multi-item run and stop cleanly after the item currently in progress, rather than terminating
+immediately mid-item? REQ-RESTORE's/REQ-INGEST's own crash-safety (temp-file-then-rename writes,
+REQ-INGEST-004's per-item resilience) already means an abrupt kill leaves no corrupted output -
+only an incomplete run, some items done and some not, which is not itself unsafe. So this is purely
+a UX question - a clean "stopped after N of M items" outcome and exit code versus none - not a
+data-safety gap the way it was for the predecessor's own equivalent mechanism.
+
+### Default mountpoint when none is given
+
+Status: idea
+
+Should `dfs mount` fall back to a default mountpoint (an OS-specific fixed path) when none is
+given, the way REQ-CLI-006 already does for the repository path? Noted here rather than adopted:
+a fixed default mountpoint is a much less natural fit than REQ-CLI-006's "next to the executable"
+rule, since a mountpoint is not naturally tied to where the software lives - open to a genuinely
+better default if one turns up, not to adopting one just for parity's sake.
+
 ### Queryable/mount-browsable surfacing of background write failures
 Status: idea
 
