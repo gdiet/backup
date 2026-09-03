@@ -119,7 +119,7 @@ treat a gap as the end of the store.
 
 ## DESIGN-STORE-004: Read handle cache
 
-Status: draft
+Status: implemented
 
 A small per-OS-thread LRU (capacity 8) of open read file handles, keyed by absolute path -
 `read` reuses a cached handle for the same file across calls on the same thread rather than
@@ -214,7 +214,7 @@ building the alternative speculatively.
 
 ## DESIGN-STORE-005: Lazy directory creation on write
 
-Status: draft
+Status: implemented
 
 `ByteStore::write` tries to open its target file directly first, and only creates its parent
 `dir1`/`dir2` directories on a `NotFound` error from that open - not unconditionally before every
@@ -247,8 +247,8 @@ A dedicated module inside `db` (parallel to `tree.rs`), not a new crate of its o
 inside `cli`, answers "which byte range is free to write new content into" and "which ranges did
 reclaiming just free up" - REQ-STORAGE-004 (reclaim) and REQ-STORAGE-005 (compaction) in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) both need
-this; this decision is about where the logic lives, independent of their own remaining details
-(both still `Status: draft`).
+this; this decision is about where the logic lives, independent of their own remaining
+implementation details.
 
 The free-range state this logic answers from is derived entirely from `chunk_extents`, which
 already lives in the metadata database - keeping the module there lets an allocation decision and

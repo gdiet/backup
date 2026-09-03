@@ -93,7 +93,7 @@ item being processed when it was discovered - continuing to feed more items into
 just failed to accept a write risks repeating, not containing, the same failure.
 
 ### REQ-INGEST-006: Reference validated against sources before use
-Status: draft
+Status: agreed
 Importance: should
 
 When a reference (REQ-INGEST-003) is supplied, its own contents are compared against the ingest
