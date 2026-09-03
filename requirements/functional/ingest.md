@@ -20,13 +20,29 @@ restoring, browsing, checking, mounting — something to work with.
 Status: agreed
 Importance: should
 
-A source directory can declare files and subdirectories to exclude from being stored, via a small
-pattern-based rule file placed in that directory; rules apply to the directory they are found in
-and propagate into matching subdirectories.
+A source directory can declare files and subdirectories to exclude from being stored, via a
+`.backupignore` rule file placed in that directory. Each non-empty, non-comment (`#`-prefixed) line
+is one rule, matched against entries directly inside that directory.
+
+A rule can span multiple `/`-separated segments (e.g. `log/*.log`). Each segment but the last names
+a subdirectory to descend into first, so the remaining segments apply only inside it rather than
+everywhere. A segment supports `*` (any run of characters) and `?` (exactly one character) as
+wildcards, matched case-sensitively, the same as storage itself (REQ-MOUNT-010); a literal `.` is
+not itself a wildcard. The last segment matches an entry by name: without a trailing `/`, a file or
+a directory of that name; with a trailing `/`, a directory only. Matching a directory this way
+excludes it and everything beneath it outright, without descending into it at all.
+
+A completely empty `.backupignore` file excludes the directory that holds it, and everything
+beneath it, in its entirety - without needing a rule inside it for that.
 
 Rationale: not everything under a source tree is worth backing up (caches, temp files, logs), and
 that decision is naturally scoped to the directory it applies to rather than a single
-repository-wide configuration.
+repository-wide configuration. Matching a bare name against both files and directories follows the
+same convention `.gitignore` already uses, familiar to most callers who would write these rules. A
+trailing `/` then narrows an existing match to directories only, rather than being the only way to
+match a directory at all. An empty rule file as a whole-directory shorthand avoids writing an
+otherwise-redundant single wildcard rule for the common case of excluding an entire subtree
+outright.
 
 ### REQ-INGEST-003: Accelerated re-ingest via reference
 Status: agreed
