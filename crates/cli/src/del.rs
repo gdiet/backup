@@ -156,14 +156,18 @@ fn delete_deleted(
             "{path} is already soft-deleted - pass --purge to remove it permanently"
         ));
     }
-    let descendants = repo
+    let result = repo
         .purge_deleted_entry(entry.entry.id)
         .map_err(|err| format!("error: {err}"))?;
-    Ok(if descendants == 0 {
-        format!("permanently purged {path}")
-    } else {
-        format!("permanently purged {path} and {descendants} descendant(s)")
-    })
+    Ok(format!(
+        "permanently purged {path}{} ({} bytes reclaimed)",
+        if result.descendants == 0 {
+            String::new()
+        } else {
+            format!(" and {} descendant(s)", result.descendants)
+        },
+        result.reclaimed_bytes
+    ))
 }
 
 pub fn run(repo_path: &Path, default_path_used: bool, path: &str, recursive: bool, purge: bool) {

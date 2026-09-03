@@ -164,6 +164,66 @@ pub(crate) fn resolve_chunks(
     Ok(chunks)
 }
 
+/// Reclaims `content_id` if nothing references it any more - REQ-STORAGE-004's reclaim cascade,
+/// performed here for a single content id rather than the full repository-wide sweep. Two callers
+/// share this: [`crate::tree::purge_deleted_entry`] (scoped to what one purge just orphaned) and
+/// [`crate::Repository::reclaim`] (the bulk sweep) - see "Purging a tree entry is also an arming
+/// point" in `docs/design/stale-backup-detection.md` for why purge performs this immediately
+/// rather than leaving it to a later sweep.
+///
+/// A `contents` row's own `ref_count` reaching zero (via `tree_entries_ref_count_del`) does not by
+/// itself free anything: deleting it cascades to its `content_chunks` rows and, through
+/// `content_chunks_ref_count_del`, decrements each referenced chunk's own `ref_count` - but a chunk
+/// is not itself deleted by that cascade, even once its `ref_count` reaches zero too, since a chunk
+/// can be shared by more than one content. This walks exactly that one level further: after
+/// deleting `content_id`'s row, any chunk whose `ref_count` reached zero as a result is deleted in
+/// turn, cascading to its own `chunk_extents` rows - which is what actually makes those byte ranges
+/// eligible for reuse by [`crate::allocation::reserve`].
+///
+/// Returns the number of bytes freed (the sum of every deleted chunk's own `chunk_extents`
+/// ranges) - `0` if `content_id` is still referenced, or no longer exists (already reclaimed).
+pub(crate) fn reclaim_content(conn: &Connection, content_id: i64) -> Result<u64, Error> {
+    let ref_count: Option<i64> = conn
+        .query_row(
+            "SELECT ref_count FROM contents WHERE id = ?1",
+            params![content_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(ref_count) = ref_count else {
+        return Ok(0);
+    };
+    if ref_count > 0 {
+        return Ok(0);
+    }
+
+    let chunk_ids: Vec<i64> = conn
+        .prepare("SELECT DISTINCT chunk_id FROM content_chunks WHERE content_id = ?1")?
+        .query_map(params![content_id], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    conn.execute("DELETE FROM contents WHERE id = ?1", params![content_id])?;
+
+    let mut reclaimed_bytes = 0u64;
+    for chunk_id in chunk_ids {
+        let chunk_ref_count: i64 = conn.query_row(
+            "SELECT ref_count FROM chunks WHERE id = ?1",
+            params![chunk_id],
+            |row| row.get(0),
+        )?;
+        if chunk_ref_count == 0 {
+            let extents_len: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(stop - start), 0) FROM chunk_extents WHERE chunk_id = ?1",
+                params![chunk_id],
+                |row| row.get(0),
+            )?;
+            conn.execute("DELETE FROM chunks WHERE id = ?1", params![chunk_id])?;
+            reclaimed_bytes += extents_len as u64;
+        }
+    }
+    Ok(reclaimed_bytes)
+}
+
 /// Finds or creates the `contents` row for the whole-content `(length, hash)`, linking
 /// `chunk_ids` (in order) via `content_chunks` if it did not already exist - an empty `chunk_ids`
 /// is valid (a zero-length content). Returns the content id.

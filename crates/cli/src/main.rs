@@ -15,6 +15,7 @@ mod ingest;
 mod list;
 mod mount;
 mod pending_files;
+mod reclaim;
 mod repo_path;
 mod restore;
 mod settle;
@@ -127,6 +128,19 @@ enum Commands {
         /// executable when omitted.
         #[arg(long)]
         repo: Option<PathBuf>,
+    },
+    // REQ-STORAGE-004.
+    /// Bulk-purges every soft-deleted entry that has stayed soft-deleted for at least a
+    /// caller-chosen minimum age, reclaiming the storage each purge frees along the way.
+    Reclaim {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Only purge an entry that has stayed soft-deleted for at least this many days.
+        /// Defaults to 0 (purged the next time this command runs at all).
+        #[arg(long, default_value_t = 0)]
+        min_age_days: u32,
     },
     // REQ-CLI-003.
     /// Deletes a tree entry directly against the repository, without mounting.
@@ -352,6 +366,11 @@ fn main() {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
             db_compact::run(&repo, default_path_used);
+        }
+        Commands::Reclaim { repo, min_age_days } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            reclaim::run(&repo, default_path_used, min_age_days, time_millis);
         }
         Commands::Del {
             repo,

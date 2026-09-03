@@ -29,7 +29,7 @@ pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
 pub use stats::Stats;
-pub use tree::{DeletedEntry, Entry, EntryKind};
+pub use tree::{DeletedEntry, Entry, EntryKind, PurgeResult};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
 // docs/design/repository-layout.md.
@@ -444,10 +444,46 @@ impl Repository {
     /// Permanently removes the soft-deleted entry `id` - REQ-CLI-003's `--purge` case, addressed
     /// through REQ-TREE-009's `[deleted]` resolution rather than a live path. Refuses an `id` that
     /// does not exist or is still live; if it is a directory, its own soft-deleted children are
-    /// purged along with it (REQ-TREE-008 guarantees none of them are live). Returns how many of
-    /// those descendants this purged, not counting `id` itself.
-    pub fn purge_deleted_entry(&self, id: i64) -> Result<u64, Error> {
+    /// purged along with it (REQ-TREE-008 guarantees none of them are live). Also performs
+    /// REQ-STORAGE-004's reclaim cascade immediately, scoped to what this purge just orphaned - see
+    /// [`PurgeResult`] and `tree::purge_deleted_entry`'s own doc comment.
+    pub fn purge_deleted_entry(&self, id: i64) -> Result<PurgeResult, Error> {
         self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id))
+    }
+
+    /// REQ-STORAGE-004's bulk sweep: purges every soft-deleted entry that has stayed soft-deleted
+    /// for at least `min_age_millis`, as measured against `now_millis` (`deleted_at <=
+    /// now_millis - min_age_millis`), reclaiming the storage each purge frees along the way (see
+    /// [`Self::purge_deleted_entry`], which this calls once per qualifying entry, each its own
+    /// transaction - a repository-wide sweep is not one giant transaction, the same reasoning
+    /// [`Self::compact`] already follows). A directory that qualifies purges its own descendants
+    /// with it regardless of their individual ages, the same as a single `--purge` on that
+    /// directory would - REQ-TREE-008 already guarantees they are all soft-deleted too. A qualifying
+    /// entry found to already be gone by the time its own turn comes (purged earlier in this same
+    /// sweep, as another qualifying entry's descendant) is skipped rather than treated as an error.
+    pub fn reclaim(&self, now_millis: i64, min_age_millis: i64) -> Result<ReclaimResult, Error> {
+        let cutoff = now_millis - min_age_millis;
+        let ids: Vec<i64> = self.with_connection(|conn, _cache| {
+            conn.prepare(
+                "SELECT id FROM tree_entries WHERE deleted_at IS NOT NULL AND deleted_at <= ?1",
+            )?
+            .query_map(params![cutoff], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Error::from)
+        })?;
+
+        let mut result = ReclaimResult::default();
+        for id in ids {
+            match self.purge_deleted_entry(id) {
+                Ok(purge) => {
+                    result.purged += 1 + purge.descendants;
+                    result.reclaimed_bytes += purge.reclaimed_bytes;
+                }
+                Err(Error::NoSuchEntry(_)) => {}
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(result)
     }
 
     /// Looks up the live entry by its own id, rather than by path - `Ok(None)` if it does not
@@ -733,6 +769,14 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
 pub struct CompactionResult {
     pub before_bytes: u64,
     pub after_bytes: u64,
+}
+
+/// [`Repository::reclaim`]'s own result - total entries purged (including cascaded descendants)
+/// and total bytes freed across the whole sweep.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReclaimResult {
+    pub purged: u64,
+    pub reclaimed_bytes: u64,
 }
 
 /// The database's current on-disk size, in bytes (`page_count * page_size`) - matches

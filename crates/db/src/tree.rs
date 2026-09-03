@@ -537,20 +537,30 @@ pub(crate) fn unlink_file(
     Ok(())
 }
 
+/// `purge_deleted_entry`'s own result: how many descendants it purged alongside the entry itself
+/// (not counting the entry itself - `0` for a file or an empty directory), and how many bytes its
+/// reclaim cascade freed in the process (across the entry itself and every purged descendant).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PurgeResult {
+    pub descendants: u64,
+    pub reclaimed_bytes: u64,
+}
+
 /// Permanently removes the soft-deleted entry `id` from the tree - REQ-CLI-003's `--purge` case.
 /// Refuses an `id` that does not exist ([`Error::NoSuchEntry`]) or that is still live
 /// ([`Error::NotSoftDeleted`]) - only an entry already reached through REQ-TREE-009's `[deleted]`
 /// addressing is eligible. If `id` is a directory, its own soft-deleted children are purged first,
 /// recursively (REQ-TREE-008 guarantees none of them are live) - `tree_entries.parent_id`'s foreign
-/// key would otherwise refuse deleting a row still referenced by a child. Returns how many of
-/// those descendants this purged, not counting `id` itself - `0` for a file or an empty directory.
+/// key would otherwise refuse deleting a row still referenced by a child.
 ///
 /// The `tree_entries_ref_count_del` trigger (`migrations.rs`) decrements each purged file's
-/// `contents.ref_count` as a side effect of its row's own deletion. Reaching zero there does not
-/// itself reclaim any stored bytes - REQ-STORAGE-004's bulk reclaim sweep is the separate, later
-/// step for that; this only removes the tree entry (and, once nothing else references it, the
-/// `contents`/`chunks` bookkeeping rows) that was keeping it referenced.
-pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<u64, Error> {
+/// `contents.ref_count` as a side effect of its row's own deletion. Reaching zero there does not by
+/// itself reclaim any stored bytes, so this also performs REQ-STORAGE-004's reclaim cascade
+/// immediately afterward, scoped to exactly the `contents` rows this purge just orphaned (see
+/// [`crate::content::reclaim_content`]) - "Purging a tree entry is also an arming point" in
+/// `docs/design/stale-backup-detection.md` records why purge does this itself rather than leaving
+/// it to a later, separate sweep.
+pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<PurgeResult, Error> {
     if id == 0 {
         // tree_entries_protect_root's own DELETE trigger would already refuse this (unlike
         // rmdir/unlink_file's soft-delete UPDATE, which it does not cover), but only as a raw
@@ -558,11 +568,11 @@ pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<u64, Err
         // root-removal attempt gets.
         return Err(Error::CannotRemoveRoot);
     }
-    let (kind, deleted_at): (i64, Option<i64>) = conn
+    let (kind, deleted_at, content_id): (i64, Option<i64>, Option<i64>) = conn
         .query_row(
-            "SELECT kind, deleted_at FROM tree_entries WHERE id = ?1",
+            "SELECT kind, deleted_at, content_id FROM tree_entries WHERE id = ?1",
             params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
         .ok_or(Error::NoSuchEntry(id))?;
@@ -570,19 +580,24 @@ pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<u64, Err
         return Err(Error::NotSoftDeleted(id));
     }
 
-    let mut descendants = 0u64;
+    let mut result = PurgeResult::default();
     if kind == KIND_DIR {
         let child_ids: Vec<i64> = conn
             .prepare("SELECT id FROM tree_entries WHERE parent_id = ?1")?
             .query_map(params![id], |row| row.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for child_id in child_ids {
-            descendants += 1 + purge_deleted_entry(conn, child_id)?;
+            let child_result = purge_deleted_entry(conn, child_id)?;
+            result.descendants += 1 + child_result.descendants;
+            result.reclaimed_bytes += child_result.reclaimed_bytes;
         }
     }
 
     conn.execute("DELETE FROM tree_entries WHERE id = ?1", params![id])?;
-    Ok(descendants)
+    if let Some(content_id) = content_id {
+        result.reclaimed_bytes += crate::content::reclaim_content(conn, content_id)?;
+    }
+    Ok(result)
 }
 
 /// Whether `ancestor_id` is `descendant_id` itself, or one of its ancestors (walking up via
@@ -1181,21 +1196,28 @@ mod tests {
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
         repo.unlink_file(id, 200).unwrap();
 
-        let descendants = repo.purge_deleted_entry(id).expect("purge must succeed");
+        let result = repo.purge_deleted_entry(id).expect("purge must succeed");
 
         assert_eq!(
             row_count(&repo, id),
             0,
             "the purged row must be gone entirely, not merely soft-deleted"
         );
-        assert_eq!(descendants, 0, "a plain file has no descendants to count");
+        assert_eq!(
+            result.descendants, 0,
+            "a plain file has no descendants to count"
+        );
     }
 
     #[test]
-    fn purge_deleted_entry_decrements_the_content_ref_count() {
+    fn purge_deleted_entry_decrements_the_content_ref_count_while_still_referenced_elsewhere() {
         let (repo, _dir) = repo();
         let content_id = insert_content(&repo, 1, 0xAA);
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        // A second live entry shares the same content_id, so its ref_count survives the purge
+        // below instead of reaching zero and being reclaimed away (see
+        // purge_deleted_entry_reclaims_bytes_for_content_nothing_else_references for that case).
+        repo.settle_file(0, "b.txt", 100, content_id).unwrap();
         repo.unlink_file(id, 200).unwrap();
         let ref_count_before: i64 = repo
             .with_connection(|conn, _cache| {
@@ -1259,17 +1281,86 @@ mod tests {
         repo.unlink_file(file_id, 150).unwrap();
         repo.rmdir(dir_id, 200).unwrap();
 
-        let descendants = repo
+        let result = repo
             .purge_deleted_entry(dir_id)
             .expect("purge of the directory must also purge its own deleted child");
 
-        assert_eq!(descendants, 1, "the one deleted child must be counted");
+        assert_eq!(
+            result.descendants, 1,
+            "the one deleted child must be counted"
+        );
         assert_eq!(row_count(&repo, dir_id), 0);
         assert_eq!(
             row_count(&repo, file_id),
             0,
             "a soft-deleted directory's own soft-deleted child must be purged along with it - \
              otherwise its parent_id foreign key would refuse the parent's own deletion"
+        );
+    }
+
+    #[test]
+    fn purge_deleted_entry_reclaims_bytes_for_content_nothing_else_references() {
+        let (repo, _dir) = repo();
+        let (chunk_id, _ranges) = repo.reserve_and_insert_chunk(10, &[0xAA; 20]).unwrap();
+        let content_id = repo
+            .find_or_create_content(10, &[0xBB; 20], &[chunk_id])
+            .unwrap();
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        let result = repo.purge_deleted_entry(id).expect("purge must succeed");
+
+        assert_eq!(
+            result.reclaimed_bytes, 10,
+            "the sole reference's own chunk_extents range must be counted as reclaimed"
+        );
+        let chunk_left: i64 = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM chunks WHERE id = ?1",
+                    [chunk_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            chunk_left, 0,
+            "the orphaned chunk itself must be deleted, cascading to chunk_extents"
+        );
+    }
+
+    #[test]
+    fn purge_deleted_entry_does_not_reclaim_content_still_referenced_elsewhere() {
+        let (repo, _dir) = repo();
+        let (chunk_id, _ranges) = repo.reserve_and_insert_chunk(10, &[0xAA; 20]).unwrap();
+        let content_id = repo
+            .find_or_create_content(10, &[0xBB; 20], &[chunk_id])
+            .unwrap();
+        let first_id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        // A second live entry shares the same content_id, keeping its ref_count above zero.
+        repo.settle_file(0, "b.txt", 100, content_id).unwrap();
+        repo.unlink_file(first_id, 200).unwrap();
+
+        let result = repo
+            .purge_deleted_entry(first_id)
+            .expect("purge must succeed");
+
+        assert_eq!(
+            result.reclaimed_bytes, 0,
+            "content still referenced by a live entry must not be reclaimed"
+        );
+        let content_left: i64 = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM contents WHERE id = ?1",
+                    [content_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            content_left, 1,
+            "the contents row must survive while still referenced"
         );
     }
 
