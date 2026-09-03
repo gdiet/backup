@@ -114,7 +114,6 @@ performance regression into an actionable error at the point a caller can still 
 it. Comparing one level into a shared subdirectory, not just the top level, catches a reference
 that only happens to share its top-level names but diverges immediately beneath them - a bare
 top-level comparison alone would miss that case entirely.
-it.
 
 ### REQ-INGEST-007: Templated target paths for repeated runs
 Status: agreed

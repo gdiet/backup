@@ -23,7 +23,14 @@ Early development. The `dfs` command-line tool exists and can:
   are chunked, hashed, and deduplicated in the background after a file is closed, not while it is
   being written; a background failure is recorded to a plain log file in the repository's `meta/`
   directory, and a systemic failure (e.g. storage full) degrades the session to read-only until
-  the mount is started again.
+  the mount is started again;
+- list a directory's contents (`dfs list`) or restore repository paths to a real directory on disk
+  (`dfs restore`, with optional content verification and best-effort recovery of missing or
+  corrupted data) - both without mounting;
+- import one or more real filesystem paths into a repository directory (`dfs ingest`),
+  deduplicating their content along the way, honoring per-directory `.backupignore` exclusion
+  rules, continuing past a source file that cannot be read, and optionally accelerating a repeat
+  run against an earlier ingest via `--reference`.
 
 Underneath the CLI: [`cdc`](crates/cdc/) (content-defined chunking, the basis for sub-file
 deduplication) and [`mountfs`](crates/mountfs/) (a cross-platform mount backend, Linux via

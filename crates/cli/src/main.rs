@@ -3,6 +3,8 @@ mod content_reader;
 mod create_repo;
 mod dedup_fs;
 mod failure_log;
+mod ignore_rules;
+mod ingest;
 mod list;
 mod mount;
 mod pending_files;
@@ -122,6 +124,28 @@ enum Commands {
         #[arg(required = true, num_args = 2..)]
         paths: Vec<String>,
     },
+    // REQ-INGEST-001/002/003/004/005/006.
+    /// Imports one or more real filesystem paths into the repository, deduplicating their
+    /// content along the way.
+    Ingest {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// An earlier ingest's target repository path to accelerate this run against
+        /// (REQ-INGEST-003): a source file matching a same-named, same-size, same-modified-time
+        /// file under it is linked to that existing content without being read again.
+        #[arg(long)]
+        reference: Option<String>,
+        /// Skip REQ-INGEST-006's check that --reference actually corresponds to the sources being
+        /// ingested, and use it regardless.
+        #[arg(long, requires = "reference")]
+        force_reference: bool,
+        /// One or more real filesystem paths to import, followed by the target repository
+        /// directory (which must already exist).
+        #[arg(required = true, num_args = 2..)]
+        paths: Vec<String>,
+    },
 }
 
 #[derive(Parser)]
@@ -213,6 +237,23 @@ fn main() {
                 overwrite,
                 verify,
                 best_effort,
+            );
+        }
+        Commands::Ingest {
+            repo,
+            reference,
+            force_reference,
+            paths,
+        } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            let (sources, target) = paths.split_at(paths.len() - 1);
+            ingest::run(
+                &repo,
+                default_path_used,
+                sources,
+                &target[0],
+                reference.as_deref(),
+                force_reference,
             );
         }
     }

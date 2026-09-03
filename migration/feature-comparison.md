@@ -9,7 +9,8 @@ Status values: `implemented` | `planned` | `not planned` (requires a one-line re
 | Whole-file content deduplication (MD5-based) | planned | non-CDC, whole-file chunking exists as a library building block (see REQ-STORAGE-003), using `blake3` instead of MD5, but is not yet reachable through any command |
 | Mount read-write (real content writes: create/write/truncate/unlink) | implemented | `crates/cli/src/dedup_fs.rs`, DESIGN-MOUNT-006/007/008/009/010/012/013/015 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md); DESIGN-MOUNT-009's failure log is a plain file only, not yet queryable |
 | `list` command (directory listing without mounting) | implemented | `crates/cli/src/list.rs`, REQ-QUERY-001 |
-| `backup`/`restore` commands' restore direction (repository paths to a real directory on disk) | implemented | `crates/cli/src/restore.rs`, REQ-RESTORE-001/003/004; the `backup` direction (real filesystem into the repository, REQ-INGEST-*) is not yet implemented |
+| `backup`/`restore` commands' restore direction (repository paths to a real directory on disk) | implemented | `crates/cli/src/restore.rs`, REQ-RESTORE-001/003/004 |
+| `ingest` command (real filesystem into the repository) | implemented | `crates/cli/src/ingest.rs`, `crates/cli/src/ignore_rules.rs`, REQ-INGEST-001/002/003/004/005/006; REQ-INGEST-007's templated/creatable target-path syntax is not yet implemented - the target path must already exist as a plain repository directory |
 
 ## Non-Functional Parity
 
