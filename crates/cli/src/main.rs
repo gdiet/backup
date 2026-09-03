@@ -1,6 +1,8 @@
 mod backpressure;
 mod content_reader;
 mod create_repo;
+mod db_backup;
+mod db_restore;
 mod dedup_fs;
 mod del;
 mod deleted;
@@ -94,6 +96,27 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         path: Option<PathBuf>,
+    },
+    // REQ-MAINTENANCE-001.
+    /// Backs up a repository's metadata to a fresh, timestamped, self-contained file.
+    DbBackup {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// Directory to write the timestamped backup file into (which must already exist).
+        target: PathBuf,
+    },
+    // REQ-MAINTENANCE-002.
+    /// Restores a repository's metadata from a prior `db-backup` file, wholesale-replacing the
+    /// live metadata store.
+    DbRestore {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+        /// The backup file to restore from (produced by `dfs db-backup`).
+        backup: PathBuf,
     },
     // REQ-CLI-003.
     /// Deletes a tree entry directly against the repository, without mounting.
@@ -300,6 +323,16 @@ fn main() {
             let (path, default_path_used) = resolve_repo_path(path);
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
             unlock::run(&path, default_path_used);
+        }
+        Commands::DbBackup { repo, target } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            db_backup::run(&repo, default_path_used, &target, time_millis);
+        }
+        Commands::DbRestore { repo, backup } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            db_restore::run(&repo, default_path_used, &backup);
         }
         Commands::Del {
             repo,

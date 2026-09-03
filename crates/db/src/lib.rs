@@ -23,7 +23,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, params};
 
 pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
@@ -96,6 +96,14 @@ pub enum Error {
     WouldCreateCycle,
     /// The root entry cannot be removed.
     CannotRemoveRoot,
+    /// [`restore_metadata`] was given a `backup_path` that could not be opened, or opened but does
+    /// not look like a genuine dedupfs metadata backup (its `repository_settings` row could not be
+    /// read) - checked before anything about the live repository is touched.
+    InvalidBackup(PathBuf),
+    /// A path this crate needs to pass through as SQL text (e.g. [`Repository::backup_metadata`]'s
+    /// own `VACUUM INTO` target) is not valid UTF-8 - rusqlite's parameter binding has no other way
+    /// to carry an arbitrary OS path through a SQL statement.
+    PathNotUtf8(PathBuf),
     /// Another thread using this [`Repository`] panicked while holding its internal lock (guarding
     /// the connection and DESIGN-MOUNT-017's name cache alongside it).
     Poisoned,
@@ -185,6 +193,16 @@ impl std::fmt::Display for Error {
                 write!(f, "cannot move a directory into its own subtree")
             }
             Error::CannotRemoveRoot => write!(f, "cannot remove the root entry"),
+            Error::InvalidBackup(path) => {
+                write!(
+                    f,
+                    "{} does not look like a dedupfs metadata backup",
+                    path.display()
+                )
+            }
+            Error::PathNotUtf8(path) => {
+                write!(f, "{} is not valid UTF-8", path.display())
+            }
             Error::Poisoned => write!(f, "an internal repository lock was poisoned"),
             Error::AlreadyLocked(path) => {
                 write!(
@@ -353,6 +371,21 @@ impl Repository {
     /// recursive descendants - `dir_id` itself is not counted.
     pub fn stats_for(&self, dir_id: i64) -> Result<Stats, Error> {
         self.with_connection(|conn, _cache| stats::stats_for(conn, dir_id))
+    }
+
+    /// REQ-MAINTENANCE-001: backs up this repository's metadata to a fresh, self-contained SQLite
+    /// file at `target_path`, which must not already exist. Read-only - SQLite's `VACUUM INTO`
+    /// needs no write access to the source database - so this neither blocks nor is blocked by a
+    /// concurrent mutating operation (REQ-MAINTENANCE-004), and works whether this `Repository`
+    /// was itself opened read-only or read-write.
+    pub fn backup_metadata(&self, target_path: &Path) -> Result<(), Error> {
+        let target = target_path
+            .to_str()
+            .ok_or_else(|| Error::PathNotUtf8(target_path.to_path_buf()))?;
+        self.with_connection(|conn, _cache| {
+            conn.execute("VACUUM INTO ?1", params![target])?;
+            Ok(())
+        })
     }
 
     /// REQ-TREE-009's `[deleted]` addressing: `parent_id`'s own soft-deleted children.
@@ -684,6 +717,57 @@ fn read_settings(conn: &Connection) -> Result<RepositorySettings, Error> {
         cdc_target_size_bits,
         creation_time_millis,
     ))
+}
+
+/// REQ-MAINTENANCE-002: restores `repo_root`'s metadata from a prior [`Repository::backup_metadata`]
+/// file at `backup_path`, wholesale-replacing the live metadata store. The caller must already
+/// hold `repo_root`'s write lock ([`acquire_write_lock`]) - this does not acquire one itself, the
+/// same convention every other mutating entry point in this crate follows, since a CLI command
+/// typically holds the lock across its own surrounding checks (e.g. confirming the repository
+/// exists at all) as well as the mutating call itself.
+///
+/// `backup_path` is validated as a genuine dedupfs metadata backup (opens, and its own
+/// `repository_settings` row reads back) before anything about the live repository is touched - a
+/// restore attempt against an unrelated or corrupt file fails with [`Error::InvalidBackup`], rather
+/// than destroying the live metadata store first and discovering the problem only afterward.
+///
+/// Replaces `repo_root`'s database file with a copy of `backup_path` via a temp-file-then-rename
+/// (REQ-TREE-006-style atomicity - a failure partway through never leaves a half-written database
+/// in place), then removes any leftover `-wal`/`-shm` sidecar files next to it: those belong to the
+/// database file that was just replaced, and replaying their frames against the newly-restored file
+/// instead would corrupt it. REQ-MAINTENANCE-004's read-only-unblocked guarantee does not hold
+/// through this replace step - a concurrent read may fail or see an inconsistent result while it is
+/// in progress, an accepted, documented limitation (REQ-MAINTENANCE-002's own text).
+pub fn restore_metadata(repo_root: &Path, backup_path: &Path) -> Result<(), Error> {
+    ensure_repository_exists(repo_root)?;
+
+    let backup_conn = Connection::open_with_flags(backup_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|_| Error::InvalidBackup(backup_path.to_path_buf()))?;
+    read_settings(&backup_conn).map_err(|_| Error::InvalidBackup(backup_path.to_path_buf()))?;
+    drop(backup_conn);
+
+    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+    let mut temp_name = db_path
+        .file_name()
+        .expect("db_path always ends in META_DB_FILE, which is a fixed non-empty literal")
+        .to_os_string();
+    temp_name.push(".dfs-restore-tmp");
+    let temp_path = db_path.with_file_name(temp_name);
+
+    if let Err(err) = fs::copy(backup_path, &temp_path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(err.into());
+    }
+    fs::rename(&temp_path, &db_path)?;
+
+    let mut wal_name = db_path.clone().into_os_string();
+    wal_name.push("-wal");
+    let _ = fs::remove_file(PathBuf::from(wal_name));
+    let mut shm_name = db_path.into_os_string();
+    shm_name.push("-shm");
+    let _ = fs::remove_file(PathBuf::from(shm_name));
+
+    Ok(())
 }
 
 /// Acquires `repo_root`'s repository-wide write lock, failing immediately (never blocking) if
@@ -1056,5 +1140,129 @@ mod tests {
         })
         .expect("delete must succeed");
         assert_eq!(ref_count(&repo), 0);
+    }
+
+    #[test]
+    fn backup_metadata_creates_a_self_contained_copy_readable_independently() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+        repo.mkdir(0, "a", 100).expect("mkdir must succeed");
+
+        let backup_path = dir.path().join("backup.sqlite3");
+        repo.backup_metadata(&backup_path)
+            .expect("backup must succeed");
+
+        assert!(backup_path.is_file());
+        // The backup file is a plain, standalone SQLite file - read it directly rather than
+        // through open_repository_read_only, which expects a repo_root/meta/... layout.
+        let conn = Connection::open_with_flags(&backup_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("the backup file must be a valid, independently openable SQLite database");
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM tree_entries WHERE parent_id = 0 AND name != ''",
+                (),
+                |row| row.get(0),
+            )
+            .expect("the backed-up tree must contain the directory created before the backup");
+        assert_eq!(name, "a");
+    }
+
+    #[test]
+    fn backup_metadata_refuses_to_overwrite_an_existing_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let backup_path = dir.path().join("backup.sqlite3");
+        fs::write(&backup_path, b"not a database").unwrap();
+
+        let err = repo.backup_metadata(&backup_path).unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)));
+    }
+
+    #[test]
+    fn restore_metadata_replaces_the_live_metadata_with_the_backups_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+        repo.mkdir(0, "before-backup", 100).unwrap();
+        let backup_path = dir.path().join("backup.sqlite3");
+        repo.backup_metadata(&backup_path).unwrap();
+        repo.mkdir(0, "after-backup", 200).unwrap();
+        drop(repo);
+
+        restore_metadata(&repo_root, &backup_path).expect("restore must succeed");
+
+        let repo = open_repository(&repo_root).expect("open after restore must succeed");
+        assert!(
+            repo.resolve_path("/before-backup").unwrap().is_some(),
+            "an entry that existed at backup time must survive the restore"
+        );
+        assert!(
+            repo.resolve_path("/after-backup").unwrap().is_none(),
+            "an entry created after the backup was taken must not survive the restore"
+        );
+    }
+
+    #[test]
+    fn restore_metadata_leaves_no_stale_wal_or_shm_sidecar_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+        let backup_path = dir.path().join("backup.sqlite3");
+        repo.backup_metadata(&backup_path).unwrap();
+        drop(repo);
+        // SQLite's own graceful close already checkpoints and removes an ordinary -wal/-shm pair
+        // (verified: neither exists here at this point) - so a leftover pair is only ever seen
+        // after an unclean shutdown (a crash, a kill). Planted directly here to exercise that case
+        // deterministically, rather than depending on how a real crash happens to leave WAL state.
+        let db_path = repo_root.join("meta").join("repository.sqlite3");
+        let wal_path = PathBuf::from(format!("{}-wal", db_path.display()));
+        let shm_path = PathBuf::from(format!("{}-shm", db_path.display()));
+        fs::write(&wal_path, b"stale wal frames from a crashed prior session").unwrap();
+        fs::write(&shm_path, b"stale shm").unwrap();
+
+        restore_metadata(&repo_root, &backup_path).expect("restore must succeed");
+
+        assert!(!wal_path.exists());
+        assert!(!shm_path.exists());
+    }
+
+    #[test]
+    fn restore_metadata_refuses_a_file_that_is_not_a_dedupfs_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let bogus_path = dir.path().join("bogus.sqlite3");
+        fs::write(&bogus_path, b"not a database").unwrap();
+
+        let err = restore_metadata(&repo_root, &bogus_path).unwrap_err();
+        assert!(matches!(err, Error::InvalidBackup(_)));
+
+        // The live repository must be left untouched by a refused restore.
+        let repo = open_repository(&repo_root).expect("the live repository must still open fine");
+        assert!(repo.resolve_path("/").unwrap().is_some());
+    }
+
+    #[test]
+    fn restore_metadata_refuses_a_valid_but_unrelated_sqlite_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let unrelated_path = dir.path().join("unrelated.sqlite3");
+        let unrelated = Connection::open(&unrelated_path).unwrap();
+        unrelated
+            .execute_batch("CREATE TABLE not_a_repository (id INTEGER)")
+            .unwrap();
+        drop(unrelated);
+
+        let err = restore_metadata(&repo_root, &unrelated_path).unwrap_err();
+        assert!(matches!(err, Error::InvalidBackup(_)));
     }
 }

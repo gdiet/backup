@@ -129,6 +129,10 @@ fn to_errno(err: db::Error) -> Errno {
         // Never actually reaches here either: `DedupFs` never calls `purge_deleted_entry`
         // (REQ-CLI-003's `--purge` case is CLI-only, not exposed through the mount).
         | db::Error::NotSoftDeleted(_)
+        // Never actually reaches here either: `DedupFs` never calls `backup_metadata`/
+        // `restore_metadata` (REQ-MAINTENANCE-001/002 are CLI-only, not exposed through the mount).
+        | db::Error::InvalidBackup(_)
+        | db::Error::PathNotUtf8(_)
         | db::Error::Io(_)
         | db::Error::Sqlite(_)
         | db::Error::Migration(_) => Errno::EIO,
