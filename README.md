@@ -26,7 +26,9 @@ Early development. The `dfs` command-line tool exists and can:
   the mount is started again;
 - list a directory's contents (`dfs list`) or restore repository paths to a real directory on disk
   (`dfs restore`, with optional content verification and best-effort recovery of missing or
-  corrupted data) - both without mounting;
+  corrupted data) - both without mounting; `dfs list --show-deleted` also reveals a directory's own
+  soft-deleted history at its `[deleted]` path, and both commands can address a specific
+  soft-deleted entry directly through it, without reactivating it first;
 - import one or more real filesystem paths into a repository directory (`dfs ingest`),
   deduplicating their content along the way, honoring per-directory `.backupignore` exclusion
   rules, continuing past a source file that cannot be read, and optionally accelerating a repeat

@@ -57,6 +57,15 @@ pub struct Entry {
     pub size: u64,
 }
 
+/// One soft-deleted entry, as exposed through REQ-TREE-009's `[deleted]` addressing
+/// (`requirements/functional/tree.md`) - an [`Entry`]'s own fields (kind, real
+/// content-modification time, content) plus its own deletion timestamp.
+#[derive(Debug, Clone, Copy)]
+pub struct DeletedEntry {
+    pub entry: Entry,
+    pub deleted_at: i64,
+}
+
 pub(crate) fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Entry>, Error> {
     let row: Option<(i64, i64, Option<i64>, Option<i64>)> = conn
         .query_row(
@@ -155,6 +164,66 @@ pub(crate) fn list_children(
                 time_millis,
                 content_id,
                 size: length.unwrap_or(0) as u64,
+            },
+        ))
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
+}
+
+/// Like [`require_dir`], but also accepts a soft-deleted directory - REQ-TREE-009's `[deleted]`
+/// addressing needs to descend into an already-deleted directory's own soft-deleted children.
+/// REQ-TREE-008 guarantees every child of a soft-deleted directory is itself soft-deleted (a live
+/// child can never be created under a non-live parent), so there is no live case left to handle
+/// once inside one.
+fn require_dir_any_state(conn: &Connection, id: i64) -> Result<(), Error> {
+    let kind: Option<i64> = conn
+        .query_row(
+            "SELECT kind FROM tree_entries WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match kind {
+        Some(k) if k == KIND_DIR => Ok(()),
+        Some(_) => Err(Error::WrongKind(id)),
+        None => Err(Error::NoSuchEntry(id)),
+    }
+}
+
+/// `parent_id`'s own soft-deleted children (REQ-TREE-009) - `parent_id` may itself be a live or
+/// already soft-deleted directory (see [`require_dir_any_state`]). Each is paired with the raw
+/// name it was stored under, exactly as a live child would be from [`list_children`] - REQ-TREE-009's
+/// display-name disambiguation is a presentation concern for the caller, not decided here.
+pub(crate) fn list_deleted_children(
+    conn: &Connection,
+    parent_id: i64,
+) -> Result<Vec<(String, DeletedEntry)>, Error> {
+    require_dir_any_state(conn, parent_id)?;
+
+    let mut stmt = conn.prepare(
+        "SELECT te.id, te.name, te.kind, te.time, te.content_id, c.length, te.deleted_at \
+         FROM tree_entries te LEFT JOIN contents c ON c.id = te.content_id \
+         WHERE te.parent_id = ?1 AND te.deleted_at IS NOT NULL",
+    )?;
+    let rows = stmt.query_map(params![parent_id], |row| {
+        let id: i64 = row.get(0)?;
+        let name: String = row.get(1)?;
+        let kind: i64 = row.get(2)?;
+        let time_millis: i64 = row.get(3)?;
+        let content_id: Option<i64> = row.get(4)?;
+        let length: Option<i64> = row.get(5)?;
+        let deleted_at: i64 = row.get(6)?;
+        Ok((
+            name,
+            DeletedEntry {
+                entry: Entry {
+                    id,
+                    kind: EntryKind::from_db(kind),
+                    time_millis,
+                    content_id,
+                    size: length.unwrap_or(0) as u64,
+                },
+                deleted_at,
             },
         ))
     })?;
@@ -744,6 +813,77 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn list_deleted_children_lists_only_soft_deleted_direct_children() {
+        let (repo, _dir) = repo();
+        let a_id = repo.mkdir(0, "a", 100).unwrap();
+        repo.mkdir(0, "b", 100).unwrap();
+        repo.rmdir(a_id, 200).unwrap();
+
+        let deleted = repo.list_deleted_children(0).unwrap();
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0].0, "a");
+        assert_eq!(deleted[0].1.entry.id, a_id);
+        assert_eq!(deleted[0].1.deleted_at, 200);
+
+        let live = repo.list_children(0).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].0, "b");
+    }
+
+    #[test]
+    fn list_deleted_children_keeps_every_independent_history_entry_for_the_same_name() {
+        let (repo, _dir) = repo();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+        repo.settle_file(0, "a.txt", 100, content_a).unwrap();
+        repo.settle_file(0, "a.txt", 200, content_b).unwrap();
+        // The second settle_file soft-deletes the first as a side effect, then is itself still
+        // live - unlink it too so both history entries for "a.txt" are soft-deleted.
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        repo.unlink_file(live.id, 300).unwrap();
+
+        let mut deleted = repo.list_deleted_children(0).unwrap();
+        deleted.sort_by_key(|(_, entry)| entry.deleted_at);
+        assert_eq!(deleted.len(), 2);
+        assert_eq!(deleted[0].1.deleted_at, 200);
+        assert_eq!(deleted[1].1.deleted_at, 300);
+    }
+
+    #[test]
+    fn list_deleted_children_descends_into_an_already_deleted_directory() {
+        let (repo, _dir) = repo();
+        let a_id = repo.mkdir(0, "a", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let file_id = repo.settle_file(a_id, "f.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 150).unwrap();
+        repo.rmdir(a_id, 200).unwrap();
+
+        // "a" is itself soft-deleted now, but its own soft-deleted child "f.txt" is still
+        // reachable by descending into it directly (REQ-TREE-009's nested [deleted] case).
+        let deleted = repo.list_deleted_children(a_id).unwrap();
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0].0, "f.txt");
+        assert_eq!(deleted[0].1.entry.id, file_id);
+    }
+
+    #[test]
+    fn list_deleted_children_refuses_a_file() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+
+        let err = repo.list_deleted_children(id).unwrap_err();
+        assert!(matches!(err, Error::WrongKind(_)));
+    }
+
+    #[test]
+    fn list_deleted_children_refuses_a_nonexistent_id() {
+        let (repo, _dir) = repo();
+        let err = repo.list_deleted_children(999).unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
     }
 
     #[test]

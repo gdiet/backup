@@ -27,7 +27,7 @@ use rusqlite::{Connection, OpenFlags};
 pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
-pub use tree::{Entry, EntryKind};
+pub use tree::{DeletedEntry, Entry, EntryKind};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
 // docs/design/repository-layout.md.
@@ -323,6 +323,17 @@ impl Repository {
     /// own [`Entry`] (so a caller gets kind/size/mtime without a separate lookup per child).
     pub fn list_children(&self, parent_id: i64) -> Result<Vec<(String, Entry)>, Error> {
         self.with_connection(|conn, _cache| tree::list_children(conn, parent_id))
+    }
+
+    /// REQ-TREE-009's `[deleted]` addressing: `parent_id`'s own soft-deleted children.
+    /// `parent_id` may itself be a live directory or an already soft-deleted one - REQ-TREE-008
+    /// guarantees a soft-deleted directory's own children are always soft-deleted too, so nested
+    /// `[deleted]` navigation keeps working the same way one level down.
+    pub fn list_deleted_children(
+        &self,
+        parent_id: i64,
+    ) -> Result<Vec<(String, DeletedEntry)>, Error> {
+        self.with_connection(|conn, _cache| tree::list_deleted_children(conn, parent_id))
     }
 
     /// Creates a new, empty directory named `name` inside the directory `parent_id`, bumping its

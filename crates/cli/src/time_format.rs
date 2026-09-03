@@ -7,6 +7,19 @@
 /// `civil_from_days` is Howard Hinnant's public-domain days-since-epoch-to-civil-date algorithm
 /// (<https://howardhinnant.github.io/date_algorithms.html>).
 pub fn format_time(time_millis: i64) -> String {
+    let (year, month, day, hour, minute, second) = civil_datetime(time_millis);
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// Formats `time_millis` as `YYYY-MM-DD_HHMMSS` in UTC - REQ-TREE-009's deletion-timestamp suffix
+/// (`requirements/functional/tree.md`), safe to embed directly in a path component (no `:`,
+/// unlike [`format_time`]'s ISO 8601 form, which Windows refuses in a file name).
+pub fn format_deletion_suffix(time_millis: i64) -> String {
+    let (year, month, day, hour, minute, second) = civil_datetime(time_millis);
+    format!("{year:04}-{month:02}-{day:02}_{hour:02}{minute:02}{second:02}")
+}
+
+fn civil_datetime(time_millis: i64) -> (i64, u32, u32, i64, i64, i64) {
     let total_seconds = time_millis.div_euclid(1000);
     let days = total_seconds.div_euclid(86_400);
     let seconds_of_day = total_seconds.rem_euclid(86_400);
@@ -14,7 +27,7 @@ pub fn format_time(time_millis: i64) -> String {
     let hour = seconds_of_day / 3600;
     let minute = (seconds_of_day % 3600) / 60;
     let second = seconds_of_day % 60;
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+    (year, month, day, hour, minute, second)
 }
 
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
@@ -57,5 +70,11 @@ mod tests {
     fn format_time_renders_the_full_timestamp() {
         let millis = 946_684_800_000 + 59 * 86_400_000 + 3_661_000;
         assert_eq!(format_time(millis), "2000-02-29T01:01:01Z");
+    }
+
+    #[test]
+    fn format_deletion_suffix_renders_a_path_safe_form_with_no_colons() {
+        let millis = 946_684_800_000 + 59 * 86_400_000 + 3_661_000;
+        assert_eq!(format_deletion_suffix(millis), "2000-02-29_010101");
     }
 }

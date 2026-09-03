@@ -1,11 +1,14 @@
-//! `dfs restore` - REQ-RESTORE-001/003/004 in requirements/functional/restore.md. Restores one or
-//! more repository paths to a real directory on disk, without mounting.
+//! `dfs restore` - REQ-RESTORE-001/002/003/004 in requirements/functional/restore.md. Restores
+//! one or more repository paths - live or, via REQ-TREE-009's `[deleted]` addressing
+//! (`requirements/functional/tree.md`), soft-deleted - to a real directory on disk, without
+//! mounting.
 
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
+use crate::deleted::{self, Resolved};
 use crate::settle::HASH_WIDTH;
 
 /// The three independent restore behaviors a caller can opt into - bundled together since
@@ -52,14 +55,26 @@ fn try_run(
 
     let mut outcome = Outcome::default();
     for source in sources {
-        match repo.resolve_path(source) {
-            Ok(Some(entry)) => outcome.merge(restore_entry(
+        match deleted::resolve(&repo, source) {
+            Ok(Some(Resolved::Live(entry))) => outcome.merge(restore_entry(
                 &repo,
                 &store,
                 &entry,
                 target,
                 source_basename(source),
                 options,
+            )),
+            Ok(Some(Resolved::Deleted(entry))) => outcome.merge(restore_deleted_entry(
+                &repo,
+                &store,
+                &entry,
+                target,
+                source_basename(source),
+                options,
+            )),
+            Ok(Some(Resolved::DeletedChildren { .. })) => outcome.failures.push(format!(
+                "{source}: names every soft-deleted entry at this location, not one specific \
+                 entry - restore one by its own name instead (see `dfs list --show-deleted`)"
             )),
             Ok(None) => outcome
                 .failures
@@ -136,40 +151,90 @@ fn restore_entry(
     match entry.kind {
         db::EntryKind::Dir => restore_dir(repo, store, entry.id, &target_path, options),
         db::EntryKind::File => {
-            if target_path.exists() && !options.overwrite {
-                return Outcome {
-                    failures: vec![format!(
-                        "{} already exists - pass --overwrite to replace it",
-                        target_path.display()
-                    )],
-                    ..Default::default()
-                };
-            }
             let content_id = entry
                 .content_id
                 .expect("a file entry always has a content_id (chk_tree_entries_kind_content_id)");
-            match write_file(
+            restore_file(
                 repo,
                 store,
                 content_id,
                 entry.time_millis,
                 &target_path,
                 options,
-            ) {
-                Ok(warnings) => Outcome {
-                    restored: 1,
-                    warnings: warnings
-                        .into_iter()
-                        .map(|warning| format!("{}: {warning}", target_path.display()))
-                        .collect(),
-                    failures: Vec::new(),
-                },
-                Err(err) => Outcome {
-                    failures: vec![format!("{}: {err}", target_path.display())],
-                    ..Default::default()
-                },
-            }
+            )
         }
+    }
+}
+
+/// Like [`restore_entry`], but for a soft-deleted entry reached via REQ-TREE-009's `[deleted]`
+/// addressing (`requirements/functional/tree.md`) - restoring a whole soft-deleted directory
+/// recursively descends straight into its own soft-deleted children, without the caller needing
+/// to spell out `[deleted]` again at every level: REQ-TREE-008 guarantees everything beneath a
+/// soft-deleted directory is itself soft-deleted, so there is no live case to fall back to partway
+/// through.
+fn restore_deleted_entry(
+    repo: &db::Repository,
+    store: &store::ByteStore,
+    entry: &db::DeletedEntry,
+    target_parent: &Path,
+    name: &str,
+    options: RestoreOptions,
+) -> Outcome {
+    let target_path = target_parent.join(name);
+    match entry.entry.kind {
+        db::EntryKind::Dir => {
+            restore_deleted_dir(repo, store, entry.entry.id, &target_path, options)
+        }
+        db::EntryKind::File => {
+            let content_id = entry
+                .entry
+                .content_id
+                .expect("a file entry always has a content_id (chk_tree_entries_kind_content_id)");
+            restore_file(
+                repo,
+                store,
+                content_id,
+                entry.entry.time_millis,
+                &target_path,
+                options,
+            )
+        }
+    }
+}
+
+/// The file-restoring half shared by [`restore_entry`] and [`restore_deleted_entry`] - identical
+/// once a live or soft-deleted file entry has already been reduced to its own `content_id` and
+/// modification time.
+fn restore_file(
+    repo: &db::Repository,
+    store: &store::ByteStore,
+    content_id: i64,
+    time_millis: i64,
+    target_path: &Path,
+    options: RestoreOptions,
+) -> Outcome {
+    if target_path.exists() && !options.overwrite {
+        return Outcome {
+            failures: vec![format!(
+                "{} already exists - pass --overwrite to replace it",
+                target_path.display()
+            )],
+            ..Default::default()
+        };
+    }
+    match write_file(repo, store, content_id, time_millis, target_path, options) {
+        Ok(warnings) => Outcome {
+            restored: 1,
+            warnings: warnings
+                .into_iter()
+                .map(|warning| format!("{}: {warning}", target_path.display()))
+                .collect(),
+            failures: Vec::new(),
+        },
+        Err(err) => Outcome {
+            failures: vec![format!("{}: {err}", target_path.display())],
+            ..Default::default()
+        },
     }
 }
 
@@ -213,6 +278,58 @@ fn restore_dir(
             &child_entry,
             target_path,
             &child_name,
+            options,
+        ));
+    }
+    outcome
+}
+
+/// Like [`restore_dir`], but for a soft-deleted directory's own soft-deleted children.
+fn restore_deleted_dir(
+    repo: &db::Repository,
+    store: &store::ByteStore,
+    dir_id: i64,
+    target_path: &Path,
+    options: RestoreOptions,
+) -> Outcome {
+    if !target_path.exists() {
+        if let Err(err) = fs::create_dir(target_path) {
+            return Outcome {
+                failures: vec![format!("{}: {err}", target_path.display())],
+                ..Default::default()
+            };
+        }
+    } else if !target_path.is_dir() {
+        return Outcome {
+            failures: vec![format!(
+                "{} already exists and is not a directory",
+                target_path.display()
+            )],
+            ..Default::default()
+        };
+    }
+    let children = match repo.list_deleted_children(dir_id) {
+        Ok(children) => children,
+        Err(err) => {
+            return Outcome {
+                failures: vec![format!("{}: {err}", target_path.display())],
+                ..Default::default()
+            };
+        }
+    };
+    // REQ-TREE-009's own disambiguated names, never the raw stored names directly - two deleted
+    // children that once shared a name (REQ-TREE-004) must land under distinct files here, not
+    // silently overwrite each other the way two identical raw names would.
+    let names = deleted::display_names(&children);
+
+    let mut outcome = Outcome::default();
+    for (name, (_, child_entry)) in names.into_iter().zip(&children) {
+        outcome.merge(restore_deleted_entry(
+            repo,
+            store,
+            child_entry,
+            target_path,
+            &name,
             options,
         ));
     }
@@ -734,5 +851,121 @@ mod tests {
         assert_eq!(source_basename("/backups/2024/photos"), "photos");
         assert_eq!(source_basename("/backups/2024/photos/"), "photos");
         assert_eq!(source_basename("/a"), "a");
+    }
+
+    #[test]
+    fn try_run_restores_a_soft_deleted_file_addressed_via_deleted_segment() {
+        let (repo, repo_dir, store, target_dir) = setup();
+        create_file(&repo, &store, 0, "a.txt", b"hello world");
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        repo.unlink_file(live.id, 1_700_000_100_000).unwrap();
+        drop(repo);
+        drop(store);
+        let repo_root = repo_dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &["/[deleted]/a.txt".to_string()],
+            target_dir.path(),
+            opts(false, false, false),
+        )
+        .expect("must succeed - the soft-deleted file is directly addressable");
+        assert!(message.contains("restored 1 file"));
+        assert_eq!(
+            fs::read(target_dir.path().join("a.txt")).unwrap(),
+            b"hello world"
+        );
+    }
+
+    #[test]
+    fn try_run_restores_a_soft_deleted_directory_recursively() {
+        let (repo, repo_dir, store, target_dir) = setup();
+        let dir_id = repo.mkdir(0, "photos", 1_700_000_000_000).unwrap();
+        create_file(&repo, &store, dir_id, "one.jpg", b"one");
+        let one_id = repo.resolve_path("/photos/one.jpg").unwrap().unwrap().id;
+        repo.unlink_file(one_id, 1_700_000_050_000).unwrap();
+        repo.rmdir(dir_id, 1_700_000_100_000).unwrap();
+        drop(repo);
+        drop(store);
+        let repo_root = repo_dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &["/[deleted]/photos".to_string()],
+            target_dir.path(),
+            opts(false, false, false),
+        )
+        .expect("must succeed - restoring a soft-deleted directory descends into its own history");
+        assert!(message.contains("restored 1 file"));
+        assert_eq!(
+            fs::read(target_dir.path().join("photos/one.jpg")).unwrap(),
+            b"one"
+        );
+    }
+
+    #[test]
+    fn try_run_disambiguates_two_history_entries_sharing_a_name_when_restoring_a_deleted_dir() {
+        let (repo, repo_dir, store, target_dir) = setup();
+        let dir_id = repo.mkdir(0, "photos", 1_700_000_000_000).unwrap();
+        create_file(&repo, &store, dir_id, "a.txt", b"first");
+        let first_id = repo.resolve_path("/photos/a.txt").unwrap().unwrap().id;
+        repo.unlink_file(first_id, 1_700_000_050_000).unwrap();
+        create_file(&repo, &store, dir_id, "a.txt", b"second");
+        let second_id = repo.resolve_path("/photos/a.txt").unwrap().unwrap().id;
+        repo.unlink_file(second_id, 1_700_000_060_000).unwrap();
+        repo.rmdir(dir_id, 1_700_000_100_000).unwrap();
+        drop(repo);
+        drop(store);
+        let repo_root = repo_dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &["/[deleted]/photos".to_string()],
+            target_dir.path(),
+            opts(false, false, false),
+        )
+        .expect("must succeed");
+        assert!(message.contains("restored 2 file"));
+        let restored_dir = target_dir.path().join("photos");
+        let mut names: Vec<String> = fs::read_dir(&restored_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names.len(),
+            2,
+            "two distinct files, not one overwriting the other: {names:?}"
+        );
+        for name in &names {
+            assert!(
+                name.starts_with("a ["),
+                "expected a disambiguated name, got {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn try_run_refuses_to_restore_the_bare_deleted_segment_itself() {
+        let (repo, repo_dir, store, target_dir) = setup();
+        create_file(&repo, &store, 0, "a.txt", b"hello world");
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        repo.unlink_file(live.id, 1_700_000_100_000).unwrap();
+        drop(repo);
+        drop(store);
+        let repo_root = repo_dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &["/[deleted]".to_string()],
+            target_dir.path(),
+            opts(false, false, false),
+        )
+        .expect_err("must fail - [deleted] alone does not name one specific entry");
+        assert!(message.contains("not one specific entry"));
     }
 }

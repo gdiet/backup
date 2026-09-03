@@ -147,8 +147,12 @@ its extension (e.g. `photo [2026-08-22_140414].jpg`; `.env [2026-08-22_140414]` 
 which has no splittable extension), falling back to the entry's own id (`photo [42].jpg`) if the
 timestamp-suffixed form does not fit a length constraint the calling context imposes, and further
 truncating the base name - never the id suffix, the part actually meant to be unique - if even that
-does not fit. An entry whose bare name is not shared by any other soft-deleted entry at that same
-location is shown as-is, no suffix needed.
+does not fit. The same id fallback also applies, independent of any length constraint, if the
+timestamp suffix's own one-second resolution is not enough to tell same-named entries apart (two
+deletions of the same name within the same second) - the point of the suffix is a unique name, so
+it must not stop being one merely because no length constraint happened to force the fallback.
+An entry whose bare name is not shared by any other soft-deleted entry at that same location is
+shown as-is, no suffix needed.
 
 Rationale: REQ-MOUNT-004/008 in [`mount.md`](mount.md) needed exactly this same addressing already,
 to let a mounted file manager browse and disambiguate a directory's deletion history in place;

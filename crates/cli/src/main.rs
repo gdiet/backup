@@ -2,6 +2,7 @@ mod backpressure;
 mod content_reader;
 mod create_repo;
 mod dedup_fs;
+mod deleted;
 mod failure_log;
 mod ignore_rules;
 mod ingest;
@@ -90,13 +91,19 @@ enum Commands {
         /// executable when omitted.
         path: Option<PathBuf>,
     },
-    // REQ-QUERY-001.
+    // REQ-QUERY-001, REQ-CLI-007.
     /// Lists a directory's live, direct contents, without mounting.
     List {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
         repo: Option<PathBuf>,
+        /// Reveal REQ-TREE-009's `[deleted]` marker in the listing wherever the target directory
+        /// has soft-deleted children - off by default, so a script parsing plain `dfs list`
+        /// output is never surprised by an extra entry. A path that already names `[deleted]`
+        /// explicitly works regardless of this flag.
+        #[arg(long)]
+        show_deleted: bool,
         /// Repository path to list.
         #[arg(default_value = "/")]
         path: String,
@@ -245,10 +252,14 @@ fn main() {
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
             unlock::run(&path, default_path_used);
         }
-        Commands::List { repo, path } => {
+        Commands::List {
+            repo,
+            show_deleted,
+            path,
+        } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            list::run(&repo, default_path_used, &path);
+            list::run(&repo, default_path_used, &path, show_deleted);
         }
         Commands::Restore {
             repo,
