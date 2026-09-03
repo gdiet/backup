@@ -40,8 +40,24 @@ fn try_run(
     let _write_lock = db::acquire_write_lock(repo_path).map_err(|err| format!("error: {err}"))?;
 
     match deleted::resolve(&repo, path).map_err(|err| format!("error: {err}"))? {
-        Some(Resolved::Live(entry)) => delete_live(&repo, path, &entry, recursive),
-        Some(Resolved::Deleted(entry)) => delete_deleted(&repo, path, &entry, purge),
+        Some(Resolved::Live(entry)) => {
+            if purge {
+                return Err(format!(
+                    "{path} is a live entry - --purge only applies to an entry already reached \
+                     through `[deleted]` (see `dfs list --show-deleted`)"
+                ));
+            }
+            delete_live(&repo, path, &entry, recursive)
+        }
+        Some(Resolved::Deleted(entry)) => {
+            if recursive {
+                return Err(format!(
+                    "{path} already names one specific soft-deleted entry - --recursive only \
+                     applies to a live directory"
+                ));
+            }
+            delete_deleted(&repo, path, &entry, purge)
+        }
         Some(Resolved::DeletedChildren { .. }) => Err(format!(
             "{path} names every soft-deleted entry at this location, not one specific entry - \
              address one by its own name instead (see `dfs list --show-deleted`)"
@@ -64,7 +80,7 @@ fn delete_live(
         db::EntryKind::File => {
             repo.unlink_file(entry.id, now_millis())
                 .map_err(|err| format!("error: {err}"))?;
-            Ok(format!("deleted {path}"))
+            Ok(format!("deleted {path}{}", recoverable_note(path)))
         }
         db::EntryKind::Dir => {
             let descendants = if recursive {
@@ -73,8 +89,13 @@ fn delete_live(
                 0
             };
             match repo.rmdir(entry.id, now_millis()) {
-                Ok(()) if descendants == 0 => Ok(format!("deleted {path}")),
-                Ok(()) => Ok(format!("deleted {path} and {descendants} descendant(s)")),
+                Ok(()) if descendants == 0 => {
+                    Ok(format!("deleted {path}{}", recoverable_note(path)))
+                }
+                Ok(()) => Ok(format!(
+                    "deleted {path} and {descendants} descendant(s){}",
+                    recoverable_note(path)
+                )),
                 Err(db::Error::DirectoryNotEmpty(_)) => Err(format!(
                     "{path} still has live children - pass --recursive to delete them too"
                 )),
@@ -82,6 +103,20 @@ fn delete_live(
             }
         }
     }
+}
+
+/// REQ-TREE-009's own `[deleted]` address for `path`, right after [`delete_live`] has just
+/// soft-deleted it there - `/photos/one.jpg` -> `/photos/[deleted]/one.jpg`, `/a.txt` ->
+/// `/[deleted]/a.txt`. Appended to a soft-delete's own success message, so a caller is told both
+/// that the removal is recoverable and exactly where to address it next - via `dfs restore`, or
+/// `dfs del --purge` there to remove it for good instead.
+fn recoverable_note(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    let deleted_path = match trimmed.rfind('/') {
+        Some(slash) => format!("{}/[deleted]/{}", &trimmed[..slash], &trimmed[slash + 1..]),
+        None => format!("[deleted]/{trimmed}"),
+    };
+    format!(" (recoverable at {deleted_path} - pass --purge there to remove it for good)")
 }
 
 /// Soft-deletes every live child of `parent_id`, recursively, deepest first (so a directory is
@@ -121,9 +156,14 @@ fn delete_deleted(
             "{path} is already soft-deleted - pass --purge to remove it permanently"
         ));
     }
-    repo.purge_deleted_entry(entry.entry.id)
-        .map(|()| format!("permanently purged {path}"))
-        .map_err(|err| format!("error: {err}"))
+    let descendants = repo
+        .purge_deleted_entry(entry.entry.id)
+        .map_err(|err| format!("error: {err}"))?;
+    Ok(if descendants == 0 {
+        format!("permanently purged {path}")
+    } else {
+        format!("permanently purged {path} and {descendants} descendant(s)")
+    })
 }
 
 pub fn run(repo_path: &Path, default_path_used: bool, path: &str, recursive: bool, purge: bool) {
@@ -181,6 +221,11 @@ mod tests {
 
         let message = try_run(&repo_root, false, "/a.txt", false, false).expect("must succeed");
         assert!(message.contains("deleted /a.txt"));
+        assert!(
+            message.contains("recoverable at /[deleted]/a.txt"),
+            "the success message must name where the soft-deleted file is now addressable: {message}"
+        );
+        assert!(message.contains("--purge"));
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(repo.resolve_path("/a.txt").unwrap().is_none());
@@ -190,6 +235,22 @@ mod tests {
                 Some(Resolved::Deleted(_))
             ),
             "a soft-deleted file must be reachable through REQ-TREE-009's addressing afterward"
+        );
+    }
+
+    #[test]
+    fn try_run_soft_delete_names_the_recoverable_path_correctly_below_a_directory() {
+        let (repo, dir) = setup();
+        let dir_id = repo.mkdir(0, "photos", 1_700_000_000_000).unwrap();
+        create_file(&repo, dir_id, "one.jpg", 0xAA);
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let message =
+            try_run(&repo_root, false, "/photos/one.jpg", false, false).expect("must succeed");
+        assert!(
+            message.contains("recoverable at /photos/[deleted]/one.jpg"),
+            "got: {message}"
         );
     }
 
@@ -243,6 +304,47 @@ mod tests {
     }
 
     #[test]
+    fn try_run_refuses_purge_on_a_live_target() {
+        let (repo, dir) = setup();
+        create_file(&repo, 0, "a.txt", 0xAA);
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let message = try_run(&repo_root, false, "/a.txt", false, true)
+            .expect_err("must fail - --purge does not apply to a live path");
+        assert!(message.contains("--purge"));
+
+        let repo = db::open_repository(&repo_root).unwrap();
+        assert!(
+            repo.resolve_path("/a.txt").unwrap().is_some(),
+            "a refused --purge must leave the live file untouched, not silently soft-delete it"
+        );
+    }
+
+    #[test]
+    fn try_run_refuses_recursive_on_an_already_deleted_target() {
+        let (repo, dir) = setup();
+        create_file(&repo, 0, "a.txt", 0xAA);
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        repo.unlink_file(live.id, 1_700_000_100_000).unwrap();
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let message = try_run(&repo_root, false, "/[deleted]/a.txt", true, true)
+            .expect_err("must fail - --recursive does not apply to an already-deleted target");
+        assert!(message.contains("--recursive"));
+
+        let repo = db::open_repository(&repo_root).unwrap();
+        assert!(
+            matches!(
+                deleted::resolve(&repo, "/[deleted]/a.txt").unwrap(),
+                Some(Resolved::Deleted(_))
+            ),
+            "a refused delete must leave the soft-deleted entry untouched"
+        );
+    }
+
+    #[test]
     fn try_run_reports_a_missing_path_as_a_failure() {
         let (repo, dir) = setup();
         drop(repo);
@@ -288,6 +390,10 @@ mod tests {
         let message = try_run(&repo_root, false, "/[deleted]/a.txt", false, true)
             .expect("must succeed - --purge was given");
         assert!(message.contains("permanently purged"));
+        assert!(
+            !message.contains("descendant"),
+            "a plain file has no descendants to mention: {message}"
+        );
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
@@ -312,6 +418,10 @@ mod tests {
         let message = try_run(&repo_root, false, "/[deleted]/photos", false, true)
             .expect("must succeed - purging a deleted directory also purges its own children");
         assert!(message.contains("permanently purged"));
+        assert!(
+            message.contains("1 descendant"),
+            "the purged child must be counted: {message}"
+        );
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(

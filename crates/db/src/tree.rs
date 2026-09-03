@@ -462,14 +462,15 @@ pub(crate) fn unlink_file(
 /// ([`Error::NotSoftDeleted`]) - only an entry already reached through REQ-TREE-009's `[deleted]`
 /// addressing is eligible. If `id` is a directory, its own soft-deleted children are purged first,
 /// recursively (REQ-TREE-008 guarantees none of them are live) - `tree_entries.parent_id`'s foreign
-/// key would otherwise refuse deleting a row still referenced by a child.
+/// key would otherwise refuse deleting a row still referenced by a child. Returns how many of
+/// those descendants this purged, not counting `id` itself - `0` for a file or an empty directory.
 ///
 /// The `tree_entries_ref_count_del` trigger (`migrations.rs`) decrements each purged file's
 /// `contents.ref_count` as a side effect of its row's own deletion. Reaching zero there does not
 /// itself reclaim any stored bytes - REQ-STORAGE-004's bulk reclaim sweep is the separate, later
 /// step for that; this only removes the tree entry (and, once nothing else references it, the
 /// `contents`/`chunks` bookkeeping rows) that was keeping it referenced.
-pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<(), Error> {
+pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<u64, Error> {
     if id == 0 {
         // tree_entries_protect_root's own DELETE trigger would already refuse this (unlike
         // rmdir/unlink_file's soft-delete UPDATE, which it does not cover), but only as a raw
@@ -489,18 +490,19 @@ pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<(), Erro
         return Err(Error::NotSoftDeleted(id));
     }
 
+    let mut descendants = 0u64;
     if kind == KIND_DIR {
         let child_ids: Vec<i64> = conn
             .prepare("SELECT id FROM tree_entries WHERE parent_id = ?1")?
             .query_map(params![id], |row| row.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for child_id in child_ids {
-            purge_deleted_entry(conn, child_id)?;
+            descendants += 1 + purge_deleted_entry(conn, child_id)?;
         }
     }
 
     conn.execute("DELETE FROM tree_entries WHERE id = ?1", params![id])?;
-    Ok(())
+    Ok(descendants)
 }
 
 /// Whether `ancestor_id` is `descendant_id` itself, or one of its ancestors (walking up via
@@ -1012,13 +1014,14 @@ mod tests {
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
         repo.unlink_file(id, 200).unwrap();
 
-        repo.purge_deleted_entry(id).expect("purge must succeed");
+        let descendants = repo.purge_deleted_entry(id).expect("purge must succeed");
 
         assert_eq!(
             row_count(&repo, id),
             0,
             "the purged row must be gone entirely, not merely soft-deleted"
         );
+        assert_eq!(descendants, 0, "a plain file has no descendants to count");
     }
 
     #[test]
@@ -1089,9 +1092,11 @@ mod tests {
         repo.unlink_file(file_id, 150).unwrap();
         repo.rmdir(dir_id, 200).unwrap();
 
-        repo.purge_deleted_entry(dir_id)
+        let descendants = repo
+            .purge_deleted_entry(dir_id)
             .expect("purge of the directory must also purge its own deleted child");
 
+        assert_eq!(descendants, 1, "the one deleted child must be counted");
         assert_eq!(row_count(&repo, dir_id), 0);
         assert_eq!(
             row_count(&repo, file_id),

@@ -367,8 +367,9 @@ impl Repository {
     /// Permanently removes the soft-deleted entry `id` - REQ-CLI-003's `--purge` case, addressed
     /// through REQ-TREE-009's `[deleted]` resolution rather than a live path. Refuses an `id` that
     /// does not exist or is still live; if it is a directory, its own soft-deleted children are
-    /// purged along with it (REQ-TREE-008 guarantees none of them are live).
-    pub fn purge_deleted_entry(&self, id: i64) -> Result<(), Error> {
+    /// purged along with it (REQ-TREE-008 guarantees none of them are live). Returns how many of
+    /// those descendants this purged, not counting `id` itself.
+    pub fn purge_deleted_entry(&self, id: i64) -> Result<u64, Error> {
         self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id))
     }
 

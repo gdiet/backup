@@ -100,14 +100,15 @@ enum Commands {
         #[arg(long)]
         repo: Option<PathBuf>,
         /// When the target is a live directory that still has live children, delete them too
-        /// (deepest first) instead of refusing. Has no effect when the target instead resolves
-        /// to a soft-deleted entry.
+        /// (deepest first) instead of refusing. Refused as an error if the target instead
+        /// resolves to a soft-deleted entry, where it would have no effect.
         #[arg(long)]
         recursive: bool,
         /// When the target is a specific soft-deleted entry (reached through REQ-TREE-009's
         /// `[deleted]` segment - see `dfs list --show-deleted`), permanently remove it instead of
         /// refusing. Without this, such a target is left untouched: an irreversible removal never
-        /// happens just because the given path happened to resolve under `[deleted]`.
+        /// happens just because the given path happened to resolve under `[deleted]`. Refused as
+        /// an error if the target instead resolves to a live path, where it would have no effect.
         #[arg(long)]
         purge: bool,
         /// Repository path to delete - a live path, or one reached through `[deleted]`.
