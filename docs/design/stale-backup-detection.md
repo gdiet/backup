@@ -52,41 +52,41 @@ gets that asymmetry right for free, with a single, simple, well-isolated hook - 
 alternative would spend real design and implementation complexity buying back a cost (an
 occasional, harmless extra warning) this project has no particular reason to minimize.
 
-### Purging a tree entry is not, by itself, an arming point
+### Purging a tree entry is also an arming point, on the same terms as reclamation
 
-A purge (REQ-CLI-003's `--purge` case, or reached through the mount under REQ-MOUNT-007) looks at
-first glance like it might belong alongside reclamation and compaction as a third arming trigger,
-since it is what makes a `contents` row's `ref_count` reach zero in the first place. Tracing the
-actual triggers in
-[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) shows this is
-not the case, given the schema as currently designed: deleting a `tree_entries` row only fires
-`tree_entries_ref_count_del`, which decrements `contents.ref_count` - it does not delete the
-`contents` row itself even once that count reaches zero. Nothing cascades further from there:
-`content_chunks_ref_count_del` only fires when a `content_chunks` row is actually deleted, which
-only happens as a `ON DELETE CASCADE` consequence of the `contents` row itself being deleted - and
-that deletion is exactly what reclamation (not purge) performs. A purge therefore leaves
-`chunks.ref_count` and every `chunk_extents` row completely untouched, however many prior
-references it just removed - no byte range becomes reusable, or even nominally eligible for reuse,
-until reclamation actually walks `ref_count = 0` rows and cascades down through `content_chunks` to
-`chunks`/`chunk_extents`.
+A purge (REQ-CLI-003's `--purge` case, or reached through the mount under REQ-MOUNT-007) performs
+REQ-STORAGE-004's reclaim cascade immediately, scoped to the entry being purged (and, for a
+directory, its descendants) - see REQ-CLI-003 in
+[`../../requirements/functional/cli-commands.md`](../../requirements/functional/cli-commands.md).
+Tracing the actual triggers in
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) shows why this
+decision matters here: deleting a `tree_entries` row only fires `tree_entries_ref_count_del`, which
+decrements `contents.ref_count` - it does not by itself delete the `contents` row, or cascade down
+through `content_chunks`/`chunks`/`chunk_extents`, even once that count reaches zero. Left alone, a
+purge would leave every byte range it just orphaned neither freed nor even nominally eligible for
+reuse until some later, separate operation walks `ref_count = 0` rows and performs that cascade.
+Purge closes that gap itself: after removing the `tree_entries` row(s), it walks any `contents` row
+whose `ref_count` it just dropped to zero and performs the same
+`contents`/`content_chunks`/`chunks`/`chunk_extents` cascade the bulk reclaim sweep (REQ-STORAGE-004)
+performs, just scoped to what that one purge actually orphaned rather than every aged soft-deleted
+entry repository-wide - a targeted, small cascade per purge, rather than deferring that work to a
+later, separate sweep.
 
-Reclamation is thus not merely the *natural* arming point argued above - it is, given this schema,
-the *only* one. Purge could only become an arming point in its own right if it were deliberately
-redesigned to also perform (at least) this cascade immediately as part of the same operation,
-folding reclamation's own work into every purge rather than leaving it for a later, separate sweep
-- a real implementation choice with its own trade-offs (a targeted, small cascade per purge versus
-a batched, repository-wide sweep), not something that falls out of the existing triggers for free.
-Nothing here decides that question; it only establishes that as long as purge is *not* redesigned
-that way, it needs no place in the arming logic at all.
+This makes purge exactly as much an arming point for the staleness warning as reclamation is - the
+same reasoning under "Reclamation is the natural arming point" above applies to it verbatim, since
+purge now performs the identical kind of freeing work, just at a smaller, per-entry granularity
+instead of a batched, repository-wide one. Any future implementation of the generation-counter idea
+above must bump the counter from both operations, not from the bulk sweep alone.
 
 ### Each batch must bump the counter itself, atomically with its own freeing work
 
 Because backup is read-only and REQ-MAINTENANCE-004 leaves it unblocked even while a mutating
-reclamation (or compaction) run is in progress, a backup can capture a snapshot *during* such a
-run, not just before or after it - including between two batches of a reclamation that commits in
-several transactions rather than one giant one (likely, for the same long-exclusive-lock reason
-REQ-MAINTENANCE-003 already rules out for compaction). Such a backup stamps whatever counter value
-was current at that moment, even though some of the run's byte ranges are already freed by then.
+reclamation, purge, or compaction run is in progress, a backup can capture a snapshot *during* such
+a run, not just before or after it - including between two batches of a bulk reclaim sweep that
+commits in several transactions rather than one giant one (likely, for the same
+long-exclusive-lock reason REQ-MAINTENANCE-003 already rules out for compaction). Such a backup
+stamps whatever counter value was current at that moment, even though some of the run's byte ranges
+are already freed by then.
 
 A single bump at the very end of the whole run - as the final batch's last statement, or as a
 separate transaction committed right after it - would still be enough to catch *that* case: the

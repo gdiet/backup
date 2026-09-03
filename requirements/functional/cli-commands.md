@@ -38,12 +38,15 @@ into live children" from other behavior a recursive-delete flag might also need 
 not yet decided.
 
 A target reached through `[deleted]` instead names a specific soft-deleted entry rather than a live
-one. Removing it this way is permanent - it bypasses REQ-STORAGE-004's bulk purge sweep entirely for
-that one entry - and only happens when the caller also passes an explicit `--purge` flag; without
-it, the command refuses rather than silently doing nothing. This keeps an irreversible removal from
-ever being this command's ordinary, unmarked behavior just because a passed-in path happened to
-resolve under `[deleted]` - such a path can otherwise reach the command unremarkably, e.g. pasted
-from a `dfs list --show-deleted` line.
+one. Removing it this way is permanent, and only happens when the caller also passes an explicit
+`--purge` flag; without it, the command refuses rather than silently doing nothing. `--purge`
+performs REQ-STORAGE-004's reclaim cascade immediately, scoped to the purged entry (and, for a
+directory, its descendants), rather than leaving that entry's storage for a later, separate sweep -
+so the storage a purged entry held becomes eligible for reuse as soon as the command returns, not
+only its `tree_entries` row gone. This keeps an irreversible removal from ever being this command's
+ordinary, unmarked behavior just because a passed-in path happened to resolve under `[deleted]` -
+such a path can otherwise reach the command unremarkably, e.g. pasted from a `dfs list
+--show-deleted` line.
 
 Rationale: a mount session is not always convenient for a one-off or scripted deletion - a headless
 host, an automation script. REQ-TREE-008 keeps the mount's own delete non-cascading, matching
