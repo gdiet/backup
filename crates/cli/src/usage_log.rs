@@ -1,4 +1,4 @@
-//! Per-repository usage log - REQ-OPERABILITY-005, DESIGN-CLI-005 in `docs/design/usage-log.md`.
+//! Per-repository usage log - REQ-MAINTENANCE-005, DESIGN-CLI-005 in `docs/design/usage-log.md`.
 //! Appends one line per CLI invocation to `meta/usage.log`: timestamp, the invoked (sub)command's
 //! name, and which optional flags were explicitly passed on the command line - never argument
 //! values. Purely local, best-effort, never read back by this project's own code.

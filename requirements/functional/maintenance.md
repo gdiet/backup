@@ -61,7 +61,9 @@ Importance: could
 
 Every operation run against a repository is recorded locally (what ran, which options were used —
 not argument values like paths or ids), purely for later review of how the repository has
-actually been used.
+actually been used. This record stays entirely local and is never transmitted anywhere. See
+DESIGN-CLI-005 in [`../../docs/design/usage-log.md`](../../docs/design/usage-log.md) for the
+record's exact format and mechanism.
 
 Rationale: knowing which features actually see real use, well after the fact, is what makes it
 possible to confidently simplify or remove the ones that do not.

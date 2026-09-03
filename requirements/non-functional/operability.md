@@ -64,16 +64,4 @@ message alone, without needing to guess, consult external documentation, or read
 source.
 
 ### REQ-OPERABILITY-005: Local record of which optional features actually get used
-Status: agreed
-Importance: could
-
-Every CLI invocation is recorded in a per-repository, append-only log: when it ran, which command,
-and which optional flags were explicitly passed. Argument values (paths, ids, and the like) are
-never recorded, only which optional flags were used. This record stays entirely local and is never
-transmitted anywhere.
-
-Rationale: a command or flag that never actually gets used is a maintenance cost with no offsetting
-benefit, but knowing that requires being able to look back, sometimes a long time later, at what
-was actually exercised - a judgment nobody can make from the code alone, or from memory. See
-DESIGN-CLI-005 in [`../../docs/design/usage-log.md`](../../docs/design/usage-log.md) for the log's
-exact format and mechanism.
+Status: moved-to REQ-MAINTENANCE-005

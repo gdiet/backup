@@ -4,8 +4,8 @@
 
 Status: implemented
 
-REQ-OPERABILITY-005 in
-[`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)
+REQ-MAINTENANCE-005 in
+[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)
 wants a local, append-only record of which commands and optional flags actually get exercised, to
 make an informed call later about removing something nobody uses. `crates/cli/src/usage_log.rs`
 appends one line per invocation to `meta/usage.log`, alongside the repository's own metadata
