@@ -96,17 +96,24 @@ just failed to accept a write risks repeating, not containing, the same failure.
 Status: draft
 Importance: should
 
-When a reference (REQ-INGEST-003) is supplied, its own top-level contents are compared against the
-ingest sources' own top-level contents before the reference is trusted for accelerated matching; if
-too few entries correspond between the two (the exact threshold is not yet decided), the run aborts
-instead of silently proceeding. An explicit override lets a caller force the reference through
-regardless of this check.
+When a reference (REQ-INGEST-003) is supplied, its own contents are compared against the ingest
+sources' own contents before the reference is trusted for accelerated matching. The comparison
+covers each side's top-level entries, plus - for any directory present by name on both sides -
+that directory's own immediate children one level deeper. A file and a directory sharing the same
+name count as distinct entries, so one is never mistaken for the other. The run aborts instead of
+silently proceeding if the larger of the two sides' entry counts exceeds the number of entries the
+two sides actually share, times 1.6, plus 1 - roughly, fewer than about five in eight entries
+corresponding. An explicit override lets a caller force the reference through regardless of this
+check.
 
 Rationale: REQ-INGEST-003's whole benefit disappears silently if the supplied reference does not
 actually correspond to what is being backed up. Every source file then simply falls back to a full
 read, one at a time, with no signal that anything is wrong until the run is noticed to have taken
 far longer than expected. Catching a plainly mismatched reference immediately turns a silent
 performance regression into an actionable error at the point a caller can still do something about
+it. Comparing one level into a shared subdirectory, not just the top level, catches a reference
+that only happens to share its top-level names but diverges immediately beneath them - a bare
+top-level comparison alone would miss that case entirely.
 it.
 
 ### REQ-INGEST-007: Templated target paths for repeated runs
