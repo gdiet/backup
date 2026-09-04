@@ -28,6 +28,12 @@ or a developer's own private notes.
 - [`overview.md`](overview.md) (or further files, split by whatever axis helps once one file gets
   unwieldy) - tables built from the individual measurement protocols, organized for spotting
   trends across machines, environments, storage devices, and DedupFS access paths at a glance.
+- `notes/` - informal, single-run exploratory sessions that do not follow `methodology.md`'s
+  5-runs/~20s statistical approach - a quick "does this basically work, roughly how does it
+  compare" probe (e.g. a storage medium or configuration not yet worth a full measurement effort).
+  Each file says so explicitly at the top. Promote a finding here to a proper `measurements/`
+  protocol if it turns into something worth tracking over time; otherwise these are not held to
+  `overview.md`'s aggregation or this README's own conventions below.
   Update this whenever a measurement protocol is added or changed; the individual protocol files
   remain the source of truth, this is a derived view.
 
