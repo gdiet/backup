@@ -39,12 +39,17 @@ pub struct DedupFs {
 
 impl DedupFs {
     /// `repo_root` is only needed to open DESIGN-MOUNT-009's failure log alongside the metadata
-    /// database (`db::meta_dir`) - `repo`/`store` are otherwise already fully open.
+    /// database (`db::meta_dir`) - `repo`/`store` are otherwise already fully open. `spill_dir`
+    /// is the write cache's spillover directory (DESIGN-MOUNT-010/018) - `None` defaults to the
+    /// OS temp directory, the same as before this parameter existed. The caller is responsible
+    /// for validating a given `spill_dir` actually exists (`crate::mount`'s eager check) - this
+    /// constructor does not fail just because a `Some` value happens not to.
     pub fn new(
         repo: db::Repository,
         store: store::ByteStore,
         read_write: bool,
         repo_root: &Path,
+        spill_dir: Option<PathBuf>,
     ) -> io::Result<Self> {
         let cdc_target_size_bits = repo.settings().cdc_target_size_bits();
         let repo = Arc::new(repo);
@@ -87,7 +92,7 @@ impl DedupFs {
             pending: PendingFiles::new(),
             pool,
             budget: Arc::new(MemoryBudget::default()),
-            temp_dir: std::env::temp_dir(),
+            temp_dir: spill_dir.unwrap_or_else(std::env::temp_dir),
             failure_log,
         })
     }
@@ -491,7 +496,7 @@ mod tests {
         let verify_repo = db::open_repository(&repo_root).unwrap();
         let verify_store = store::ByteStore::new(db::data_dir(&repo_root), true);
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), !read_write);
-        let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root).unwrap();
+        let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root, None).unwrap();
         (fs, verify_repo, verify_store, repo_dir)
     }
 
@@ -657,7 +662,7 @@ mod tests {
         // disk. `create`'s own empty-content settle never calls `store.write` at all (no chunks),
         // so it still succeeds even here - only a settle with real bytes hits this.
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), true);
-        let fs = DedupFs::new(fs_repo, fs_store, true, &repo_root).unwrap();
+        let fs = DedupFs::new(fs_repo, fs_store, true, &repo_root, None).unwrap();
 
         let handle = fs.create("/a.txt").unwrap();
         fs.write(handle, 0, b"hello").unwrap();

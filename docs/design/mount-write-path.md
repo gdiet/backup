@@ -209,8 +209,10 @@ common case (an ordinary file, one or a few concurrent writers) never spills at 
 that even several sessions running on the same machine stay within a modest, predictable memory
 footprint.
 
-Once the shared budget is exhausted, further content spills to a private temporary file on local
-disk, one per file whose write cache has grown past its share of the budget. This is transparent to
+Once the shared budget is exhausted, further content spills to a private temporary file, one per
+file whose write cache has grown past its share of the budget - defaulting to the OS temp
+directory, though DESIGN-MOUNT-018 below lets an operator point this at a specific directory
+instead. This is transparent to
 DESIGN-MOUNT-007's read-after-write behavior: a read against spilled content is served from that
 temporary file instead of memory, with no visible difference to the caller between the two.
 
@@ -257,6 +259,39 @@ footprint, since REQ-PERFORMANCE-002's cross-stream parallelism means several fi
 be written at once - a per-file budget only bounds how much any *one* of them can use, and the
 total scales with however many are concurrently open. A shared budget bounds the total directly,
 which is the property actually wanted.
+
+## DESIGN-MOUNT-018: The write cache's spillover directory is configurable, defaulting to the OS temp directory
+Status: implemented (crates/cli/src/main.rs, crates/cli/src/mount.rs, crates/cli/src/dedup_fs.rs)
+
+`dfs mount --spill-dir <PATH>` overrides where DESIGN-MOUNT-010's write cache spills
+not-yet-persisted content once its shared memory budget is exhausted. Without it, the spillover
+directory is the OS temp directory (`std::env::temp_dir()`), the same behavior as before this
+option existed.
+
+The OS temp directory is not always local disk. A repository whose own path lives on a slow or
+space-constrained network mount does not, by itself, say anything about where `%TEMP%`/`$TMPDIR`
+happens to resolve on that machine - ordinarily still a local disk, but not guaranteed, and even
+when it is, an operator mounting a network-hosted repository specifically to keep the repository
+itself off local storage has a concrete reason to also want spillover kept on local storage
+deliberately, not just by accident of the ambient environment. `--spill-dir` makes that an explicit
+choice instead of an implicit one.
+
+A given `--spill-dir` is validated once, eagerly, before the (blocking) mount call starts
+(`crate::mount::try_run`) - it must already exist and be a directory, refused with an actionable
+message otherwise (REQ-OPERABILITY-004), the same fail-fast treatment already given to a missing
+Linux mountpoint. Catching this upfront avoids surfacing a raw I/O error only the first time some
+write actually needs to spill, potentially long after the mount session started.
+
+### Alternative considered and rejected: auto-detecting a "local" spillover location
+
+Having `dfs mount` inspect the repository path's own filesystem/device and automatically redirect
+spillover elsewhere when it looks non-local (e.g. a UNC path, a mapped network drive, a FUSE mount)
+was considered and rejected: reliably distinguishing "local" from "network" storage from a path
+alone is itself an unreliable, platform-specific problem (a mapped drive letter looks identical to
+a local one; a network filesystem can be mounted at an ordinary-looking local path on Linux), and
+getting it wrong silently would be worse than the status quo of simply defaulting to the OS temp
+directory - an explicit, operator-provided override is a simpler, more predictable answer to the
+same underlying need.
 
 ## DESIGN-MOUNT-011: Overwriting an existing file's content creates a new history entry
 Status: implemented (crates/db/src/tree.rs)

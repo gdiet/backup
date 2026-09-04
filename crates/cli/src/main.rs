@@ -91,6 +91,14 @@ enum Commands {
         /// mount. Without this, the mount is read-only.
         #[arg(long)]
         read_write: bool,
+        // DESIGN-MOUNT-018.
+        /// Directory the write cache spills not-yet-persisted content to once its shared memory
+        /// budget is exhausted (DESIGN-MOUNT-010). Defaults to the OS temp directory, which is
+        /// not always local disk - e.g. a repository whose own path lives on a slow or
+        /// space-constrained network drive still spills into whatever `%TEMP%`/`$TMPDIR` happens
+        /// to resolve to unless overridden here. Must already exist.
+        #[arg(long)]
+        spill_dir: Option<PathBuf>,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -342,10 +350,17 @@ fn main() {
             repo,
             mountpoint,
             read_write,
+            spill_dir,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            mount::run(&repo, &mountpoint, read_write, default_path_used);
+            mount::run(
+                &repo,
+                &mountpoint,
+                read_write,
+                default_path_used,
+                spill_dir.as_deref(),
+            );
         }
         Commands::Unlock { path } => {
             let (path, default_path_used) = resolve_repo_path(path);

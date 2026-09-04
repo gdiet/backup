@@ -20,6 +20,7 @@ fn try_run(
     mountpoint: &Path,
     read_write: bool,
     default_path_used: bool,
+    spill_dir: Option<&Path>,
 ) -> Result<(), String> {
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
     // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
@@ -66,20 +67,51 @@ fn try_run(
         ));
     }
 
+    // Checked eagerly, before the blocking mount call, rather than left to surface lazily the
+    // first time the write cache actually needs to spill (DESIGN-MOUNT-018) - the same
+    // fail-fast-with-an-actionable-message treatment as the mountpoint check above.
+    if let Some(dir) = spill_dir
+        && !dir.is_dir()
+    {
+        return Err(format!(
+            "error: --spill-dir {} does not exist or is not a directory. Create it first, or \
+             omit --spill-dir to use the OS temp directory instead.",
+            dir.display()
+        ));
+    }
+
     if let Err(err) = mountfs::preflight() {
         return Err(format!("error: {err}"));
     }
     let store = store::ByteStore::new(db::data_dir(repo_path), !read_write);
-    let fs = DedupFs::new(repo, store, read_write, repo_path)
-        .map_err(|err| format!("error: could not open the write-failure log: {err}"))?;
+    let fs = DedupFs::new(
+        repo,
+        store,
+        read_write,
+        repo_path,
+        spill_dir.map(Path::to_path_buf),
+    )
+    .map_err(|err| format!("error: could not open the write-failure log: {err}"))?;
     if let Err(err) = mountfs::mount(fs, mountpoint, !read_write) {
         return Err(format!("mount failed: {err}"));
     }
     Ok(())
 }
 
-pub fn run(repo_path: &Path, mountpoint: &Path, read_write: bool, default_path_used: bool) {
-    if let Err(message) = try_run(repo_path, mountpoint, read_write, default_path_used) {
+pub fn run(
+    repo_path: &Path,
+    mountpoint: &Path,
+    read_write: bool,
+    default_path_used: bool,
+    spill_dir: Option<&Path>,
+) {
+    if let Err(message) = try_run(
+        repo_path,
+        mountpoint,
+        read_write,
+        default_path_used,
+        spill_dir,
+    ) {
         eprintln!("{message}");
         std::process::exit(1);
     }
@@ -97,7 +129,7 @@ mod tests {
         let repo_path = std::env::temp_dir().join("dfs-mount-test-no-default-repository-here");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint");
 
-        let message = try_run(&repo_path, &mountpoint, false, true)
+        let message = try_run(&repo_path, &mountpoint, false, true, None)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -122,7 +154,7 @@ mod tests {
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-mountpoint-does-not-exist-mnt");
         let _ = std::fs::remove_dir_all(&mountpoint);
 
-        let message = try_run(&repo_path, &mountpoint, false, false)
+        let message = try_run(&repo_path, &mountpoint, false, false, None)
             .expect_err("must fail - mountpoint does not exist");
         assert!(
             message.contains("does not exist"),
@@ -133,11 +165,43 @@ mod tests {
     }
 
     #[test]
+    fn try_run_gives_an_actionable_message_when_spill_dir_does_not_exist() {
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-spill-dir-does-not-exist-repo");
+        let _ = std::fs::remove_dir_all(&repo_path);
+        db::init_repository(
+            &repo_path,
+            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+        )
+        .expect("repository setup for this test must succeed");
+        // Created (not just built as a path), so the platform-specific mountpoint check above
+        // this one in try_run - which on Linux requires the mountpoint to already exist - never
+        // gets in the way of reaching the spill_dir check this test actually targets.
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-spill-dir-mountpoint");
+        std::fs::create_dir_all(&mountpoint).expect("test mountpoint setup must succeed");
+        let spill_dir = std::env::temp_dir().join("dfs-mount-test-spill-dir-that-does-not-exist");
+        let _ = std::fs::remove_dir_all(&spill_dir);
+
+        let message = try_run(&repo_path, &mountpoint, false, false, Some(&spill_dir))
+            .expect_err("must fail - spill_dir does not exist");
+        assert!(
+            message.contains("--spill-dir"),
+            "expected the actionable spill-dir message, got: {message}"
+        );
+        assert!(
+            message.contains("does not exist"),
+            "expected an actionable does-not-exist message, got: {message}"
+        );
+
+        std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
+        std::fs::remove_dir_all(&mountpoint).expect("test cleanup must succeed");
+    }
+
+    #[test]
     fn try_run_surfaces_the_raw_error_when_an_explicit_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-mount-test-no-explicit-repository-here");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint");
 
-        let message = try_run(&repo_path, &mountpoint, false, false)
+        let message = try_run(&repo_path, &mountpoint, false, false, None)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             !message.contains("Pass a repository path"),
@@ -162,7 +226,7 @@ mod tests {
         let _held_elsewhere = db::acquire_write_lock(&repo_path)
             .expect("acquiring the write lock for the first time must succeed");
 
-        let message = try_run(&repo_path, &mountpoint, true, false)
+        let message = try_run(&repo_path, &mountpoint, true, false, None)
             .expect_err("must fail - the write lock is already held");
         assert!(
             message.contains("already locked"),
