@@ -11,15 +11,21 @@ pub const DEFAULT_GROSS_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
 /// CDC/hash/persist pool's own worker threads.
 const RUST_THREAD_STACK_RESERVE_BYTES: u64 = 2 * 1024 * 1024;
 
-/// DESIGN-MEMORY-001's provisional FUSE dispatch-pool thread count, pending real measurement
-/// (`agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md`,
-/// `agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md`).
+/// DESIGN-MEMORY-001's provisional FUSE dispatch-pool thread count. Real measurements now exist
+/// for both platforms (`agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md`:
+/// 10 threads on WSL2/libfuse3; `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`:
+/// 4 threads on WinFSP) - both comfortably under this constant, so it remains a safe, if no longer
+/// tightly calibrated, reserve. Whether to tighten it (and/or split it per platform) is an open
+/// decision, not yet made - see `docs/design/ram-budget.md`'s "Provisional dispatch-pool reserve".
 pub const PROVISIONAL_DISPATCH_POOL_THREADS: u64 = 16;
 
 /// DESIGN-MEMORY-001's provisional per-dispatch-thread stack reserve: a pthread-created worker
 /// thread's own default Linux stack size, distinct from - and larger than -
-/// `RUST_THREAD_STACK_RESERVE_BYTES` above, pending real measurement (see this constant's sibling
-/// above).
+/// `RUST_THREAD_STACK_RESERVE_BYTES` above. Real measurements (see this constant's sibling above)
+/// found libfuse3 dispatch threads use exactly this value on WSL2/Debian; WinFSP's own dispatch
+/// threads measured smaller (1 MiB). Still shared across platforms rather than tightened or
+/// `#[cfg(windows)]`/`#[cfg(unix)]`-gated - see this constant's sibling above for why that is left
+/// as an open decision rather than made here.
 pub const PROVISIONAL_DISPATCH_THREAD_STACK_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Whether this process runs a FUSE/WinFSP dispatch pool of its own - only a real mount session

@@ -63,5 +63,57 @@ wherever the RAM-budget design has landed by the time this is picked up).
 
 ## Done
 
-<Fill in once completed: what was measured, on what kernel/libfuse3 version, the actual numbers
-found, and whether the provisional constant above needed to change as a result.>
+**Completed**: 2026-09-22, by a Claude Code Desktop-App session on `julius`, driving a WSL2/Debian
+12 session on the same physical machine (`wsl-windows-sync`'s WSL clone at
+`/home/georg/git/backup`) - kernel `6.18.33.2-microsoft-standard-WSL2`, `fusermount3` 3.14.0.
+
+Added `DispatchProbeFs` to `crates/mountfs/src/linux/mod.rs`'s existing `real_mount_` test module,
+mirroring the WinFSP side's approach but using the precise `pthread_getattr_np`/
+`pthread_attr_getstack` route this file's own "Per-thread stack size" section above already
+suggested, rather than the indirect approach the pool-size half still needed. A new `#[ignore]`d
+`real_mount_dispatch_thread_pool_and_stack_size` test drives 24 concurrent native `std::thread`s
+against it in-process (no separate child process needed here, unlike the Windows side, since the
+mount runs on a background thread in the same process) and reads the shared counters back directly
+after unmounting.
+
+Two real bugs found and fixed along the way, both worth remembering for future work in this area:
+- The probe initially passed `read_only: true` to `mount()` while relying on real writes going
+  through - backwards from `mount()`'s own semantics. Harmless on Windows (WinFSP's read-only flag
+  does not block writes at the driver level, already documented elsewhere in this crate), but
+  Linux's kernel-level `-oro` genuinely enforced it, surfacing as "Read-only file system" errors
+  until fixed.
+- Small (a few bytes), unsynced writes were found to sometimes never reach this filesystem's own
+  `write()` dispatch at all before `fusermount3 -u` - an ordinary buffered `write(2)` syscall
+  returns once data is copied into the kernel's page cache, not once it reaches the FUSE daemon
+  (this project's `mount()` requests no `direct_io`), so a tiny write can be satisfied entirely
+  from cache and never actually dispatched before an unmount discards it. Fixed by writing a
+  larger payload (256 KiB per call) and calling `sync_all()` to force a real flush - not a bug in
+  the counting logic itself, a real characteristic of unsynced small writes worth remembering if
+  this pattern comes up elsewhere (e.g. a future test of the mount's own write path).
+
+### Findings (WSL2 on `julius`: Intel i5-6200U, 4 logical processors reported inside WSL2 via
+`nproc` - same physical core count as the Windows/WinFSP measurement, notable since the two
+platforms' pool sizes did *not* match despite that)
+
+- **Dispatch-thread-pool size: 10**, reproduced identically across two separate runs (24 concurrent
+  client threads, only 10 ever executing `write()` at once). This does **not** match this machine's
+  own logical-processor count (4) - unlike the WinFSP measurement, where pool size matched core
+  count exactly. A `libfuse3` warning appeared on every run - `Ignoring invalid max threads value
+  4294967295 > max (100000).` - suggesting libfuse3 attempted some internal thread-count
+  calculation that produced an invalid (`u32::MAX`) value and fell back to its own hardcoded
+  default instead, which numbers like "10" ring a bell for from FUSE's own documented defaults, but
+  this was not independently confirmed by reading libfuse3's own source for this version.
+- **Per-thread stack size: 8,388,608 bytes (8 MiB) for every dispatch thread observed**, both runs -
+  exactly matching the commonly-documented glibc default `pthread_create` stack size this file's own
+  "Per-thread stack size" section above already anticipated, confirmed directly rather than assumed.
+
+### For the RAM-budget design
+
+Both platforms are now measured - see `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`
+for the Windows side (4 threads x 1 MiB) and `docs/design/ram-budget.md`'s "Provisional
+dispatch-pool reserve" section for how both numbers compare against the current shared
+`PROVISIONAL_DISPATCH_POOL_THREADS`/`PROVISIONAL_DISPATCH_THREAD_STACK_BYTES` constants
+(`crates/cli/src/ram_budget.rs`) - both real measurements come in comfortably under the current
+128 MiB (16 x 8 MiB) provisional reserve, so it is not under-reserved, but whether/how to tighten it
+now that real numbers exist for both platforms is left as an explicit decision for the developer
+rather than made silently here - see that design doc section for the concrete options.

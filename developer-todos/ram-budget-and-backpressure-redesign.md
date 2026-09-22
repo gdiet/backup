@@ -179,26 +179,22 @@ implementation step actually assigns one; do that edit then, as part of the same
 
 ### Questions for the developer (would like an answer before or during implementation)
 
-1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** **Windows half measured
-   (2026-09-22)**: `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md` - on
-   `julius` (i5-6200U, 2 cores/4 logical processors), WinFSP's dispatch-thread-pool size peaked at
-   **4** (matching this machine's logical-processor count, not confirmed against a different core
-   count), and every dispatch thread's stack size measured exactly **1,048,576 bytes (1 MiB)**,
-   Windows' ordinary default - both reproduced identically across two separate runs. The
-   Linux/libfuse3 half is still open - **Resolved how to proceed (2026-09-23)**: this session
-   checked whether it could measure the Linux/libfuse3 side itself -
-   `cargo test --workspace real_mount` fails here with "mount did not become ready within 5s" (the
-   `/dev/fuse` device node exists, but this remote container does not support an actual mount) - and
-   confirmed there is no other reachable environment to delegate to either (this account's only
-   registered Claude Code Remote environment is this same one; no other session is currently
-   running). Both halves are now tracked as their own `agent-todos/` items, for whichever future
-   session (most plausibly the developer's own WSL2/Linux machine for the Linux side) actually has
-   the needed access: `agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md` (still open)
-   and `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md` (done, see above).
-   Implementation proceeds now on a **provisional, documented, CLI-overridable** reserve rather than
-   blocking on the still-open Linux half - see the design doc (implementation step 3) for the exact
-   constant and its reasoning; both agent-todos above record
-   the obligation to come back and update it once real numbers land.
+1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** **Both platforms now measured**:
+   `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md` (Windows, 2026-09-22) and
+   `agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md` (Linux/WSL2, same day) -
+   both on `julius` (i5-6200U, 2 cores/4 logical processors: WinFSP via native Windows, libfuse3 via
+   a WSL2/Debian 12 session on the same physical machine). WinFSP's dispatch-thread-pool size
+   peaked at **4** (matching this machine's logical-processor count); libfuse3's peaked at **10**
+   (notably, *not* matching the same machine's core count under WSL2). Per-thread stack size:
+   WinFSP **1,048,576 bytes (1 MiB)**, libfuse3 **8,388,608 bytes (8 MiB, glibc's documented
+   default)** - both reproduced identically across two separate runs each. Both real measurements
+   land comfortably under the current 128 MiB (16 x 8 MiB) provisional reserve
+   (`crates/cli/src/ram_budget.rs`), so it is not under-reserved, just no longer tightly calibrated
+   to either platform's real behavior - **left as an open decision for the developer** whether to
+   tighten it to the real measured maxima (10 x 8 MiB = 80 MiB, freeing ~48 MiB more of the default
+   256 MiB gross budget), split it per platform now that the two numbers look meaningfully
+   different, or leave it as-is; see `docs/design/ram-budget.md`'s "Provisional dispatch-pool
+   reserve" section for the concrete options, not decided or changed by this measurement itself.
 
 ### Can this be verified by a test? (raised by the developer, 2026-09-23)
 

@@ -55,27 +55,36 @@ library's.
 
 ### Provisional dispatch-pool reserve
 
-The FUSE/WinFSP dispatch pool's own thread count and per-thread stack size are not yet measured on
-both platforms - each is tracked as its own `agent-todos/` item
-(`agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md`, still open;
-`agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`, measured). Until real numbers
-land for the still-open platform too, the reserve uses a provisional, documented, CLI-overridable
-estimate: 16 dispatch threads x 8 MiB (a pthread-created worker thread's own default Linux stack
-size, distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default used for this
-project's own threads) = 128 MiB. Both the thread count and the per-thread size are chosen
-conservatively high rather than risking an under-reserved budget that then lets the mount's actual
-memory use exceed the operator-visible ceiling once a real session's dispatch pool grows under load.
-An operator whose own environment measures differently can override the reserve directly rather than
-waiting for the still-open agent-todo above to resolve.
+The FUSE/WinFSP dispatch pool's own thread count and per-thread stack size are now measured on both
+platforms - each was tracked as its own `agent-todos/` item, both now in `agent-todos/done/`
+(`determine-libfuse3-dispatch-pool-and-stack-size.md`, `determine-winfsp-dispatch-pool-and-stack-size.md`).
+The reserve itself still uses its original provisional, documented, CLI-overridable estimate:
+16 dispatch threads x 8 MiB (a pthread-created worker thread's own default Linux stack size,
+distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default used for this
+project's own threads) = 128 MiB - this has not been changed yet, deliberately, pending the
+decision below.
 
-WinFSP's own numbers, measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors): dispatch
-concurrency peaked at 4 (matching this machine's own logical-processor count, not yet confirmed
-against a different core count), each dispatch thread's stack size exactly 1 MiB - both reproduced
-identically across two separate runs. This is already smaller on both axes than the conservative
-16 x 8 MiB estimate above, on this one machine - not yet reflected in the shared cross-platform
-constant, since that constant still has to cover the still-unmeasured Linux/libfuse3 side too, and a
-single machine's Windows core count is not a basis for lowering a number the Linux side might still
-need to be larger than. Revisit the actual constant (and consider whether it needs to become
-`#[cfg(windows)]`/`#[cfg(unix)]`-gated rather than shared, given the two platforms' numbers already
-look meaningfully different in this first measurement) once the Linux measurement lands too, per
-that agent-todo's own closing instructions.
+Both measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors), each reproduced
+identically across two separate runs:
+
+| Platform | Dispatch concurrency peak | Per-thread stack size |
+|---|---|---|
+| WinFSP (Windows) | 4 (matches this machine's logical-processor count) | 1 MiB exactly |
+| libfuse3 (WSL2/Debian 12, same physical machine) | 10 (does **not** match logical-processor count) | 8 MiB exactly, matching glibc's documented default |
+
+Both real measurements land comfortably under the current 128 MiB provisional reserve (Linux's own
+worst case, 10 x 8 MiB, is 80 MiB) - so the current constant is not under-reserved, just no longer
+closely calibrated to either platform's real behavior now that both are actually known rather than
+guessed. Notably, the two platforms' pool sizes do not track logical-processor count the same
+way - WinFSP's matched this machine's core count exactly, libfuse3's did not - so a single core-count-
+based formula would not describe both correctly even if one were wanted.
+
+**Left as an explicit decision for the developer, not made silently here**: whether to tighten
+`PROVISIONAL_DISPATCH_POOL_THREADS`/`PROVISIONAL_DISPATCH_THREAD_STACK_BYTES`
+(`crates/cli/src/ram_budget.rs`) to reflect the real measured maxima (10 threads x 8 MiB = 80 MiB,
+the larger of the two platforms on each axis, still shared rather than `#[cfg(windows)]`/
+`#[cfg(unix)]`-gated) instead of the original conservative guess, freeing roughly 48 MiB more of the
+default 256 MiB gross budget for actual caching - or to go further and split the reserve per
+platform now that real numbers for both exist and look meaningfully different, or to leave the
+current conservative constant as-is since it is not actually wrong, just not tight. Any of these is
+a legitimate choice; picking one is not this measurement's job.
