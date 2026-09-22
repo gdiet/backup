@@ -632,6 +632,235 @@ mod tests {
         );
     }
 
+    /// Spawns a real libfuse3 mount of `fs` on its own thread and blocks until it is actually
+    /// ready to serve requests - `fs`'s mounted tree starts empty, so "readiness" has to be an
+    /// actual write attempt succeeding, not a "listing is non-empty" check (mirroring
+    /// `crates/mountfs/src/linux/mod.rs`'s own `DispatchProbeFs` real-mount test).
+    fn mount_for_test(
+        fs: DedupFs,
+        mount_path: &std::path::Path,
+    ) -> thread::JoinHandle<io::Result<()>> {
+        let handle = {
+            let mount_path = mount_path.to_path_buf();
+            thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+        let probe_path = mount_path.join("_ready_probe.txt");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::fs::write(&probe_path, b"x").is_ok() {
+                let _ = std::fs::remove_file(&probe_path);
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s (requires /dev/fuse access)"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        // Found the hard way: a real client operation issued immediately after this probe
+        // succeeds can still return success without ever reaching this filesystem's own
+        // dispatch handlers at all (confirmed via temporary tracing - no create()/write() call
+        // observed server-side, yet the client-side syscalls reported Ok) - some libfuse3/kernel
+        // warm-up still settling in the moment right after the very first successful request,
+        // not anything specific to this probe's own file. A short, fixed pause here reliably
+        // avoided it in practice; there is no more precise readiness signal available than the
+        // probe above already uses.
+        thread::sleep(Duration::from_millis(200));
+        handle
+    }
+
+    fn unmount_and_join(mount_path: &std::path::Path, handle: thread::JoinHandle<io::Result<()>>) {
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+    }
+
+    /// Writes `payload` to a brand new file at `path` and forces a real flush through the FUSE
+    /// dispatch path before returning - a plain buffered `write(2)` can be satisfied entirely from
+    /// the kernel's page cache and never actually reach this filesystem's own `write()` dispatch
+    /// at all (found the hard way while writing `DispatchProbeFs`'s own real-mount test), so
+    /// `sync_all` is not optional here.
+    fn timed_synced_write(path: &std::path::Path, payload: &[u8]) -> Duration {
+        let start = Instant::now();
+        let mut file = std::fs::File::create(path).expect("create against the mount must succeed");
+        std::io::Write::write_all(&mut file, payload)
+            .expect("write against the mount must succeed");
+        file.sync_all()
+            .expect("sync_all against the mount must succeed");
+        start.elapsed()
+    }
+
+    #[test]
+    fn real_mount_write_backpressure_delay_grows_then_drains_with_the_persist_queue() {
+        let (mut fs, verify_repo, _store, _dir) = setup(true);
+        // Free zone at zero and a small slope so a modest, quickly-achievable backlog (a few MB,
+        // not DEFAULT_FREE_ZONE_BYTES's 1 GB) produces a clearly measurable delay: gives ~50ms at
+        // a ~2 MB backlog and a 128 KiB write (this test's own payload size below), derived the
+        // same way DEFAULT_SLOPE_DIVISOR's own doc comment derives its anchor.
+        fs.backpressure_free_zone_bytes = 0;
+        fs.backpressure_slope_divisor = 5_242_880_000;
+
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = mount_for_test(fs, &mount_path);
+
+        let payload = vec![7u8; 128 * 1024];
+
+        // Baseline: nothing has been released yet, so the persist queue is empty - this write
+        // should see no meaningful delay.
+        let baseline = timed_synced_write(&mount_path.join("baseline.txt"), &payload);
+
+        // Release a real, sizeable generation - DESIGN-MOUNT-013's hand-off submits it to the
+        // background pool, adding its full size to bytes_in_persist_queue until each of its
+        // chunks settles (DESIGN-MOUNT-006's incremental per-chunk drain).
+        let big_payload = vec![9u8; 8 * 1024 * 1024];
+        {
+            let mut big =
+                std::fs::File::create(mount_path.join("big.txt")).expect("create big.txt");
+            std::io::Write::write_all(&mut big, &big_payload).expect("write big.txt");
+            big.sync_all().expect("sync_all big.txt");
+        } // dropped here - closes the handle, triggering release()
+
+        // Timed immediately after - the settle jobs for big.txt's chunks are almost certainly
+        // still in flight, so this write should see a real, measurable delay well above baseline.
+        let during_backlog = timed_synced_write(&mount_path.join("during-backlog.txt"), &payload);
+
+        // Wait for big.txt to fully settle - once its entry shows its final size, none of its
+        // bytes remain in the persist queue.
+        wait_for_settled(&verify_repo, "/big.txt", big_payload.len() as u64);
+
+        // Timed once the persist queue has drained - should be fast again, similar to baseline.
+        let after_drain = timed_synced_write(&mount_path.join("after-drain.txt"), &payload);
+
+        unmount_and_join(&mount_path, handle);
+
+        println!(
+            "backpressure delay through a real mount: baseline={baseline:?} \
+             during_backlog={during_backlog:?} after_drain={after_drain:?}"
+        );
+        assert!(
+            during_backlog > baseline * 3 && during_backlog > Duration::from_millis(10),
+            "expected a clearly measurable delay while the persist queue was backlogged: \
+             baseline={baseline:?} during_backlog={during_backlog:?}"
+        );
+        assert!(
+            after_drain < during_backlog / 2,
+            "expected the delay to drop again once the persist queue drained: \
+             during_backlog={during_backlog:?} after_drain={after_drain:?}"
+        );
+    }
+
+    #[test]
+    fn real_mount_concurrent_handles_converge_toward_the_per_handle_halving_formula() {
+        // `write_cache.rs`'s `spill_to_disk` migrates a cache's *entire* accumulated content to
+        // its spill file, not just the overflow past its share, and releases its whole prior
+        // in-memory grant back to the shared budget at that same moment - so "spill file size"
+        // does not mean "bytes past the fair share" the way a naive reading of the formula might
+        // suggest; once a handle spills at all, its spill file ends up holding everything it ever
+        // writes, migrated content and future writes alike. The externally-observable signal this
+        // test actually checks is binary, not a size split: does a handle spill *at all* for a
+        // write comfortably within a "first, alone" equilibrium, but not within a "second, after
+        // the first already claimed its share" one.
+        let (mut fs, _verify_repo, _store, _dir) = setup(true);
+        // 1,000,000-byte budget: DESIGN-MOUNT-019's first-handle-alone equilibrium is half of
+        // that (500,000), second-handle-after-the-first's is half of what is left (~250,000).
+        fs.budget = Arc::new(MemoryBudget::new(1_000_000));
+        let spill_dir = tempfile::tempdir().unwrap();
+        fs.temp_dir = spill_dir.path().to_path_buf();
+
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = mount_for_test(fs, &mount_path);
+
+        // 400,000 bytes: comfortably under the 500,000 a first, alone handle can hold (so A must
+        // not spill), comfortably over the ~250,000 a second handle competing for what A left
+        // behind can hold (so B must spill). A single `write_all` call this size reaches this
+        // filesystem's own `write()` dispatch as one real FUSE call, not several smaller ones
+        // (confirmed directly, with temporary tracing, while writing this test) - the formula's
+        // own per-call fairness math still holds regardless of whether it runs once or several
+        // times per handle, so this test does not depend on which happens.
+        let write_size = 400_000;
+        // Distinct fill bytes so the spill file found below can be matched back to whichever
+        // handle actually produced it, by content, rather than assumed.
+        let payload_a = vec![0xAAu8; write_size];
+        let payload_b = vec![0xBBu8; write_size];
+
+        // `O_SYNC`, not a `sync_all()` call after the fact: `fsync` is `Unimplemented` in
+        // `crates/mountfs/src/linux/sys.rs`'s `fuse_operations`, so an explicit fsync request
+        // does not reliably force this filesystem's own `write()` dispatch to have run yet - found
+        // the hard way, an earlier version of this test relying on `sync_all()` saw zero
+        // `try_acquire_share` calls at all for a second file written this way. `O_SYNC` instead
+        // makes the kernel treat every `write(2)` itself as synchronous, which does not depend on
+        // this filesystem implementing fsync.
+        fn open_o_sync(path: &std::path::Path) -> std::fs::File {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .custom_flags(libc::O_SYNC)
+                .open(path)
+                .expect("O_SYNC create against the mount must succeed")
+        }
+
+        // Handle A: opened and written first, alone - must stay entirely memory-resident. Kept
+        // open (not dropped) until after the spill-directory check below.
+        let mut file_a = open_o_sync(&mount_path.join("a.txt"));
+        std::io::Write::write_all(&mut file_a, &payload_a).expect("write a.txt");
+
+        // Handle B: opened only once A already holds its own 500,000-byte share - must spill.
+        let mut file_b = open_o_sync(&mount_path.join("b.txt"));
+        std::io::Write::write_all(&mut file_b, &payload_b).expect("write b.txt");
+
+        // Inspect the spill directory directly while both handles are still open (not yet
+        // released) - DedupFs's own internals have already been moved into the mount thread
+        // above, so this is the only way left to observe which cache actually spilled. Content is
+        // read *before* either handle is closed below - once closed, release() hands the
+        // generation to the background settle pool, and `unmount_and_join` (via `JobPool`'s own
+        // `Drop`) waits for that to fully finish, including `Backing::Spilled`'s own `Drop`
+        // deleting the spill file - by then there would be nothing left to read.
+        let spill_entries: Vec<_> = std::fs::read_dir(spill_dir.path())
+            .expect("read spill_dir")
+            .map(|entry| entry.expect("read spill_dir entry"))
+            .collect();
+        assert_eq!(
+            spill_entries.len(),
+            1,
+            "expected exactly one handle (B) to have spilled, found {} spill file(s)",
+            spill_entries.len()
+        );
+        let spilled_content = std::fs::read(spill_entries[0].path()).expect("read spill file");
+
+        drop(file_a);
+        drop(file_b);
+        unmount_and_join(&mount_path, handle);
+
+        println!(
+            "handle-cap halving through a real mount: one spill file found, {} bytes, first byte \
+             0x{:02x}",
+            spilled_content.len(),
+            spilled_content.first().copied().unwrap_or(0)
+        );
+        assert_eq!(
+            spilled_content.len(),
+            write_size,
+            "the spilled handle's cache should hold its full write once spilled, not just the \
+             overflow past its share"
+        );
+        assert!(
+            spilled_content.iter().all(|&b| b == 0xBB),
+            "expected the spilled cache to be B's content (0xBB), not A's (0xAA) - A, opened \
+             first and alone, should have stayed entirely memory-resident instead"
+        );
+    }
+
     #[test]
     fn read_before_release_sees_the_in_progress_write() {
         let (fs, _verify_repo, _store, _dir) = setup(true);

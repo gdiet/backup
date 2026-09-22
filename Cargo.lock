@@ -172,6 +172,7 @@ dependencies = [
  "cdc",
  "clap",
  "db",
+ "libc",
  "mountfs",
  "store",
  "tempfile",

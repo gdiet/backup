@@ -19,6 +19,7 @@ store = { version = "0.0.1", path = "../store" }
 time = { version = "0.3.55", features = ["std"] }
 
 [dev-dependencies]
+libc = "0.2.189"
 tempfile = "3.27.0"
 
 [target."cfg(windows)".dependencies]
