@@ -1,5 +1,10 @@
 # `settle`'s whole-file mode buffers unbounded memory; `ingest` also has no write buffering or parallelism
 
+**Status**: the memory-bound problem and the cross-file-parallelism gap are both resolved (see
+inline notes below). What remains open is narrower than the original title: whether `ingest` needs
+a write-buffering/latency-hiding layer per file, the way the mount's write cache has one. Kept
+under the original title for continuity with its own history.
+
 **Noted**: 2026-09-04, during the informal WebDAV-network-drive performance exploration
 (`performance/notes/2026-09-04-julius-h-webdav-network-drive.md`), after the developer's own
 follow-up question about whether `--spill-dir` (DESIGN-MOUNT-018, added the same session) should
@@ -20,6 +25,15 @@ requirement `--whole-file` is part of), `requirements/non-functional/performance
 (REQ-PERFORMANCE-*, a plausible but not yet decided home for a new memory-bound requirement).
 
 ## The core problem: `--whole-file` mode buffers the entire content in memory before writing anything
+
+**Resolved** via `developer-todos/ram-budget-and-backpressure-redesign.md`'s implementation:
+REQ-STORAGE-003 no longer offers a whole-file chunking mode at all (content is always
+content-defined-chunked), so `chunk_buffer` cannot exceed the repository's own configured maximum
+chunk size (96 MiB at the 23-bit ceiling) regardless of input size - see DESIGN-MEMORY-001 in
+[`../docs/design/ram-budget.md`](../docs/design/ram-budget.md) and DESIGN-INGEST-001 in
+[`../docs/design/ingest-bounded-pipeline.md`](../docs/design/ingest-bounded-pipeline.md). The
+"three levels" (requirement/design/implementation) below were all completed as part of that
+effort; kept here for the historical trail, not as a still-open ask.
 
 Verified by code inspection (not yet by an actual large-file run). With `cdc_target_size_bits =
 None` (`--whole-file`), `settle::settle`'s chunker is `cdc::SingleChunkChunker`
@@ -98,13 +112,16 @@ once that path's real (unbuffered, settled) throughput was measured directly and
 in its own right (~0.17-0.21 MB/s, see the notes file above). Two independent factors compound in
 `ingest`, neither present in the mount's write path:
 
-- **No write cache at all** - `ingest_file` calls `settle::settle` synchronously per file, reading
-  from the local source and writing straight to `store::ByteStore` (which, for a repository on a
-  slow medium, means straight onto that slow medium) with nothing buffering or absorbing the cost
-  the way DESIGN-MOUNT-010's memory-then-local-SSD write cache does for a mounted session.
-- **No parallelism across files** - `crates/cli/src/settle_pool.rs`'s `JobPool` (used by the mount)
-  runs `available_parallelism()` worker threads; `ingest`'s main loop processes files one at a time
-  with nothing equivalent.
+- **No write cache at all** - `ingest_file_job` still calls `settle::settle` synchronously per
+  file, reading from the local source and writing straight to `store::ByteStore` (which, for a
+  repository on a slow medium, means straight onto that slow medium) with nothing buffering or
+  absorbing the cost the way DESIGN-MOUNT-010's memory-then-local-SSD write cache does for a
+  mounted session. **Still open** - not addressed by DESIGN-INGEST-001 (see "What is worth a
+  closer look" below, which still applies to this bullet specifically).
+- **No parallelism across files** - **resolved** by DESIGN-INGEST-001
+  (`crates/cli/src/ingest.rs`'s `FileJobPool`): up to `min(ram_budget / max_chunk_size,
+  available_parallelism())` files are now processed concurrently, one worker thread per file,
+  mirroring `settle_pool.rs`'s `JobPool` shape.
 
 ### What is worth a closer look
 
@@ -117,10 +134,8 @@ run once and waited on, versus a long-lived interactive mount session) - genuine
   actual use case (REQ-INGEST-001's bulk import of a filesystem tree) or mostly shows up in an
   edge case like this session's slow-network-drive exploration - a large local-disk-to-local-disk
   ingest never pays anywhere near this cost.
-- Whether adding parallelism across files (reusing `settle_pool.rs`'s `JobPool`, or something
-  simpler) would help meaningfully without adding real complexity - `ingest` already reads/hashes/
-  chunks/writes each file independently, which is the same shape of per-item work the mount's
-  settle pool already parallelizes.
+- ~~Whether adding parallelism across files... would help meaningfully~~ - **done**: added via
+  DESIGN-INGEST-001's `FileJobPool` (see above).
 - Whether a write cache/buffering layer makes sense for `ingest` at all - unlike a mount session,
   `ingest` already knows the full source file up front (no incremental `write()` calls arriving
   from a live client to buffer between), so the *problem* DESIGN-MOUNT-010 solves (decoupling
