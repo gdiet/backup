@@ -64,20 +64,25 @@ distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default us
 project's own threads) = 128 MiB - this has not been changed yet, deliberately, pending the
 decision below.
 
-Both measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors), each reproduced
-identically across two separate runs:
+WinFSP measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors); libfuse3 measured on
+both `julius`'s WSL2 and, separately, on `3327` (Intel i7-1355U, 10 cores/12 logical processors) -
+each reproduced identically across two separate runs on every machine:
 
 | Platform | Dispatch concurrency peak | Per-thread stack size |
 |---|---|---|
-| WinFSP (Windows) | 4 (matches this machine's logical-processor count) | 1 MiB exactly |
-| libfuse3 (WSL2/Debian 12, same physical machine) | 10 (does **not** match logical-processor count) | 8 MiB exactly, matching glibc's documented default |
+| WinFSP (`julius`, Windows) | 4 (matches this machine's logical-processor count) | 1 MiB exactly |
+| libfuse3 (`julius`, WSL2/Debian 12, same physical machine) | 10 (does **not** match logical-processor count) | 8 MiB exactly, matching glibc's documented default |
+| libfuse3 (`3327`, WSL2/Ubuntu 24.04) | 10 - identical to `julius`, despite 12 logical processors here vs. 4 there | 8 MiB exactly, same as `julius` |
 
 Both real measurements land comfortably under the current 128 MiB provisional reserve (Linux's own
 worst case, 10 x 8 MiB, is 80 MiB) - so the current constant is not under-reserved, just no longer
 closely calibrated to either platform's real behavior now that both are actually known rather than
 guessed. Notably, the two platforms' pool sizes do not track logical-processor count the same
-way - WinFSP's matched this machine's core count exactly, libfuse3's did not - so a single core-count-
-based formula would not describe both correctly even if one were wanted.
+way - WinFSP's matched its machine's core count exactly, libfuse3's did not, and two libfuse3
+machines with a 3x difference in logical-processor count (4 vs. 12) landed on the exact same pool
+size of 10 - so a single core-count-based formula would not describe both platforms correctly even
+if one were wanted, and libfuse3's own number looks like a fixed fallback rather than anything
+derived from this machine's hardware.
 
 **Left as an explicit decision for the developer, not made silently here**: whether to tighten
 `PROVISIONAL_DISPATCH_POOL_THREADS`/`PROVISIONAL_DISPATCH_THREAD_STACK_BYTES`

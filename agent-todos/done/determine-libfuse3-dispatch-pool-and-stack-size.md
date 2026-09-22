@@ -117,3 +117,25 @@ dispatch-pool reserve" section for how both numbers compare against the current 
 128 MiB (16 x 8 MiB) provisional reserve, so it is not under-reserved, but whether/how to tighten it
 now that real numbers exist for both platforms is left as an explicit decision for the developer
 rather than made silently here - see that design doc section for the concrete options.
+
+### Reproduced on `3327` (2026-09-22, WSL2/Linux session on `3327`)
+
+Same test (`real_mount_dispatch_thread_pool_and_stack_size`), run twice, on a machine with a very
+different core count - Intel Core i7-1355U, 10 cores/12 threads (`nproc` reports 12) per
+`../../performance/machines.md`, vs. `julius`'s 4 logical processors - and a different distro
+(Ubuntu 24.04.4 LTS vs. Debian 12), same `fusermount3` version (3.14.0):
+
+- **Dispatch-thread-pool size: 10**, identical both runs, identical to `julius`'s own result -
+  despite 12 logical processors here against `julius`'s 4. The same `Ignoring invalid max threads
+  value 4294967295 > max (100000).` warning appeared on every run here too. Two independent
+  machines with a 3x difference in logical-processor count landing on the exact same pool size is
+  stronger evidence for the "hardcoded libfuse3 fallback, not core-count-derived" reading above
+  than the single-machine result alone could give - still not confirmed by reading libfuse3's own
+  source for the version in use here, but no longer resting on one data point.
+- **Per-thread stack size: 8,388,608 bytes (8 MiB) for every dispatch thread observed**, both runs
+  - identical to `julius`, as expected (glibc's own `pthread_create` default, not something this
+    machine's hardware would plausibly change).
+
+No code changes needed - this was a reproduction, not a new finding requiring a decision. See
+`docs/design/ram-budget.md`'s "Provisional dispatch-pool reserve" section, updated with this
+second data point.
