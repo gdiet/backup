@@ -142,10 +142,23 @@ That document (still `Status: idea`) explores a two-pass hash-then-write scheme 
 bound `Settler::chunk_buffer` for `--whole-file` mode, where a chunk's size was previously
 unbounded. Once `--whole-file` is eliminated and CDC is capped at 23 bits (96 MiB hard maximum chunk
 size), `chunk_buffer`'s worst case becomes a small, known, checkable constant - the exact problem
-that document solves no longer exists in its previous form. Recommend marking it
-`Status: superseded-by DESIGN-...` (pointing at whichever new design id this work gets) rather than
-leaving two, now-contradictory open ideas about the same buffer sitting in `docs/design/`
-simultaneously.
+that document solves no longer exists in its previous form. **Confirmed by the developer,
+2026-09-23**: mark it `Status: superseded-by DESIGN-...` rather than leaving two, now-contradictory
+open ideas about the same buffer sitting in `docs/design/` simultaneously. Not yet edited on disk -
+`superseded-by` needs a real target id, which does not exist until this TODO's own "Design docs"
+implementation step actually assigns one; do that edit then, as part of the same step, not before.
+
+### Decided while filing/discussing this TODO
+
+- **Backward compatibility for repositories already created before this change**: a clean cut is
+  explicitly fine - confirmed by the developer, 2026-09-22 ("Ja, ein sauberer Schnitt ist OK. Es
+  existieren noch keine echten Production Repositories."). No repository predates this change in
+  practice, so the old, unbounded whole-file code path (`cdc::SingleChunkChunker`'s use *inside
+  this application*, `--whole-file`, `cdc_target_size_bits IS NULL` handling in
+  `crates/cli`/`crates/db`) can simply be removed rather than kept alive as a legacy path. This
+  does not change the recommendation below to keep `cdc::SingleChunkChunker` itself in the `cdc`
+  crate (a library-level capability, not an application-level compatibility concern) - only this
+  application's own use of it goes away.
 
 ### Questions for the developer (would like an answer before or during implementation)
 
@@ -159,21 +172,65 @@ simultaneously.
    likely **not** the same 2 MiB Rust's `std::thread::Builder` defaults to, since libfuse3's worker
    threads are created by its own C code via plain `pthread_create`, which inherits the *process's*
    default pthread stack size (commonly, but not universally, 8 MiB on Linux, distinct from Rust's
-   own default). The WinFSP side is equally unverified here. Suggest resolving this empirically as
-   the first implementation step (instrument a real mount under load, per the existing calibration
-   precedent in `agent-todos/done/wire-write-backpressure-delay.md`) rather than blocking on it -
-   but the developer should confirm that is acceptable rather than wanting it answered from
-   documentation first.
-2. **Backward compatibility for repositories already created before this change.** REQ-STORAGE-003
-   currently frames the chunking strategy as "fixed for the repository's lifetime" once created. An
-   already-existing repository created with `--whole-file` (`cdc_target_size_bits IS NULL`) or with
-   `cdc_target_size_bits > 23` would still need *some* code path to settle new content into it after
-   this change ships, unless such repositories are explicitly refused going forward. Is a clean cut
-   acceptable (no real production repositories exist yet, given this project's pre-release status),
-   or does opening/writing into a pre-existing incompatible repository need to keep working via the
-   old, unbounded path (with the new memory-bound guarantee then only holding for repositories
-   created after this change)? This decides how much of the current whole-file code actually gets
-   deleted versus kept as a narrower legacy path.
+   own default). Suggest resolving this empirically as the first implementation step (instrument a
+   real mount under load, per the existing calibration precedent in
+   `agent-todos/done/wire-write-backpressure-delay.md`) rather than blocking on it - the developer
+   has confirmed that is acceptable. The WinFSP side is tracked separately now:
+   `agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md` - opened alongside this TODO since
+   it needs a real Windows/WinFSP environment this session does not have; the numbers found there
+   may turn out to differ from Linux's enough to need platform-specific (`#[cfg(windows)]`)
+   handling in the reserve calculation, not just a different constant.
+
+### Can this be verified by a test? (raised by the developer, 2026-09-23)
+
+Yes, with two different shapes for the two different numbers:
+
+- **Per-thread stack size** is directly, precisely measurable from *inside* a real dispatch thread:
+  `libc::pthread_getattr_np(pthread_self(), &mut attr)` +
+  `libc::pthread_attr_getstack(&attr, &mut addr, &mut size)` (both already reachable - `libc` is
+  already a dependency, see `crates/db/Cargo.toml`) called from within an instrumented `write`
+  callback during a `real_mount_*`-style test, reporting the observed size back to the test through
+  a shared atomic/channel. This gives a hard, precise number to assert a tolerance against (e.g.
+  "within 2x of the value this reserve calculation assumes"), not just an estimate. Reading
+  `/proc/self/task/<tid>/maps`' `[stack:<tid>]` label was considered and rejected as the primary
+  mechanism - that label's format has reportedly changed across kernel versions for security
+  reasons, making it a less stable basis than asking the thread about itself directly.
+- **Dispatch-pool size** is softer to verify: libfuse3 (as far as checked here) exposes no direct
+  "current pool size" query. The only way to observe it is indirect - drive enough concurrent,
+  artificially slow operations against a real mount to force the pool to grow, and track the peak
+  number of *concurrently executing* dispatch callbacks via a shared atomic counter (incremented on
+  entry, decremented on exit, sampling the max) - the same style of empirical measurement the
+  original backpressure formula's own calibration already used. This is a regression/observation
+  test, not a hard spec check: there is no independently documented "correct" number to assert
+  against, only "does the observed plateau still match what we last measured/assumed."
+
+Both fit the developer's "does not need to run every time" framing via Rust's `#[ignore]` attribute
+(`cargo test -- --ignored` runs it on demand), layered on top of the existing `real_mount_` naming
+filter (`crates/mountfs/CLAUDE.md`) - e.g.
+`real_mount_dispatch_thread_stack_size_matches_expectation`, both prefixed *and* `#[ignore]`d, so it
+is skipped both in an environment without `/dev/fuse` and in an ordinary default run, but still
+discoverable and runnable on demand. Note the instrumentation itself (the `pthread_getattr_np`
+call, the concurrency counter) would need to be either test-only (`#[cfg(test)]`-gated inside the
+dispatch callback) or a permanent-but-cheap hook - worth deciding which during implementation
+rather than assuming.
+
+### `dfs self-check` - a runtime diagnostic command (raised by the developer, 2026-09-23)
+
+A new command that measures this environment's actual memory/threading behavior at runtime (the
+same kind of check the test above performs, but shipped as a real, always-available diagnostic
+rather than a dev-only test) and, if it finds this environment's numbers meaningfully different
+from what the RAM-budget reserve calculation assumes, prints actionable guidance on which CLI flags
+to pass to other commands (`mount` in particular) to compensate - not just "this is wrong" but "run
+with `--thread-stack-reserve-mb N` instead." Explicitly scoped narrow for now (this one check only,
+per the developer's own framing "zunächst mal nur das, später vielleicht auch noch für weitere
+Dinge") - a natural home for whatever the empirical-measurement code from the test above turns into
+as reusable logic, so the two are worth building on the same underlying implementation rather than
+twice. **Open question for the developer**: fold this into the current TODO's own implementation
+plan (a `dfs self-check` step alongside the rest), or track it separately as its own, later
+follow-up (with its own `REQ-CLI-...` in time) once the core RAM-budget work has shipped and the
+measurement logic already exists to build it on top of? Leaning toward "separate, later" only
+because it is explicitly scoped as an extra on top of the core design here, not something the core
+design depends on - but open to either.
 
 ### Recommendations for a few implementation-shape choices (not blocking, offered for override)
 
