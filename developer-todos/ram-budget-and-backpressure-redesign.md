@@ -18,12 +18,22 @@ pragma configuration), `docs/design/mount-write-path.md` (DESIGN-MOUNT-006/010),
 (REQ-STORAGE-003), `requirements/non-functional/performance.md`.
 
 **Per the developer's own instruction handing this over**: changes to requirements, design docs, or
-code that follow directly from the text below may be carried straight into `agreed`/`decided`/
-`implemented` status during implementation. Where implementing this needs a farther-reaching change
-than the text below states outright, reset that status back to `draft`/`idea` instead of assuming
-agreement - "Notes and open questions" below already identifies several concrete places this
-applies (in particular: DESIGN-MOUNT-006's delay formula and DESIGN-MOUNT-010's budget semantics,
-both currently `implemented`, both changing in ways bigger than a constant tweak).
+code that follow directly from the text below - and from clarifications reached in the discussion
+around it - may be carried straight into `agreed`/`decided`/`implemented` status during
+implementation. The criterion for resetting a status back to `draft`/`idea` instead is **not** "how
+big is the change" - it is whether implementing it forced a decision beyond what the developer's own
+text and the discussion's clarifications already settle. If everything a change needs is already
+spelled out (even a substantial rewrite, e.g. DESIGN-MOUNT-006's delay formula switching from
+`backlog_spilled_bytes` to the sketch's own explicitly-specified `bytesInPersistQueue`, decremented
+per completed chunk exactly as the text says), that is still `agreed` - no reset, no re-review
+needed. A reset - and bringing the specific document back to the developer for review - is for the
+case where the implementing agent had to invent or choose something the text and discussion do not
+already answer. See "Notes and open questions" below for the concrete open questions and decisions
+already reached; as things stand, none of the currently-identified changes (including
+DESIGN-MOUNT-006/010, both currently `Status: implemented`) appear to need a reset under this
+criterion - both change in ways the sketch already specifies outright. Re-check this per document
+once implementation actually starts, since an implementation detail not yet anticipated here could
+still turn out to need a genuine choice.
 
 ## The developer's design sketch (verbatim, unedited)
 
@@ -116,25 +126,32 @@ Und alles ohne ein Spillover To File.
   write handles on one file (a real POSIX/FUSE scenario) are therefore already handled correctly;
   nothing new needed there.
 
-### This changes, not just tunes, two already-`implemented` design decisions
+### Two already-`implemented` design decisions change shape - but not, on current reading, past what the sketch itself already specifies
+
+**Correction (2026-09-23)**: an earlier draft of this section argued these two needed their
+`Status: implemented` reset back to `draft` because the change is bigger than a constant tweak. The
+developer corrected that reasoning: size of the change is not the criterion (see the top-of-file
+note above) - only "did the agent have to decide something the text/discussion do not already
+answer" is. Re-reading both against that corrected criterion:
 
 - **DESIGN-MOUNT-006's delay formula** (`crates/cli/src/backpressure.rs`) currently reacts to
   `JobPool::backlog_spilled_bytes()` - deliberately *spill-only*, not all queued bytes (see that
   module's own doc comment: "a Rust spilled byte is a worse state than a Scala queued byte"). The
-  developer's `bytesInPersistQueue` above is the broader signal (all bytes queued for persist,
-  memory-cached or spilled, decremented per completed *chunk*) - closer to the original Scala
-  signal this project's own delay formula deliberately diverged from. Implementing this needs a new
-  counter, updated from inside `Settler::complete_chunk` (`crates/cli/src/settle.rs`) as each chunk
-  finishes, threaded through `settle_pool.rs` to wherever `DedupFs::write` reads it today - a
-  genuinely different code path, not a constant swap. DESIGN-MOUNT-006's `Status: implemented`
-  should go back to `draft` (or a fresh `DESIGN-...` id, since the mechanism itself changes) rather
-  than being silently kept as `implemented` with new text under it.
+  sketch above explicitly specifies the replacement signal (`bytesInPersistQueue`, all queued bytes)
+  and exactly when it changes ("Wenn beim Persistieren ein Chunk fertig bearbeitet ist..., dann wird
+  sofort bytesInPersistQueue entsprechend angepasst"). Wiring a new counter into
+  `Settler::complete_chunk` and reading it from `DedupFs::write` in place of
+  `backlog_spilled_bytes()` is mechanical plumbing of an already-specified behavior, not a fresh
+  design choice - so, on current reading, this does **not** need a status reset. Flag it for reset
+  only if implementation turns up a genuine open choice the sketch does not cover (e.g. an
+  architectural question about exactly how the counter is threaded through `settle_pool.rs` that
+  turns out to be ambiguous, not just an implementation detail with one obvious answer).
 - **DESIGN-MOUNT-010's `MemoryBudget`/`DEFAULT_BUDGET_BYTES`** currently *is* the whole cache
-  budget. Under the developer's model above, 256 MB is the *gross* limit the whole process works
-  within, with the SQLite/Rust-runtime reserve subtracted *before* what is left becomes the actual
-  `MemoryBudget` instance's `total_bytes`. That is a reinterpretation of an existing, shipped
-  constant's meaning, not only a value change - recorded here explicitly so it gets a deliberate
-  decision rather than a silent conflation of "256 MB total" and "256 MB for caching."
+  budget. The sketch's own "Ausgangspunkt" section already spells out the gross-minus-reserves model
+  explicitly ("So kommen wir zu einer Zahl, wie viel RAM wir für das Caching von Daten verwenden
+  können") - constructing the `MemoryBudget` instance with `total_bytes = 256 MB - reserves` instead
+  of the raw 256 MB is a direct implementation of that, not an invented reinterpretation. Also does
+  **not**, on current reading, need a status reset for that reason alone.
 
 ### `docs/design/settle-whole-file-memory-bound.md` becomes obsolete, not just related
 
@@ -252,9 +269,10 @@ design depends on - but open to either.
 Order roughly follows this repo's own "requirements/design before code" convention
 (`.claude/rules/design-docs.md`, `.claude/rules/requirements.md`).
 
-1. **Resolve or explicitly defer** the two questions above (FUSE/WinFSP pool characteristics can
-   defer to an early empirical step within this same plan; the back-compat question should be
-   settled before requirements text is written, since it changes the requirement's own scope).
+1. **Resolve or explicitly defer** the remaining open question above (FUSE/WinFSP pool
+   characteristics can defer to an early empirical step within this same plan, per the Linux/Windows
+   split already tracked - see "Questions for the developer"). The back-compat question is already
+   settled (see "Decided while filing/discussing this TODO").
 2. **Requirements**: `requirements/functional/storage.md` REQ-STORAGE-003 - remove the "or a
    cheaper whole-file mode" framing, state CDC as the sole strategy with a bit-range cap (visible
    maximum 23, not 30). New non-functional requirement(s) for the RAM budget's existence and its
@@ -269,10 +287,13 @@ Order roughly follows this repo's own "requirements/design before code" conventi
      equilibrium `A = H`, reproducing the 50%/25%/... sequence for staggered opens), the mount
      backpressure formula and its constants' derivation, and the Store/Ingest bounded parallel
      chunk pipeline.
-   - Update `docs/design/mount-write-path.md`: DESIGN-MOUNT-006 (new formula/signal, status reset -
-     see above) and DESIGN-MOUNT-010 (budget reinterpretation, status reset - see above).
-   - Mark `docs/design/settle-whole-file-memory-bound.md` `Status: superseded-by DESIGN-...` (see
-     above).
+   - Update `docs/design/mount-write-path.md`: DESIGN-MOUNT-006 (new formula/signal) and
+     DESIGN-MOUNT-010 (budget reinterpretation) - both stay `Status: implemented` once updated,
+     per the corrected criterion above (no reset needed unless implementation turns up a genuine
+     open choice the sketch does not already answer).
+   - Mark `docs/design/settle-whole-file-memory-bound.md` `Status: superseded-by DESIGN-...`,
+     pointing at whichever id the new entry above gets (see "Decided while filing/discussing this
+     TODO").
 4. **`crates/cdc`**: no functional change if the recommendation above (keep it general) is taken -
    confirm the 6..=30 validation range stays as-is there.
 5. **`crates/db/src/connection.rs`**: expose (or inline at the call site) a `cache_size` readback;
