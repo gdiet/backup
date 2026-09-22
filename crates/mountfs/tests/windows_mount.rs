@@ -229,3 +229,120 @@ fn on_unmount_runs_and_process_exits_cleanly_on_ctrl_c() {
         "on_unmount did not run (no marker file written)"
     );
 }
+
+/// Drives real concurrent write load against a real WinFSP mount to observe two numbers
+/// `agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md` needed for
+/// `developer-todos/ram-budget-and-backpressure-redesign.md`'s RAM-budget reserve calculation:
+/// WinFSP's actual dispatch-thread concurrency, and each dispatch thread's real stack size (via
+/// `windows_dispatch_probe_helper.rs`, see its own doc comment for the instrumentation).
+///
+/// `#[ignore]`d, same reasoning as `on_unmount_runs_and_process_exits_cleanly_on_ctrl_c` above:
+/// this is a slower, load-driving observation test, not a correctness check with a "right answer"
+/// to assert on every run - libfuse3's own equivalent (`crates/mountfs/src/linux/mod.rs`) makes the
+/// same call for the same reason. Run explicitly with `cargo test --workspace -- --ignored
+/// real_mount_dispatch_thread_pool_and_stack_size --nocapture` to see the numbers.
+#[ignore = "slow, load-driving observation test - see doc comment"]
+#[test]
+fn real_mount_dispatch_thread_pool_and_stack_size() {
+    let helper = env!("CARGO_BIN_EXE_windows_dispatch_probe_helper");
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+    let results_path = parent_dir.path().join("results.txt");
+    let delay_ms = 150;
+
+    let mut child = std::process::Command::new(helper)
+        .arg(&mount_path)
+        .arg(&results_path)
+        .arg(delay_ms.to_string())
+        .spawn()
+        .expect("failed to spawn windows_dispatch_probe_helper");
+
+    // The probe filesystem starts with an empty root (unlike the read-only spike helper's fixed
+    // fixture), so readiness has to be an actual write attempt, not a "listing is non-empty" check
+    // - retried until it succeeds, same pattern `../../performance/scripts/dfs-mount-dir-create.ps1`
+    // already uses for a fresh mount's own readiness probe.
+    let probe_path = mount_path.join("_ready_probe.txt");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("mount helper exited early with {status}");
+        }
+        if std::fs::write(&probe_path, b"x").is_ok() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s (requires WinFSP to be installed)"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // 24 concurrent native OS threads, each writing 3 files in turn - real, artificially slowed
+    // (delay_ms) `write()` calls issued genuinely concurrently, enough to saturate whatever
+    // WinFSP's own dispatch-thread pool actually is, not just however many threads this test
+    // happens to spawn (24 is comfortably above any plausible real pool size, so the observed peak
+    // should reflect WinFSP's own ceiling, not this test's thread count).
+    let writer_threads: Vec<_> = (0..24)
+        .map(|i| {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || {
+                for j in 0..3 {
+                    let path = mount_path.join(format!("w{i}-{j}.txt"));
+                    std::fs::write(&path, b"abc").expect("write against the probe must succeed");
+                }
+            })
+        })
+        .collect();
+    for handle in writer_threads {
+        handle.join().expect("writer thread must not panic");
+    }
+    // One more reporter snapshot (written every 200 ms inside the helper) after the last write
+    // actually completes, so the results file reflects the true final peak rather than a slightly
+    // stale one.
+    std::thread::sleep(Duration::from_millis(400));
+
+    let results = std::fs::read_to_string(&results_path)
+        .expect("helper must have written at least one results snapshot by now");
+    child.kill().expect("failed to kill the mount helper");
+    child.wait().expect("failed to wait for the mount helper");
+
+    let peak: usize = results
+        .lines()
+        .find_map(|l| l.strip_prefix("peak_concurrent_writes="))
+        .expect("results file must have a peak_concurrent_writes line")
+        .parse()
+        .expect("peak_concurrent_writes must be a valid number");
+    let stack_sizes: Vec<usize> = results
+        .lines()
+        .find_map(|l| l.strip_prefix("stack_sizes_bytes="))
+        .expect("results file must have a stack_sizes_bytes line")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().expect("each stack size must be a valid number"))
+        .collect();
+
+    println!("WinFSP dispatch-thread pool and stack size, measured on this machine:");
+    println!("  peak concurrent write() dispatches: {peak}");
+    println!(
+        "  distinct dispatch threads observed: {}",
+        stack_sizes.len()
+    );
+    println!("  stack sizes (bytes): {stack_sizes:?}");
+
+    assert!(
+        peak >= 1,
+        "expected at least one write() to have run, got peak={peak}"
+    );
+    assert!(
+        !stack_sizes.is_empty(),
+        "expected at least one dispatch thread's stack size to have been recorded"
+    );
+    for size in &stack_sizes {
+        assert!(
+            (256 * 1024..=16 * 1024 * 1024).contains(size),
+            "a dispatch thread's stack size ({size} bytes) is outside a plausible range \
+             (256 KiB..=16 MiB) - either the measurement is wrong, or this machine's real value \
+             genuinely needs the RAM-budget reserve calculation revisited"
+        );
+    }
+}
