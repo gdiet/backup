@@ -872,7 +872,7 @@ mod tests {
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
             let mount_path = mount_path.clone();
-            std::thread::spawn(move || mount(fs, &mount_path, true))
+            std::thread::spawn(move || mount(fs, &mount_path, false))
         };
 
         // The probe filesystem starts with an empty root, so readiness has to be an actual write
@@ -892,15 +892,26 @@ mod tests {
 
         // 24 concurrent native OS threads, each writing 3 files in turn - comfortably above any
         // plausible real pool size, so the observed peak reflects libfuse3's own ceiling, not this
-        // test's own thread count.
+        // test's own thread count. 256 KiB per write (not `std::fs::write`'s tiny handful of
+        // bytes an earlier version of this test used) plus an explicit `sync_all` - small enough
+        // writes were found to sometimes never reach this filesystem's own `write()` dispatch at
+        // all before `fusermount3 -u` below, apparently absorbed entirely by the kernel's FUSE
+        // page cache (this project's `mount()` requests no `direct_io`) rather than actually
+        // dispatched - a real effect, not a bug in the probe's counting logic.
+        let payload = vec![7u8; 256 * 1024];
         let writer_threads: Vec<_> = (0..24)
             .map(|i| {
                 let mount_path = mount_path.clone();
+                let payload = payload.clone();
                 std::thread::spawn(move || {
                     for j in 0..3 {
                         let path = mount_path.join(format!("w{i}-{j}.txt"));
-                        std::fs::write(&path, b"abc")
+                        let mut file = std::fs::File::create(&path)
+                            .expect("create against the probe must succeed");
+                        std::io::Write::write_all(&mut file, &payload)
                             .expect("write against the probe must succeed");
+                        file.sync_all()
+                            .expect("sync_all against the probe must succeed");
                     }
                 })
             })

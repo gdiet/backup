@@ -214,7 +214,7 @@ mod imp {
         });
 
         let fs = Probe(state);
-        if let Err(err) = mountfs::mount(fs, &PathBuf::from(mountpoint), true) {
+        if let Err(err) = mountfs::mount(fs, &PathBuf::from(mountpoint), false) {
             eprintln!("mount failed: {err}");
             std::process::exit(1);
         }
