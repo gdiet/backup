@@ -179,24 +179,20 @@ implementation step actually assigns one; do that edit then, as part of the same
 
 ### Questions for the developer (would like an answer before or during implementation)
 
-1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** Checked what is verifiable from this
-   repo alone: `crates/mountfs/src/linux/sys.rs` marks the FUSE `init` callback (where
-   `fuse_conn_info`, including thread-pool-relevant negotiation, would be read/set) as
-   `Unimplemented` - this project does not query or configure libfuse3's pool size today, and I
-   could not find a local libfuse3 installation in this sandbox to check its actual default. Two
-   sub-questions, both currently open: (a) how large can the pool actually grow (needed to size the
-   "N threads x stack size" reserve), and (b) what stack size do *those* threads actually use -
-   likely **not** the same 2 MiB Rust's `std::thread::Builder` defaults to, since libfuse3's worker
-   threads are created by its own C code via plain `pthread_create`, which inherits the *process's*
-   default pthread stack size (commonly, but not universally, 8 MiB on Linux, distinct from Rust's
-   own default). Suggest resolving this empirically as the first implementation step (instrument a
-   real mount under load, per the existing calibration precedent in
-   `agent-todos/done/wire-write-backpressure-delay.md`) rather than blocking on it - the developer
-   has confirmed that is acceptable. The WinFSP side is tracked separately now:
-   `agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md` - opened alongside this TODO since
-   it needs a real Windows/WinFSP environment this session does not have; the numbers found there
-   may turn out to differ from Linux's enough to need platform-specific (`#[cfg(windows)]`)
-   handling in the reserve calculation, not just a different constant.
+1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** **Resolved how to proceed
+   (2026-09-23)**: this session checked whether it could measure the Linux/libfuse3 side itself -
+   `cargo test --workspace real_mount` fails here with "mount did not become ready within 5s" (the
+   `/dev/fuse` device node exists, but this remote container does not support an actual mount) - and
+   confirmed there is no other reachable environment to delegate to either (this account's only
+   registered Claude Code Remote environment is this same one; no other session is currently
+   running). Both halves are now tracked as their own `agent-todos/` items, for whichever future
+   session (most plausibly the developer's own WSL2/Linux machine for the Linux side, a real
+   Windows/WinFSP machine for the other) actually has the needed access:
+   `agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md` and
+   `agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md`. Implementation proceeds now on a
+   **provisional, documented, CLI-overridable** reserve rather than blocking - see the design doc
+   (implementation step 3) for the exact constant and its reasoning; both agent-todos above record
+   the obligation to come back and update it once real numbers land.
 
 ### Can this be verified by a test? (raised by the developer, 2026-09-23)
 
