@@ -238,16 +238,11 @@ same kind of check the test above performs, but shipped as a real, always-availa
 rather than a dev-only test) and, if it finds this environment's numbers meaningfully different
 from what the RAM-budget reserve calculation assumes, prints actionable guidance on which CLI flags
 to pass to other commands (`mount` in particular) to compensate - not just "this is wrong" but "run
-with `--thread-stack-reserve-mb N` instead." Explicitly scoped narrow for now (this one check only,
-per the developer's own framing "zunächst mal nur das, später vielleicht auch noch für weitere
-Dinge") - a natural home for whatever the empirical-measurement code from the test above turns into
-as reusable logic, so the two are worth building on the same underlying implementation rather than
-twice. **Open question for the developer**: fold this into the current TODO's own implementation
-plan (a `dfs self-check` step alongside the rest), or track it separately as its own, later
-follow-up (with its own `REQ-CLI-...` in time) once the core RAM-budget work has shipped and the
-measurement logic already exists to build it on top of? Leaning toward "separate, later" only
-because it is explicitly scoped as an extra on top of the core design here, not something the core
-design depends on - but open to either.
+with `--thread-stack-reserve-mb N` instead." **Decided (2026-09-23)**: tracked separately, later -
+not part of this TODO's own implementation plan. Recorded as its own idea in
+`requirements/open-questions.md` ("On-demand memory/threading self-check"), to be picked up once
+the core RAM-budget work has shipped and its empirical-measurement logic already exists to build
+this on top of, rather than twice.
 
 ### Recommendations for a few implementation-shape choices (not blocking, offered for override)
 

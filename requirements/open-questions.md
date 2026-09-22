@@ -99,6 +99,20 @@ a fixed default mountpoint is a much less natural fit than REQ-CLI-006's "next t
 rule, since a mountpoint is not naturally tied to where the software lives - open to a genuinely
 better default if one turns up, not to adopting one just for parity's sake.
 
+### On-demand memory/threading self-check (`dfs self-check`)
+Status: idea
+
+Should there be a `dfs self-check` command that measures this environment's actual memory/
+threading behavior at runtime - e.g. the mount's dispatch-thread stack size and dispatch-pool-size
+assumptions a RAM-budget design relies on (see
+[`../developer-todos/ram-budget-and-backpressure-redesign.md`](../developer-todos/ram-budget-and-backpressure-redesign.md))
+- and, where it finds a meaningful mismatch against what that design assumes, print actionable
+guidance on which CLI flags to pass to other commands (`mount` in particular) to compensate, not
+just "this looks wrong"? Raised alongside that RAM-budget design work; deliberately scoped narrow
+if pursued (this one check only, to start), with room to grow into broader self-diagnosis later.
+Tracked separately here rather than folded into that design's own implementation, since it is an
+addition on top of the core design, not something the core design depends on.
+
 ### Queryable/mount-browsable surfacing of background write failures
 Status: idea
 
