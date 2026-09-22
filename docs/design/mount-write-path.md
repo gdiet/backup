@@ -321,7 +321,7 @@ directory - an explicit, operator-provided override is a simpler, more predictab
 same underlying need.
 
 ## DESIGN-MOUNT-019: A file handle's write-cache share grows via a halving formula toward equilibrium
-Status: decided
+Status: implemented (crates/cli/src/write_cache.rs)
 
 DESIGN-MOUNT-010's shared budget needs a rule for how much of it any single open file handle may
 claim at a given write, not just an overall ceiling. Each `write()` call may grow that handle's own

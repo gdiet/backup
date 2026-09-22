@@ -24,6 +24,18 @@ use crate::ram_budget::{self, DispatchPool};
 use crate::settle_pool::{JobPool, SettleJob};
 use crate::write_cache::MemoryBudget;
 
+/// Runtime tuning knobs [`DedupFs::new`] needs beyond its structural parameters - grouped to keep
+/// that constructor's own parameter count reasonable, and to give `crate::mount` a single value
+/// to build once from its own CLI flags and pass through unchanged.
+pub struct Tuning {
+    /// DESIGN-MEMORY-001's operator-configurable RAM budget total (`--ram-budget-mb`), in bytes.
+    pub ram_budget_gross_bytes: u64,
+    /// DESIGN-MOUNT-006's write() backpressure delay formula's two constants
+    /// (`--backpressure-free-zone-bytes`/`--backpressure-slope-divisor`).
+    pub backpressure_free_zone_bytes: u64,
+    pub backpressure_slope_divisor: u128,
+}
+
 pub struct DedupFs {
     repo: Arc<db::Repository>,
     store: Arc<store::ByteStore>,
@@ -36,6 +48,8 @@ pub struct DedupFs {
     /// `None` for a read-only mount, which never submits a settle job that could produce a
     /// failure to log (DESIGN-MOUNT-009) in the first place.
     failure_log: Option<Arc<FailureLog>>,
+    backpressure_free_zone_bytes: u64,
+    backpressure_slope_divisor: u128,
 }
 
 impl DedupFs {
@@ -44,17 +58,18 @@ impl DedupFs {
     /// is the write cache's spillover directory (DESIGN-MOUNT-010/018) - `None` defaults to the
     /// OS temp directory, the same as before this parameter existed. The caller is responsible
     /// for validating a given `spill_dir` actually exists (`crate::mount`'s eager check) - this
-    /// constructor does not fail just because a `Some` value happens not to. `ram_budget_gross_bytes`
-    /// is DESIGN-MEMORY-001's operator-configurable total (`--ram-budget-mb`) - any `--cache-size`
-    /// override must already have been applied to `repo`'s connection before this call, so it is
-    /// reflected in the `cache_size` reserve read back below.
+    /// constructor does not fail just because a `Some` value happens not to.
+    /// `tuning.ram_budget_gross_bytes` is DESIGN-MEMORY-001's operator-configurable total
+    /// (`--ram-budget-mb`) - any `--cache-size` override must already have been applied to
+    /// `repo`'s connection before this call, so it is reflected in the `cache_size` reserve read
+    /// back below.
     pub fn new(
         repo: db::Repository,
         store: store::ByteStore,
         read_write: bool,
         repo_root: &Path,
         spill_dir: Option<PathBuf>,
-        ram_budget_gross_bytes: u64,
+        tuning: Tuning,
     ) -> io::Result<Self> {
         let cdc_target_size_bits = repo.settings().cdc_target_size_bits();
         let worker_count = std::thread::available_parallelism()
@@ -65,7 +80,7 @@ impl DedupFs {
         // for the CDC/hash/persist pool plus a real mount session's own FUSE/WinFSP dispatch pool.
         let cache_size_bytes = repo.cache_size_bytes().map_err(io::Error::other)?;
         let caching_budget_bytes = ram_budget::caching_budget_bytes(
-            ram_budget_gross_bytes,
+            tuning.ram_budget_gross_bytes,
             cache_size_bytes,
             worker_count as u64,
             DispatchPool::Fuse,
@@ -115,6 +130,8 @@ impl DedupFs {
             budget: Arc::new(MemoryBudget::new(caching_budget_bytes)),
             temp_dir: spill_dir.unwrap_or_else(std::env::temp_dir),
             failure_log,
+            backpressure_free_zone_bytes: tuning.backpressure_free_zone_bytes,
+            backpressure_slope_divisor: tuning.backpressure_slope_divisor,
         })
     }
 }
@@ -467,8 +484,8 @@ impl MountFilesystem for DedupFs {
         std::thread::sleep(crate::backpressure::write_backpressure_delay(
             self.pool.bytes_in_persist_queue(),
             data.len(),
-            crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
-            crate::backpressure::DEFAULT_SLOPE_DIVISOR,
+            self.backpressure_free_zone_bytes,
+            self.backpressure_slope_divisor,
         ));
         Ok(data.len() as u32)
     }
@@ -504,6 +521,14 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    fn default_tuning() -> Tuning {
+        Tuning {
+            ram_budget_gross_bytes: ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            backpressure_free_zone_bytes: crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
+            backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
+        }
+    }
+
     /// `fs` and `verify_repo`/`verify_store` point at the same repository, opened separately -
     /// `fs` owns the connection actually driving the mount, `verify_repo`/`verify_store` let a
     /// test inspect what a background settle job eventually commits, which `release`/`truncate`
@@ -526,7 +551,7 @@ mod tests {
             read_write,
             &repo_root,
             None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            default_tuning(),
         )
         .unwrap();
         (fs, verify_repo, verify_store, repo_dir)
@@ -572,15 +597,15 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "TODO(ram-budget-and-backpressure-redesign, step 7): this test's ~4 MiB backlog \
-                predates DEFAULT_FREE_ZONE_BYTES (1 GB) - it now falls entirely inside the new \
-                formula's free zone and adds no delay. Needs redesigning to either push a real \
-                backlog above the free zone or exercise write_backpressure_delay directly instead \
-                of through a full DedupFs integration test - not yet done, work paused mid-step."]
     fn write_consults_the_pool_and_sleeps_once_backlog_is_present() {
         let (mut fs, _verify_repo, _store, _dir) = setup(true);
         // A tiny budget makes the write below spill immediately.
         fs.budget = Arc::new(MemoryBudget::new(1));
+        // A zero free zone so this test's realistic ~4 MiB backlog (well under
+        // DEFAULT_FREE_ZONE_BYTES's 1 GB) still produces a measurable delay - the default's own
+        // free zone exists to keep small, ordinary backlogs delay-free, exactly what this test
+        // needs to see past to exercise the formula at all.
+        fs.backpressure_free_zone_bytes = 0;
 
         // Release a real, spilled generation - DESIGN-MOUNT-013's hand-off submits a SettleJob
         // carrying its ~4 MiB of spilled_bytes to fs.pool. A single job's backlog contribution
@@ -699,15 +724,7 @@ mod tests {
         // disk. `create`'s own empty-content settle never calls `store.write` at all (no chunks),
         // so it still succeeds even here - only a settle with real bytes hits this.
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), true);
-        let fs = DedupFs::new(
-            fs_repo,
-            fs_store,
-            true,
-            &repo_root,
-            None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
-        )
-        .unwrap();
+        let fs = DedupFs::new(fs_repo, fs_store, true, &repo_root, None, default_tuning()).unwrap();
 
         let handle = fs.create("/a.txt").unwrap();
         fs.write(handle, 0, b"hello").unwrap();

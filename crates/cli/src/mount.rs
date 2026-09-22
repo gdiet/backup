@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::dedup_fs::DedupFs;
+use crate::dedup_fs::{DedupFs, Tuning};
 
 /// `mount`'s core logic, separated from `main`'s process-exit/eprintln side effects so the error
 /// path stays testable without touching a real mount. `default_path_used` distinguishes a
@@ -21,8 +21,8 @@ fn try_run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
-    ram_budget_gross_bytes: u64,
     cache_size: Option<i64>,
+    tuning: Tuning,
 ) -> Result<(), String> {
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
     // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
@@ -98,7 +98,7 @@ fn try_run(
         read_write,
         repo_path,
         spill_dir.map(Path::to_path_buf),
-        ram_budget_gross_bytes,
+        tuning,
     )
     .map_err(|err| format!("error: {err}"))?;
     if let Err(err) = mountfs::mount(fs, mountpoint, !read_write) {
@@ -113,8 +113,8 @@ pub fn run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
-    ram_budget_mb: u64,
     cache_size: Option<i64>,
+    tuning: Tuning,
 ) {
     if let Err(message) = try_run(
         repo_path,
@@ -122,8 +122,8 @@ pub fn run(
         read_write,
         default_path_used,
         spill_dir,
-        ram_budget_mb * 1024 * 1024,
         cache_size,
+        tuning,
     ) {
         eprintln!("{message}");
         std::process::exit(1);
@@ -134,6 +134,14 @@ pub fn run(
 mod tests {
     use super::*;
     use crate::ram_budget;
+
+    fn default_tuning() -> Tuning {
+        Tuning {
+            ram_budget_gross_bytes: ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            backpressure_free_zone_bytes: crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
+            backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
+        }
+    }
 
     #[test]
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
@@ -149,8 +157,8 @@ mod tests {
             false,
             true,
             None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             None,
+            default_tuning(),
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -182,8 +190,8 @@ mod tests {
             false,
             false,
             None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             None,
+            default_tuning(),
         )
         .expect_err("must fail - mountpoint does not exist");
         assert!(
@@ -217,8 +225,8 @@ mod tests {
             false,
             false,
             Some(&spill_dir),
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             None,
+            default_tuning(),
         )
         .expect_err("must fail - spill_dir does not exist");
         assert!(
@@ -245,8 +253,8 @@ mod tests {
             false,
             false,
             None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             None,
+            default_tuning(),
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -278,8 +286,8 @@ mod tests {
             true,
             false,
             None,
-            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             None,
+            default_tuning(),
         )
         .expect_err("must fail - the write lock is already held");
         assert!(

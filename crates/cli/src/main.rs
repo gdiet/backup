@@ -63,6 +63,18 @@ struct RamBudgetArgs {
     ram_budget_mb: u64,
 }
 
+#[derive(Args)]
+struct BackpressureArgs {
+    /// DESIGN-MOUNT-006's write() backpressure delay: below this much bytesInPersistQueue
+    /// backlog, no delay is added at all.
+    #[arg(long, default_value_t = crate::backpressure::DEFAULT_FREE_ZONE_BYTES)]
+    backpressure_free_zone_bytes: u64,
+    /// DESIGN-MOUNT-006's write() backpressure delay: the slope past `--backpressure-free-zone-bytes`
+    /// - a smaller value makes the delay grow faster for the same backlog.
+    #[arg(long, default_value_t = crate::backpressure::DEFAULT_SLOPE_DIVISOR)]
+    backpressure_slope_divisor: u128,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     // REQ-CLI-005.
@@ -109,6 +121,8 @@ enum Commands {
         /// Without this, SQLite's own built-in default is left untouched.
         #[arg(long)]
         cache_size: Option<i64>,
+        #[command(flatten)]
+        backpressure: BackpressureArgs,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -371,6 +385,7 @@ fn main() {
             spill_dir,
             ram_budget,
             cache_size,
+            backpressure,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -380,8 +395,12 @@ fn main() {
                 read_write,
                 default_path_used,
                 spill_dir.as_deref(),
-                ram_budget.ram_budget_mb,
                 cache_size,
+                dedup_fs::Tuning {
+                    ram_budget_gross_bytes: ram_budget.ram_budget_mb * 1024 * 1024,
+                    backpressure_free_zone_bytes: backpressure.backpressure_free_zone_bytes,
+                    backpressure_slope_divisor: backpressure.backpressure_slope_divisor,
+                },
             );
         }
         Commands::Unlock { path } => {

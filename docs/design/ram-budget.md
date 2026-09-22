@@ -7,7 +7,7 @@ shared by the mount write path ([`mount-write-path.md`](mount-write-path.md)) an
 ([`ingest-bounded-pipeline.md`](ingest-bounded-pipeline.md)).
 
 ## DESIGN-MEMORY-001: Startup RAM budget - gross limit minus reserves, fixed for the process lifetime
-Status: decided
+Status: implemented (crates/cli/src/ram_budget.rs, crates/db/src/connection.rs)
 
 The application computes one number once, at startup, and never recomputes it while running: the
 total bytes it may hold in caches and buffers for content not yet durably committed. It starts from
