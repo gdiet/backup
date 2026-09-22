@@ -53,16 +53,11 @@ enforces the narrower bound instead, since the requirement it exists to satisfy 
 application's own RAM budget - is this application's concern, not the general-purpose chunking
 library's.
 
-### Provisional dispatch-pool reserve
+### Platform-specific dispatch-pool reserve
 
-The FUSE/WinFSP dispatch pool's own thread count and per-thread stack size are now measured on both
+The FUSE/WinFSP dispatch pool's own thread count and per-thread stack size are measured on both
 platforms - each was tracked as its own `agent-todos/` item, both now in `agent-todos/done/`
 (`determine-libfuse3-dispatch-pool-and-stack-size.md`, `determine-winfsp-dispatch-pool-and-stack-size.md`).
-The reserve itself still uses its original provisional, documented, CLI-overridable estimate:
-16 dispatch threads x 8 MiB (a pthread-created worker thread's own default Linux stack size,
-distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default used for this
-project's own threads) = 128 MiB - this has not been changed yet, deliberately, pending the
-decision below.
 
 WinFSP measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors); libfuse3 measured on
 both `julius`'s WSL2 and, separately, on `3327` (Intel i7-1355U, 10 cores/12 logical processors) -
@@ -74,22 +69,23 @@ each reproduced identically across two separate runs on every machine:
 | libfuse3 (`julius`, WSL2/Debian 12, same physical machine) | 10 (does **not** match logical-processor count) | 8 MiB exactly, matching glibc's documented default |
 | libfuse3 (`3327`, WSL2/Ubuntu 24.04) | 10 - identical to `julius`, despite 12 logical processors here vs. 4 there | 8 MiB exactly, same as `julius` |
 
-Both real measurements land comfortably under the current 128 MiB provisional reserve (Linux's own
-worst case, 10 x 8 MiB, is 80 MiB) - so the current constant is not under-reserved, just no longer
-closely calibrated to either platform's real behavior now that both are actually known rather than
-guessed. Notably, the two platforms' pool sizes do not track logical-processor count the same
-way - WinFSP's matched its machine's core count exactly, libfuse3's did not, and two libfuse3
-machines with a 3x difference in logical-processor count (4 vs. 12) landed on the exact same pool
-size of 10 - so a single core-count-based formula would not describe both platforms correctly even
-if one were wanted, and libfuse3's own number looks like a fixed fallback rather than anything
-derived from this machine's hardware.
+The two platforms' pool sizes do not track logical-processor count the same way: WinFSP's matched
+its one measured machine's core count exactly, while libfuse3's did not - two machines with a 3x
+difference in logical-processor count (4 vs. 12) landed on the exact same pool size of 10, evidence
+that libfuse3's own number behaves as a fixed fallback rather than anything derived from the
+machine's hardware. A single, shared, core-count-based formula would not describe both platforms
+correctly, so the reserve is platform-specific (`crates/cli/src/ram_budget.rs`'s
+`dispatch_pool_reserve_bytes`, `#[cfg(target_os = "linux")]`/`#[cfg(target_os = "windows")]`):
 
-**Left as an explicit decision for the developer, not made silently here**: whether to tighten
-`PROVISIONAL_DISPATCH_POOL_THREADS`/`PROVISIONAL_DISPATCH_THREAD_STACK_BYTES`
-(`crates/cli/src/ram_budget.rs`) to reflect the real measured maxima (10 threads x 8 MiB = 80 MiB,
-the larger of the two platforms on each axis, still shared rather than `#[cfg(windows)]`/
-`#[cfg(unix)]`-gated) instead of the original conservative guess, freeing roughly 48 MiB more of the
-default 256 MiB gross budget for actual caching - or to go further and split the reserve per
-platform now that real numbers for both exist and look meaningfully different, or to leave the
-current conservative constant as-is since it is not actually wrong, just not tight. Any of these is
-a legitimate choice; picking one is not this measurement's job.
+- **Linux/libfuse3**: a fixed `10 x 8 MiB = 80 MiB`, matching the reproduced fixed-fallback
+  behavior above.
+- **Windows/WinFSP**: `available_parallelism() x 1 MiB`, matching the one measured machine's
+  core-count-scaling behavior.
+
+Neither measurement has been reproduced across more than a couple of machines per platform (one for
+WinFSP, two - agreeing - for libfuse3), so both remain estimates an operator can still override via
+the RAM budget total, not guarantees; a future `dfs self-check` command (tracked as an idea, not yet
+built - "On-demand memory/threading self-check" in
+[`../../requirements/open-questions.md`](../../requirements/open-questions.md)) could recalibrate
+this reserve automatically against the actual running environment instead of relying on measurements
+taken elsewhere.

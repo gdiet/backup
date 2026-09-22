@@ -11,22 +11,43 @@ pub const DEFAULT_GROSS_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
 /// CDC/hash/persist pool's own worker threads.
 const RUST_THREAD_STACK_RESERVE_BYTES: u64 = 2 * 1024 * 1024;
 
-/// DESIGN-MEMORY-001's provisional FUSE dispatch-pool thread count. Real measurements now exist
-/// for both platforms (`agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md`:
-/// 10 threads on WSL2/libfuse3; `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`:
-/// 4 threads on WinFSP) - both comfortably under this constant, so it remains a safe, if no longer
-/// tightly calibrated, reserve. Whether to tighten it (and/or split it per platform) is an open
-/// decision, not yet made - see `docs/design/ram-budget.md`'s "Provisional dispatch-pool reserve".
-pub const PROVISIONAL_DISPATCH_POOL_THREADS: u64 = 16;
+/// DESIGN-MEMORY-001's FUSE/WinFSP dispatch-pool reserve, per real measurement
+/// (`docs/design/ram-budget.md`'s "Provisional dispatch-pool reserve"):
+///
+/// - **Linux/libfuse3**: a fixed 10 threads x 8 MiB = 80 MiB. Reproduced identically on two
+///   independent machines with very different logical-processor counts (4 and 12), both landing
+///   on pool size 10 and 8 MiB stacks - libfuse3's own dispatch-pool size behaves as a hardcoded
+///   fallback here, not something derived from this machine's hardware, so a fixed reserve fits
+///   (`agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md`).
+/// - **Windows/WinFSP**: `available_parallelism() x 1 MiB`. WinFSP's own measured dispatch
+///   concurrency matched that one machine's logical-processor count exactly, so this reserve
+///   scales with the machine's own core count instead of using a fixed number
+///   (`agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`).
+///
+/// Neither measurement has been reproduced across more than a couple of machines per platform,
+/// so both remain estimates an operator can override via the RAM budget total, not guarantees.
+#[cfg(target_os = "linux")]
+fn dispatch_pool_reserve_bytes() -> u64 {
+    10 * 8 * 1024 * 1024
+}
 
-/// DESIGN-MEMORY-001's provisional per-dispatch-thread stack reserve: a pthread-created worker
-/// thread's own default Linux stack size, distinct from - and larger than -
-/// `RUST_THREAD_STACK_RESERVE_BYTES` above. Real measurements (see this constant's sibling above)
-/// found libfuse3 dispatch threads use exactly this value on WSL2/Debian; WinFSP's own dispatch
-/// threads measured smaller (1 MiB). Still shared across platforms rather than tightened or
-/// `#[cfg(windows)]`/`#[cfg(unix)]`-gated - see this constant's sibling above for why that is left
-/// as an open decision rather than made here.
-pub const PROVISIONAL_DISPATCH_THREAD_STACK_BYTES: u64 = 8 * 1024 * 1024;
+/// See the Linux definition of this function above for the shared doc comment.
+#[cfg(target_os = "windows")]
+fn dispatch_pool_reserve_bytes() -> u64 {
+    let cores = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1) as u64;
+    cores * 1024 * 1024
+}
+
+/// Neither Linux nor Windows: this project's mount write path is not supported here at all
+/// (`crates/mountfs`), so this reserve is never actually charged against a real dispatch pool -
+/// kept only so `caching_budget_bytes` below compiles on every target. Falls back to the original
+/// conservative pre-measurement estimate (16 threads x 8 MiB).
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn dispatch_pool_reserve_bytes() -> u64 {
+    16 * 8 * 1024 * 1024
+}
 
 /// Whether this process runs a FUSE/WinFSP dispatch pool of its own - only a real mount session
 /// does; `dfs ingest`/`dfs create-repo` do not, and reserve nothing for one.
@@ -40,9 +61,7 @@ impl DispatchPool {
     fn reserve_bytes(self) -> u64 {
         match self {
             DispatchPool::None => 0,
-            DispatchPool::Fuse => {
-                PROVISIONAL_DISPATCH_POOL_THREADS * PROVISIONAL_DISPATCH_THREAD_STACK_BYTES
-            }
+            DispatchPool::Fuse => dispatch_pool_reserve_bytes(),
         }
     }
 }
@@ -124,10 +143,13 @@ mod tests {
         let without_fuse = caching_budget_bytes(256 * 1024 * 1024, 0, 0, DispatchPool::None);
         let with_fuse = caching_budget_bytes(256 * 1024 * 1024, 0, 0, DispatchPool::Fuse);
         assert!(with_fuse < without_fuse);
-        assert_eq!(
-            without_fuse - with_fuse,
-            PROVISIONAL_DISPATCH_POOL_THREADS * PROVISIONAL_DISPATCH_THREAD_STACK_BYTES
-        );
+        assert_eq!(without_fuse - with_fuse, dispatch_pool_reserve_bytes());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dispatch_pool_reserve_is_the_fixed_libfuse3_measurement_on_linux() {
+        assert_eq!(dispatch_pool_reserve_bytes(), 80 * 1024 * 1024);
     }
 
     #[test]

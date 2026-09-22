@@ -179,22 +179,19 @@ implementation step actually assigns one; do that edit then, as part of the same
 
 ### Questions for the developer (would like an answer before or during implementation)
 
-1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** **Both platforms now measured**:
-   `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md` (Windows, 2026-09-22) and
-   `agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md` (Linux/WSL2, same day) -
-   both on `julius` (i5-6200U, 2 cores/4 logical processors: WinFSP via native Windows, libfuse3 via
-   a WSL2/Debian 12 session on the same physical machine). WinFSP's dispatch-thread-pool size
-   peaked at **4** (matching this machine's logical-processor count); libfuse3's peaked at **10**
-   (notably, *not* matching the same machine's core count under WSL2). Per-thread stack size:
-   WinFSP **1,048,576 bytes (1 MiB)**, libfuse3 **8,388,608 bytes (8 MiB, glibc's documented
-   default)** - both reproduced identically across two separate runs each. Both real measurements
-   land comfortably under the current 128 MiB (16 x 8 MiB) provisional reserve
-   (`crates/cli/src/ram_budget.rs`), so it is not under-reserved, just no longer tightly calibrated
-   to either platform's real behavior - **left as an open decision for the developer** whether to
-   tighten it to the real measured maxima (10 x 8 MiB = 80 MiB, freeing ~48 MiB more of the default
-   256 MiB gross budget), split it per platform now that the two numbers look meaningfully
-   different, or leave it as-is; see `docs/design/ram-budget.md`'s "Provisional dispatch-pool
-   reserve" section for the concrete options, not decided or changed by this measurement itself.
+1. **FUSE/WinFSP dispatch-thread-pool size and stack size.** **Both platforms measured, decision
+   made (2026-09-22)**: `agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`
+   (Windows, `julius`) and `agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md`
+   (Linux/WSL2, reproduced on both `julius` and `3327` with very different core counts). WinFSP's
+   dispatch-thread-pool size peaked at **4** (matched `julius`'s own logical-processor count,
+   4), 1 MiB stacks; libfuse3's peaked at **10** on both machines regardless of core count (4 vs.
+   12 logical processors), 8 MiB stacks - behaving as a fixed fallback, not something derived from
+   the machine's hardware. Given that platform split, the developer chose to split the reserve
+   itself per platform rather than keep a single shared constant:
+   `crates/cli/src/ram_budget.rs`'s `dispatch_pool_reserve_bytes` is now
+   `#[cfg(target_os = "linux")]`-gated to a fixed `10 x 8 MiB = 80 MiB`, and
+   `#[cfg(target_os = "windows")]`-gated to `available_parallelism() x 1 MiB` - see
+   `docs/design/ram-budget.md`'s "Platform-specific dispatch-pool reserve" section.
 
 ### Can this be verified by a test? (raised by the developer, 2026-09-23)
 
