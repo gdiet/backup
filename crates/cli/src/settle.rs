@@ -51,12 +51,19 @@ impl std::error::Error for SettleError {}
 ///
 /// `cdc_target_size_bits` must already be validated (REQ-CLI-005) - the same value the repository
 /// was created with (`db::RepositorySettings::cdc_target_size_bits`).
+///
+/// `on_chunk_settled` is called with each chunk's own byte length as soon as that chunk finishes
+/// (persisted, or found already deduplicated) - `crate::settle_pool::JobPool` uses this to drain
+/// DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal incrementally, per chunk, rather
+/// than only once the whole call returns; a caller with no such signal to update passes a no-op
+/// closure.
 pub fn settle(
     repo: &db::Repository,
     store: &store::ByteStore,
     cdc_target_size_bits: u32,
     size: u64,
     mut read: impl FnMut(u64, u32) -> io::Result<Vec<u8>>,
+    mut on_chunk_settled: impl FnMut(u64),
 ) -> Result<i64, SettleError> {
     let config = ChunkerConfig::new(Some(cdc_target_size_bits))
         .expect("cdc_target_size_bits was already validated when the repository was created");
@@ -66,10 +73,10 @@ pub fn settle(
     while position < size {
         let window_len = (size - position).min(u64::from(READ_WINDOW)) as u32;
         let data = read(position, window_len).map_err(SettleError::Read)?;
-        settler.feed(&data)?;
+        settler.feed(&data, &mut on_chunk_settled)?;
         position += u64::from(window_len);
     }
-    settler.finish(size)
+    settler.finish(size, &mut on_chunk_settled)
 }
 
 /// Streaming chunker/hasher state for one [`settle`] call.
@@ -102,7 +109,11 @@ impl<'a> Settler<'a> {
 
     /// Feeds one window's worth of bytes through the chunker, completing (and registering) every
     /// chunk boundary found within it.
-    fn feed(&mut self, data: &[u8]) -> Result<(), SettleError> {
+    fn feed(
+        &mut self,
+        data: &[u8],
+        on_chunk_settled: &mut impl FnMut(u64),
+    ) -> Result<(), SettleError> {
         let mut bytes_into_chunk = self.chunker.bytes_into_chunk();
         let lengths = self.chunker.next(data);
         let mut rest = data;
@@ -110,7 +121,7 @@ impl<'a> Settler<'a> {
             let end_in_rest = (length - bytes_into_chunk) as usize;
             self.chunk_buffer.extend_from_slice(&rest[..end_in_rest]);
             rest = &rest[end_in_rest..];
-            self.complete_chunk()?;
+            self.complete_chunk(on_chunk_settled)?;
             bytes_into_chunk = 0;
         }
         self.chunk_buffer.extend_from_slice(rest);
@@ -119,8 +130,12 @@ impl<'a> Settler<'a> {
 
     /// Hashes and registers the chunk currently accumulated in `chunk_buffer`: links it if
     /// already known, otherwise reserves storage and writes its bytes, then clears the buffer for
-    /// the next chunk.
-    fn complete_chunk(&mut self) -> Result<(), SettleError> {
+    /// the next chunk. Calls `on_chunk_settled` with the chunk's own length once it is registered
+    /// either way.
+    fn complete_chunk(
+        &mut self,
+        on_chunk_settled: &mut impl FnMut(u64),
+    ) -> Result<(), SettleError> {
         let hash = blake3::hash(&self.chunk_buffer);
         let chunk_hash = &hash.as_bytes()[..HASH_WIDTH];
         let length = self.chunk_buffer.len() as i64;
@@ -145,20 +160,25 @@ impl<'a> Settler<'a> {
         self.chunk_ids.push(chunk_id);
         self.content_hasher.update(&(length as u64).to_le_bytes());
         self.content_hasher.update(chunk_hash);
+        on_chunk_settled(length as u64);
         self.chunk_buffer.clear();
         Ok(())
     }
 
     /// Flushes the final, possibly-partial chunk (if any) and resolves the whole-content
     /// `(length, hash)` row.
-    fn finish(mut self, size: u64) -> Result<i64, SettleError> {
+    fn finish(
+        mut self,
+        size: u64,
+        on_chunk_settled: &mut impl FnMut(u64),
+    ) -> Result<i64, SettleError> {
         if let Some(length) = self.chunker.flush() {
             debug_assert_eq!(
                 length as usize,
                 self.chunk_buffer.len(),
                 "the chunker's own reported final-chunk length must match what was buffered for it"
             );
-            self.complete_chunk()?;
+            self.complete_chunk(on_chunk_settled)?;
         }
 
         let mut content_hash = [0u8; HASH_WIDTH];
@@ -223,7 +243,7 @@ mod tests {
     #[test]
     fn settling_an_empty_file_creates_a_zero_length_content_with_no_chunks() {
         let (repo, _rd, store, _sd) = repo_and_store();
-        let content_id = settle(&repo, &store, 12, 0, |_, _| Ok(Vec::new())).unwrap();
+        let content_id = settle(&repo, &store, 12, 0, |_, _| Ok(Vec::new()), |_| {}).unwrap();
         assert_eq!(repo.resolve_extents(content_id).unwrap(), Vec::new());
         assert_eq!(read_back(&repo, &store, content_id), Vec::new());
     }
@@ -232,9 +252,14 @@ mod tests {
     fn settling_a_small_file_that_fits_in_one_chunk_stores_and_reads_back_the_same_bytes() {
         let (repo, _rd, store, _sd) = repo_and_store();
         let content = b"hello world".to_vec();
-        let content_id = settle(&repo, &store, 12, content.len() as u64, |pos, len| {
-            Ok(content[pos as usize..(pos as usize + len as usize)].to_vec())
-        })
+        let content_id = settle(
+            &repo,
+            &store,
+            12,
+            content.len() as u64,
+            |pos, len| Ok(content[pos as usize..(pos as usize + len as usize)].to_vec()),
+            |_| {},
+        )
         .unwrap();
         assert_eq!(read_back(&repo, &store, content_id), content);
     }
@@ -252,6 +277,7 @@ mod tests {
             12,
             content.len() as u64,
             read(content.clone()),
+            |_| {},
         )
         .unwrap();
         let second = settle(
@@ -260,6 +286,7 @@ mod tests {
             12,
             content.len() as u64,
             read(content.clone()),
+            |_| {},
         )
         .unwrap();
         assert_eq!(first, second);
@@ -272,9 +299,14 @@ mod tests {
         // varied enough (not a single repeated byte) to actually exercise CDC chunk boundaries.
         let size = (READ_WINDOW as usize) * 2 + 12345;
         let content: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
-        let content_id = settle(&repo, &store, 16, size as u64, |pos, len| {
-            Ok(content[pos as usize..(pos as usize + len as usize)].to_vec())
-        })
+        let content_id = settle(
+            &repo,
+            &store,
+            16,
+            size as u64,
+            |pos, len| Ok(content[pos as usize..(pos as usize + len as usize)].to_vec()),
+            |_| {},
+        )
         .unwrap();
         assert_eq!(read_back(&repo, &store, content_id), content);
         // A file this size at a 16-bit target should have split into more than one chunk - each
@@ -290,9 +322,14 @@ mod tests {
     #[test]
     fn a_read_failure_is_reported_rather_than_silently_producing_wrong_content() {
         let (repo, _rd, store, _sd) = repo_and_store();
-        let err = settle(&repo, &store, 12, 10, |_, _| {
-            Err(io::Error::other("simulated read failure"))
-        })
+        let err = settle(
+            &repo,
+            &store,
+            12,
+            10,
+            |_, _| Err(io::Error::other("simulated read failure")),
+            |_| {},
+        )
         .unwrap_err();
         assert!(matches!(err, SettleError::Read(_)));
     }

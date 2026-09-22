@@ -391,14 +391,21 @@ fn ingest_file(
             )));
         }
     };
-    let content_id = settle::settle(ctx.repo, ctx.store, ctx.cdc_target_size_bits, size, {
-        use std::io::Read;
-        move |_pos, len| {
-            let mut buf = vec![0u8; len as usize];
-            file.read_exact(&mut buf)?;
-            Ok(buf)
-        }
-    });
+    let content_id = settle::settle(
+        ctx.repo,
+        ctx.store,
+        ctx.cdc_target_size_bits,
+        size,
+        {
+            use std::io::Read;
+            move |_pos, len| {
+                let mut buf = vec![0u8; len as usize];
+                file.read_exact(&mut buf)?;
+                Ok(buf)
+            }
+        },
+        |_| {},
+    );
     match content_id {
         Ok(content_id) => {
             match ctx

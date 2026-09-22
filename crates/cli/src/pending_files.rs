@@ -83,9 +83,10 @@ impl GenerationSlot {
     }
 
     /// The bytes currently spilled to disk for this generation specifically - `0` once settled,
-    /// since a settled generation no longer holds a [`WriteCache`] at all. DESIGN-MOUNT-010's
-    /// backpressure signal, for a generation that has already been released and is queued or
-    /// being processed by the settle job pool (DESIGN-MOUNT-006).
+    /// since a settled generation no longer holds a [`WriteCache`] at all. Test-only: production
+    /// code tracks DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal at the
+    /// `JobPool`/`Settler` level instead (`crate::settle_pool`), not per generation.
+    #[cfg(test)]
     pub fn spilled_bytes(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.spilled_bytes(),

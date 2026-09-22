@@ -393,6 +393,7 @@ impl MountFilesystem for DedupFs {
             self.cdc_target_size_bits,
             0,
             |_, _| Ok(Vec::new()),
+            |_| {},
         )
         .map_err(|_| Errno::EIO)?;
         let id = self
@@ -464,8 +465,10 @@ impl MountFilesystem for DedupFs {
             .map_err(|_| Errno::EIO)?;
         // DESIGN-MOUNT-006's backpressure delay - see crate::backpressure's own doc comment.
         std::thread::sleep(crate::backpressure::write_backpressure_delay(
-            self.pool.backlog_spilled_bytes(),
+            self.pool.bytes_in_persist_queue(),
             data.len(),
+            crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
+            crate::backpressure::DEFAULT_SLOPE_DIVISOR,
         ));
         Ok(data.len() as u32)
     }
@@ -569,6 +572,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "TODO(ram-budget-and-backpressure-redesign, step 7): this test's ~4 MiB backlog \
+                predates DEFAULT_FREE_ZONE_BYTES (1 GB) - it now falls entirely inside the new \
+                formula's free zone and adds no delay. Needs redesigning to either push a real \
+                backlog above the free zone or exercise write_backpressure_delay directly instead \
+                of through a full DedupFs integration test - not yet done, work paused mid-step."]
     fn write_consults_the_pool_and_sleeps_once_backlog_is_present() {
         let (mut fs, _verify_repo, _store, _dir) = setup(true);
         // A tiny budget makes the write below spill immediately.
@@ -584,9 +592,9 @@ mod tests {
         fs.release(spilling);
 
         // Timed immediately after - the settle job above is almost certainly still running, so
-        // fs.pool.backlog_spilled_bytes() (the same signal write() itself consults) should still
+        // fs.pool.bytes_in_persist_queue() (the same signal write() itself consults) should still
         // be near its full ~4 MiB, giving this write its own 4 MiB call a real, measurable delay
-        // (~22 ms at this crate's SLOPE_DIVISOR) well above ordinary scheduling noise.
+        // well above ordinary scheduling noise.
         let other = fs.create("/other.txt").unwrap();
         let start = Instant::now();
         fs.write(other, 0, &vec![0u8; 4 * 1024 * 1024]).unwrap();

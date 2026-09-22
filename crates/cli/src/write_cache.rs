@@ -167,10 +167,11 @@ impl WriteCache {
         self.size
     }
 
-    /// The total bytes currently spilled to disk - `0` while still in memory. This is
-    /// DESIGN-MOUNT-010's raw signal; DESIGN-MOUNT-006's backpressure narrows it further to only
-    /// a released (not still actively being written) cache's own spilled total - a caller's
-    /// concern, not this type's.
+    /// The total bytes currently spilled to disk - `0` while still in memory. Test-only: no
+    /// production code reads this directly (DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure
+    /// signal is tracked at the `JobPool`/`Settler` level instead, `crate::settle_pool`), but it
+    /// stays a useful assertion for tests that need to confirm a write actually spilled.
+    #[cfg(test)]
     pub fn spilled_bytes(&self) -> u64 {
         match &self.backing {
             Backing::Memory(_) => 0,

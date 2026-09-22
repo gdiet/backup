@@ -130,10 +130,12 @@ struct Context {
 pub struct JobPool {
     sender: Option<mpsc::Sender<SettleJob>>,
     workers: Vec<thread::JoinHandle<()>>,
-    /// DESIGN-MOUNT-010's backpressure signal, narrowed to released-but-not-yet-settled work: the
-    /// summed [`GenerationSlot::spilled_bytes`] of every generation currently queued or being
-    /// processed right now.
-    backlog_spilled_bytes: Arc<AtomicU64>,
+    /// DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal: every byte belonging to a
+    /// generation that has been handed off to this pool and is not yet fully settled, whether
+    /// still resident in memory or spilled to disk. Incremented by a generation's full size at
+    /// `submit`, decremented per chunk as `settle::settle`'s `on_chunk_settled` reports each one
+    /// finishing - not in one step only once the whole job completes.
+    bytes_in_persist_queue: Arc<AtomicU64>,
 }
 
 impl JobPool {
@@ -155,29 +157,29 @@ impl JobPool {
             cdc_target_size_bits,
             on_failure: Box::new(on_failure),
         });
-        let backlog_spilled_bytes = Arc::new(AtomicU64::new(0));
+        let bytes_in_persist_queue = Arc::new(AtomicU64::new(0));
 
         let workers = (0..worker_count.max(1))
             .map(|_| {
                 let receiver = Arc::clone(&receiver);
                 let context = Arc::clone(&context);
-                let backlog = Arc::clone(&backlog_spilled_bytes);
-                thread::spawn(move || worker_loop(&receiver, &context, &backlog))
+                let queue = Arc::clone(&bytes_in_persist_queue);
+                thread::spawn(move || worker_loop(&receiver, &context, &queue))
             })
             .collect();
 
         Self {
             sender: Some(sender),
             workers,
-            backlog_spilled_bytes,
+            bytes_in_persist_queue,
         }
     }
 
     /// Hands `job` off to the pool - returns immediately, never waiting for the job itself to
     /// finish (DESIGN-MOUNT-006).
     pub fn submit(&self, job: SettleJob) {
-        self.backlog_spilled_bytes
-            .fetch_add(job.generation.spilled_bytes(), Ordering::AcqRel);
+        self.bytes_in_persist_queue
+            .fetch_add(job.generation.size(), Ordering::AcqRel);
         self.sender
             .as_ref()
             .expect("only cleared in Drop, after which submit can no longer be called")
@@ -185,11 +187,12 @@ impl JobPool {
             .expect("worker threads only exit once every sender is dropped, including this one");
     }
 
-    /// DESIGN-MOUNT-010's backpressure signal - the total spilled-to-disk bytes belonging to
-    /// generations released and awaiting or undergoing settling right now. Consulted by
-    /// `DedupFs::write` via [`crate::backpressure::write_backpressure_delay`].
-    pub fn backlog_spilled_bytes(&self) -> u64 {
-        self.backlog_spilled_bytes.load(Ordering::Acquire)
+    /// DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal - the total bytes belonging to
+    /// generations released and awaiting or undergoing settling right now, whether resident in
+    /// memory or spilled to disk. Consulted by `DedupFs::write` via
+    /// [`crate::backpressure::write_backpressure_delay`].
+    pub fn bytes_in_persist_queue(&self) -> u64 {
+        self.bytes_in_persist_queue.load(Ordering::Acquire)
     }
 }
 
@@ -207,7 +210,7 @@ impl Drop for JobPool {
 fn worker_loop(
     receiver: &Mutex<mpsc::Receiver<SettleJob>>,
     context: &Context,
-    backlog_spilled_bytes: &AtomicU64,
+    bytes_in_persist_queue: &AtomicU64,
 ) {
     loop {
         let job = {
@@ -217,13 +220,11 @@ fn worker_loop(
         let Ok(job) = job else {
             return;
         };
-        let spilled = job.generation.spilled_bytes();
-        run_job(context, job);
-        backlog_spilled_bytes.fetch_sub(spilled, Ordering::AcqRel);
+        run_job(context, job, bytes_in_persist_queue);
     }
 }
 
-fn run_job(context: &Context, job: SettleJob) {
+fn run_job(context: &Context, job: SettleJob, bytes_in_persist_queue: &AtomicU64) {
     let repo = context.repo.as_ref();
     let store = context.store.as_ref();
     let size = job.generation.size();
@@ -233,8 +234,21 @@ fn run_job(context: &Context, job: SettleJob) {
             .map_err(|errno| io::Error::from_raw_os_error(errno.0))
     };
     let read = |position: u64, len: u32| job.generation.read(position, len, &resolve_content);
+    // DESIGN-MOUNT-006: drains bytesInPersistQueue as soon as each chunk finishes (persisted, or
+    // found already deduplicated) - not only once this whole job completes - so a large file's
+    // contribution to the backlog shrinks incrementally as it is worked through.
+    let on_chunk_settled = |chunk_len: u64| {
+        bytes_in_persist_queue.fetch_sub(chunk_len, Ordering::AcqRel);
+    };
 
-    match crate::settle::settle(repo, store, context.cdc_target_size_bits, size, read) {
+    match crate::settle::settle(
+        repo,
+        store,
+        context.cdc_target_size_bits,
+        size,
+        read,
+        on_chunk_settled,
+    ) {
         Ok(content_id) => {
             // DESIGN-MOUNT-016: a still-untouched create()-only empty placeholder is hard-deleted
             // instead of historized - re-verified live by id inside the same transaction as the
@@ -463,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn backlog_spilled_bytes_tracks_generations_currently_in_flight() {
+    fn a_settled_generation_is_no_longer_spilled() {
         let (repo, _rd, store, _sd) = repo_and_store();
         let registry = PendingFiles::new();
         // A zero budget forces an immediate spill to disk on the very first write.
@@ -481,8 +495,8 @@ mod tests {
         });
         drop(pool);
 
-        // Settled: no longer spilled anywhere, and no longer counted in the pool's own backlog
-        // (dropped along with the pool, but the generation's own accounting already reflects it).
+        // Settled: no longer spilled anywhere - the generation's own accounting already reflects
+        // it once mark_settled runs.
         assert_eq!(generation.spilled_bytes(), 0);
     }
 }
