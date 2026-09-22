@@ -76,13 +76,13 @@ already exist, as long as it is empty - a freshly mounted external drive's mount
 exists once it is mountable at all, so can never itself be "not yet existing". If it exists and is
 not empty, the command fails.
 
-Where the chunking configuration is not given explicitly, it defaults to content-defined chunking
-with a 20-bit target size (REQ-OPERABILITY-003 in
-[`../non-functional/operability.md`](../non-functional/operability.md)) - an average chunk size a
-little above 1 MiB, reasonable absent a specific reason to pick differently. `--whole-file`, or an
-explicit target size, remain available as an override - since REQ-STORAGE-003 still fixes this
-choice for the repository's lifetime, the command states that plainly wherever the choice is made
-(its `--help` text and confirmation output), not just via the flag itself.
+Where the target chunk size is not given explicitly, it defaults to a 20-bit target size
+(REQ-OPERABILITY-003 in [`../non-functional/operability.md`](../non-functional/operability.md)) -
+an average chunk size a little above 1 MiB, reasonable absent a specific reason to pick
+differently. An explicit target size, within REQ-STORAGE-003's own fixed range, remains available
+as an override - since REQ-STORAGE-003 still fixes this choice for the repository's lifetime, the
+command states that plainly wherever the choice is made (its `--help` text and confirmation
+output), not just via the flag itself.
 
 Rationale: every other command (store, mount, restore, ...) needs a repository to already exist -
 this is the one, deliberate entry point that brings one into being. Refusing a non-empty target

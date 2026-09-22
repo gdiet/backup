@@ -27,16 +27,23 @@ growing log or a lightly edited document), which then cost full additional stora
 Status: agreed
 Importance: should
 
-The chunking strategy - content-defined chunking (REQ-STORAGE-002) or a cheaper whole-file mode,
-for cases where sub-file matching is not worth its overhead - is configurable at repository
-creation and fixed for the repository's lifetime. For content-defined chunking specifically, its
-target chunk size is configurable and fixed the same way; whole-file mode has no target size to
-configure.
+Content is always chunked using content-defined chunking (REQ-STORAGE-002) - there is no separate
+whole-file mode. The target chunk size is configurable at repository creation and fixed for the
+repository's lifetime, within a fixed range (target size 6 to 23 bits) whose upper end keeps the
+largest chunk any configuration can ever produce within REQ-OPERABILITY-006's memory budget, for a
+repository sized to actually use it.
 
 Rationale: smaller chunks find more overlap between similar files at the cost of more metadata
 overhead per byte stored; the right trade-off depends on the data being stored, not on the
-software. Whole-file mode trades away REQ-STORAGE-002's sub-file matching entirely, for cases where
-even that overhead is not worth paying.
+software. A separate, uncapped whole-file mode was considered and rejected: unlike a bounded target
+chunk size, a single chunk covering an entire, arbitrarily large file cannot be processed within
+any fixed memory budget, since a chunk cannot be hashed - or found to already be known - until
+fully read. A large but bounded target size serves whole-file mode's own motivation (skipping most
+of the metadata overhead sub-file matching costs, for content unlikely to benefit from it) through
+the same content-defined mechanism instead, without reintroducing a code path whose memory cost is
+unbounded in principle. Content-defined chunking's own per-byte scanning cost is expected to stay
+small relative to the hashing every chunk needs regardless of chunking mode - not yet measured
+directly, but not a reason on its own to keep an unbounded alternative available.
 
 ### REQ-STORAGE-004: Bulk purge of aged soft-deleted entries
 Status: agreed

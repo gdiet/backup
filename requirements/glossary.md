@@ -1,9 +1,8 @@
 # Glossary
 
 ### Chunk
-A content-defined (or, in whole-file mode, single) contiguous piece of a file's bytes, individually
-hashed and deduplicated - the unit REQ-STORAGE-002 in [`functional/storage.md`](functional/storage.md)
-deduplicates at.
+A content-defined, contiguous piece of a file's bytes, individually hashed and deduplicated - the
+unit REQ-STORAGE-002 in [`functional/storage.md`](functional/storage.md) deduplicates at.
 
 ### Gap
 An unused byte range within the store, left behind once every chunk that used to occupy it has been

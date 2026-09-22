@@ -4,10 +4,11 @@
 Status: agreed
 Importance: must
 
-The software runs with a small, bounded memory footprint that does not grow with repository size
-(e.g. 128 MB RAM), and can be installed and made ready to use with minimal effort — no separately
-managed runtime, database server, or complex configuration beyond obtaining the software and
-pointing it at a repository directory.
+The software runs with a small, bounded memory footprint that does not grow with repository size,
+nor with the size of any individual file being processed (e.g. 256 MB RAM — see
+REQ-OPERABILITY-006 for the explicit, configurable budget this is built on), and can be installed
+and made ready to use with minimal effort — no separately managed runtime, database server, or
+complex configuration beyond obtaining the software and pointing it at a repository directory.
 
 Rationale: operators running this against a personal backup archive, often on modest hardware,
 should not need to provision resources or maintain infrastructure disproportionate to the simple
@@ -65,3 +66,25 @@ source.
 
 ### REQ-OPERABILITY-005: Local record of which optional features actually get used
 Status: moved-to REQ-MAINTENANCE-005
+
+### REQ-OPERABILITY-006: Explicit, configurable memory budget
+Status: agreed
+Importance: must
+
+The application works within an explicit memory budget for caching and buffering not-yet-durable
+content, fixed once at startup (it does not change while the process keeps running) and derived
+from an operator-configurable total — a sensible default requiring no configuration for typical
+use — minus what the application's own database connection and runtime overhead are expected to
+need. A repository whose own configured chunking granularity (REQ-STORAGE-003 in
+[`../functional/storage.md`](../functional/storage.md)) cannot possibly fit within this budget is
+refused at startup with an actionable error (REQ-OPERABILITY-004), rather than silently exceeding
+the stated bound once running.
+
+Rationale: REQ-OPERABILITY-001's bounded-footprint guarantee needs a concrete mechanism to actually
+hold, not just an aspiration — an explicit budget an operator can see, size for their own hardware,
+and reason about the consequences of (a smaller budget trades some caching benefit for a stronger
+footprint guarantee) is what makes "bounded" a checkable property rather than a claimed one.
+Refusing to start rather than exceeding the bound keeps the guarantee unconditional: an operator
+who configured storage parameters exceeding their own memory budget finds out immediately, at a
+moment they can still act on, rather than discovering it as a failure mid-run or a silently-broken
+guarantee.
