@@ -317,3 +317,45 @@ Order roughly follows this repo's own "requirements/design before code" conventi
     OS-level RSS sampling).
 11. **`migration/feature-comparison.md`**: revisit the `reclaimSpace`/whole-file-dedup rows and any
     other row whose description assumes `--whole-file` still exists.
+
+## Done (2026-09-22)
+
+All 11 steps implemented, verified, committed, and pushed to `memory-design` across several
+sessions (including a parallel Windows-focused session that measured WinFSP's own dispatch-pool
+numbers). Concretely:
+
+- Requirements (REQ-STORAGE-003: CDC-only, 23-bit cap) and design docs (`docs/design/ram-budget.md`
+  new DESIGN-MEMORY-001; `docs/design/ingest-bounded-pipeline.md` new DESIGN-INGEST-001;
+  `docs/design/mount-write-path.md`'s DESIGN-MOUNT-006/010/019 updated;
+  `docs/design/settle-whole-file-memory-bound.md` marked `superseded-by DESIGN-INGEST-001`) are all
+  in place.
+- `crates/cli/src/ram_budget.rs` (gross-minus-reserves computation, platform-specific dispatch-pool
+  reserve per the FUSE/WinFSP measurements below), `crates/db/src/connection.rs` (`cache_size`
+  readback), `crates/cli/src/write_cache.rs::MemoryBudget::try_acquire_share` (the per-handle
+  halving formula), `crates/cli/src/backpressure.rs` (the new `bytesInPersistQueue`-based delay
+  formula), and `crates/cli/src/ingest.rs` (the bounded, cross-file-parallel `FileJobPool`) are all
+  implemented, with CLI flags for every configurable constant.
+- The dispatch-pool reserve question (open question 1) was resolved platform-specifically, per the
+  developer's own instruction: Linux/libfuse3 uses a fixed `10 x 8 MiB` (reproduced identically on
+  two machines with very different core counts, confirming it behaves as a fixed fallback, not a
+  core-count-scaled value); Windows/WinFSP uses `available_parallelism() x 1 MiB` (matching the one
+  measured machine's core-count-scaling behavior).
+- `migration/feature-comparison.md`'s whole-file-dedup row was updated to drop the removed
+  `--whole-file`/`create-repo --whole-file` references.
+- Two verification items from step 10 were deliberately not attempted in the session that closed
+  this out, for reasons recorded alongside them rather than silently skipped:
+  - A real-libfuse3-mount-backed end-to-end test (handle-cap convergence + backpressure signal,
+    through the actual mount write path rather than the formulas in isolation) is parked in
+    `agent-todos/real-libfuse3-mount-backpressure-and-handle-cap-test.md` - that session's
+    environment had a `/dev/fuse` device node present but real mounts did not actually become ready
+    (see `.local/agent-environment.md`), so the test could not be written and verified there.
+  - An `ingest` memory-bound test using a counting `#[global_allocator]` (this document's own
+    suggested technique) was judged not worth the risk: `crates/cli` is a bin-only crate with no
+    `[lib]` target, so such a test would have to share the same test-binary process as this crate's
+    ~200 other tests (which run in parallel by default), making a reliable peak-allocation reading
+    fragile. The invariant it would check - that a chunk never exceeds the repository's configured
+    maximum chunk size - is already directly and reliably covered by `crates/cdc`'s own unit tests
+    (`max_chunk_size_at_23_bits_is_96_mebibytes`, `test_repeated_value`) plus
+    `try_run_refuses_a_ram_budget_too_small_for_the_configured_chunk_size` in `ingest.rs`, and with
+    `--whole-file` mode now fully removed, there is no remaining code path that could reintroduce
+    unbounded buffering for this test to guard against.
