@@ -611,8 +611,16 @@ again:**
    DESIGN-MAINTENANCE-001's separate write-locking limitation
    ([`repository-locking.md`](repository-locking.md)) regardless.
 
-Deliberately left untouched, since nothing has measured a need to: `cache_size`, `mmap_size`,
-`temp_store`, `wal_autocheckpoint`.
+Deliberately left untouched, since nothing has measured a need to: `mmap_size`, `temp_store`,
+`wal_autocheckpoint`.
+
+`cache_size` is handled separately from the fixed sequence above, by `connection::cache_size_bytes`/
+`connection::set_cache_size` rather than inside `configure_write_connection` itself - DESIGN-MEMORY-001
+in [`ram-budget.md`](ram-budget.md) reads it back (never overriding SQLite's own built-in default
+unless an operator explicitly asks, via `Repository::set_cache_size`) as the RAM-budget computation's
+single, precisely known reserve for this connection's own memory. It needs no fixed ordering relative
+to the pragmas above: it does not gate WAL the way `auto_vacuum` does, and is per-connection like
+`foreign_keys`/`synchronous`/`busy_timeout` rather than a persistent, whole-database property.
 
 ### Re-asserting the persistent settings on every open is deliberate, not merely harmless
 

@@ -36,6 +36,37 @@ pub(crate) fn configure_write_connection(conn: &Connection) -> Result<(), Error>
     Ok(())
 }
 
+/// Reads back this connection's current `PRAGMA cache_size`, converted to bytes - DESIGN-MEMORY-001
+/// in `docs/design/ram-budget.md`'s single, precisely known reserve for the database connection's
+/// own memory, rather than an estimate: `db::Repository` holds exactly one connection for its whole
+/// lifetime, so this is one well-defined number. SQLite reports `cache_size` as either a page count
+/// (positive) or an approximate byte budget in KiB (negative) - see SQLite's own `PRAGMA cache_size`
+/// documentation for that sign convention; this normalizes either form to a plain byte count.
+pub(crate) fn cache_size_bytes(conn: &Connection) -> Result<u64, Error> {
+    let cache_size: i64 = conn
+        .pragma_query_value(None, "cache_size", |row| row.get(0))
+        .map_err(wrap_unreliable_connection_error)?;
+    if cache_size < 0 {
+        Ok(cache_size.unsigned_abs() * 1024)
+    } else {
+        let page_size: i64 = conn
+            .pragma_query_value(None, "page_size", |row| row.get(0))
+            .map_err(wrap_unreliable_connection_error)?;
+        Ok(cache_size as u64 * page_size as u64)
+    }
+}
+
+/// Overrides this connection's `PRAGMA cache_size`, in SQLite's own units (positive: a page count;
+/// negative: an approximate byte budget in KiB) - REQ-OPERABILITY-006's operator-configurable
+/// override for DESIGN-MEMORY-001's RAM-budget reserve. Per-connection, like every other pragma
+/// `configure_write_connection` sets: needs reapplying on every connection, and is not the default
+/// path - DESIGN-MEMORY-001 leaves SQLite's own built-in default untouched unless an operator
+/// explicitly asks for a different one.
+pub(crate) fn set_cache_size(conn: &Connection, cache_size: i64) -> Result<(), Error> {
+    conn.pragma_update(None, "cache_size", cache_size)
+        .map_err(wrap_unreliable_connection_error)
+}
+
 /// Configures a genuinely `SQLITE_OPEN_READ_ONLY` connection (`crate::open_repository_read_only`).
 /// Sets only `busy_timeout` - `foreign_keys`/`synchronous` have nothing to enforce on a connection
 /// that never writes, and `auto_vacuum`/`journal_mode` are persistent, whole-database properties

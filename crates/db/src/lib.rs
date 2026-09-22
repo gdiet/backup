@@ -308,6 +308,20 @@ impl Repository {
         self.settings
     }
 
+    /// This connection's current `PRAGMA cache_size`, in bytes - DESIGN-MEMORY-001's reserve for
+    /// the database connection's own memory, in `docs/design/ram-budget.md`.
+    pub fn cache_size_bytes(&self) -> Result<u64, Error> {
+        self.with_connection(|conn, _| connection::cache_size_bytes(conn))
+    }
+
+    /// Overrides this connection's `PRAGMA cache_size`, in SQLite's own units (positive: a page
+    /// count; negative: an approximate byte budget in KiB) - REQ-OPERABILITY-006's operator
+    /// override for DESIGN-MEMORY-001's RAM-budget reserve, in `docs/design/ram-budget.md`. Without
+    /// a call to this, the connection keeps SQLite's own built-in default.
+    pub fn set_cache_size(&self, cache_size: i64) -> Result<(), Error> {
+        self.with_connection(|conn, _| connection::set_cache_size(conn, cache_size))
+    }
+
     fn with_connection<T>(
         &self,
         f: impl FnOnce(&Connection, &mut name_cache::NameCache) -> Result<T, Error>,
@@ -1045,6 +1059,57 @@ mod tests {
 
         let repo = open_repository(&repo_root).expect("open must succeed");
         assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn cache_size_bytes_reflects_sqlites_own_default_when_left_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let bytes = repo
+            .cache_size_bytes()
+            .expect("cache_size_bytes must succeed");
+        assert!(
+            bytes > 0,
+            "SQLite's own default cache_size must be a positive byte count, got {bytes}"
+        );
+    }
+
+    #[test]
+    fn set_cache_size_with_a_negative_value_is_read_back_as_kibibytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        repo.set_cache_size(-4096)
+            .expect("set_cache_size must succeed");
+        let bytes = repo
+            .cache_size_bytes()
+            .expect("cache_size_bytes must succeed");
+        assert_eq!(bytes, 4096 * 1024);
+    }
+
+    #[test]
+    fn set_cache_size_with_a_positive_value_is_read_back_via_page_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        repo.set_cache_size(500)
+            .expect("set_cache_size must succeed");
+        let bytes = repo
+            .cache_size_bytes()
+            .expect("cache_size_bytes must succeed");
+        assert!(bytes > 0);
+        assert_eq!(
+            bytes % 500,
+            0,
+            "byte count must be an exact multiple of the page count"
+        );
     }
 
     #[test]
