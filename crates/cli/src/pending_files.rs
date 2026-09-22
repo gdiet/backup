@@ -263,6 +263,19 @@ impl PendingFiles {
             .map(|slot| slot.size())
     }
 
+    /// The bytes currently spilled to disk for `file_id`'s still-writable generation - `0` if it
+    /// has none, or nothing has spilled. Test-only, mirroring
+    /// [`GenerationSlot::spilled_bytes`]: lets a test confirm whether a write needed to spill
+    /// without reaching into `DedupFs`'s own private fields.
+    #[cfg(test)]
+    pub fn spilled_bytes(&self, file_id: i64) -> u64 {
+        let inner = self.inner.lock().expect("not poisoned");
+        inner
+            .get(&file_id)
+            .and_then(|entry| entry.writable.as_ref())
+            .map_or(0, |slot| slot.spilled_bytes())
+    }
+
     /// Whether `file_id` currently has a generation still accepting writes. A caller about to
     /// call [`Self::write`]/[`Self::truncate`] can check this first to skip resolving the file's
     /// durably committed content when it will not actually be needed - `new_generation`'s

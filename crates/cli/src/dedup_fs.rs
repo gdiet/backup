@@ -632,6 +632,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_shared_budget_is_fully_available_again_once_every_generation_settles() {
+        let (mut fs, verify_repo, _store, _dir) = setup(true);
+        // A small, known-size budget: a 10-byte write claims a handle's whole fair share
+        // (DESIGN-MOUNT-019, half of what is available). If a settled generation's reservation
+        // were never returned to the shared budget, it would shrink by 10 bytes every round below
+        // and a later file would eventually be forced to spill even though nothing is still open.
+        fs.budget = Arc::new(MemoryBudget::new(20));
+
+        for (name, byte) in [("/a.txt", 0xAAu8), ("/b.txt", 0xBBu8), ("/c.txt", 0xCCu8)] {
+            let handle = fs.create(name).unwrap();
+            fs.write(handle, 0, &[byte; 10]).unwrap();
+            assert_eq!(
+                fs.pending.spilled_bytes(handle.0 as i64),
+                0,
+                "{name}'s write should have fit entirely in memory if the shared budget was \
+                 actually returned once the previous file settled"
+            );
+            fs.release(handle);
+            wait_for_settled(&verify_repo, name, 10);
+        }
+    }
+
     /// Spawns a real libfuse3 mount of `fs` on its own thread and blocks until it is actually
     /// ready to serve requests - `fs`'s mounted tree starts empty, so "readiness" has to be an
     /// actual write attempt succeeding, not a "listing is non-empty" check (mirroring
