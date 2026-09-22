@@ -449,6 +449,7 @@ mod tests {
     use super::*;
     use crate::Attr;
     use std::collections::BTreeMap;
+    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     /// A tiny in-memory [`MountFilesystem`], independent of any real
@@ -693,5 +694,270 @@ mod tests {
             .join()
             .expect("mount thread panicked")
             .expect("mount() returned an error");
+    }
+
+    /// A writable, in-memory [`MountFilesystem`] whose `write()` records two things a real
+    /// libfuse3 mount's own dispatch-thread pool determines - not this crate's own code - which
+    /// `agent-todos/done/determine-libfuse3-dispatch-pool-and-stack-size.md` needed real numbers
+    /// for: the peak number of `write()` calls libfuse3 runs *concurrently* against this process
+    /// (an artificial per-call delay gives concurrent client writers time to actually overlap),
+    /// and each distinct dispatch thread's real stack size, via `pthread_getattr_np`/
+    /// `pthread_attr_getstack` - precise and direct, unlike the dispatch-pool size, which has no
+    /// equivalent direct query and is only observable this indirect way.
+    struct DispatchProbeState {
+        concurrent_writes: std::sync::atomic::AtomicUsize,
+        peak_concurrent_writes: std::sync::atomic::AtomicUsize,
+        stack_sizes_by_thread: Mutex<std::collections::HashMap<std::thread::ThreadId, usize>>,
+        delay: Duration,
+        created_files: Mutex<std::collections::BTreeSet<String>>,
+        next_handle: std::sync::atomic::AtomicU64,
+    }
+
+    /// Cheap-to-clone handle onto [`DispatchProbeState`] - `mount` takes its filesystem by value,
+    /// so this is what actually gets moved into the mount thread, while the test itself keeps its
+    /// own clone of the same underlying `Arc` to read the live counters back afterward (no IPC
+    /// needed, unlike the Windows side's separate-child-process equivalent).
+    #[derive(Clone)]
+    struct DispatchProbeFs(std::sync::Arc<DispatchProbeState>);
+
+    /// The stack size of the *calling* thread, read directly from the running thread's own
+    /// attributes rather than assumed from a documented default - see this test's own doc comment
+    /// for why `/proc/self/task/<tid>/maps`'s `[stack:<tid>]` label was rejected as the mechanism
+    /// instead (`developer-todos/ram-budget-and-backpressure-redesign.md`'s "Can this be verified
+    /// by a test?" section).
+    fn current_thread_stack_size() -> usize {
+        unsafe {
+            let mut attr: libc::pthread_attr_t = std::mem::zeroed();
+            let rc = libc::pthread_getattr_np(libc::pthread_self(), &mut attr);
+            assert_eq!(rc, 0, "pthread_getattr_np failed with errno {rc}");
+            let mut addr: *mut libc::c_void = std::ptr::null_mut();
+            let mut size: libc::size_t = 0;
+            let rc = libc::pthread_attr_getstack(&attr, &mut addr, &mut size);
+            assert_eq!(rc, 0, "pthread_attr_getstack failed with errno {rc}");
+            libc::pthread_attr_destroy(&mut attr);
+            size
+        }
+    }
+
+    impl MountFilesystem for DispatchProbeFs {
+        fn getattr(&self, path: &str) -> Result<Attr, Errno> {
+            if path == "/" {
+                return Ok(Attr {
+                    kind: FileKind::Directory,
+                    size: 0,
+                    mtime_millis: 0,
+                });
+            }
+            if self.0.created_files.lock().unwrap().contains(path) {
+                Ok(Attr {
+                    kind: FileKind::File,
+                    size: 0,
+                    mtime_millis: 0,
+                })
+            } else {
+                Err(Errno::ENOENT)
+            }
+        }
+
+        fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno> {
+            if path != "/" {
+                return Err(Errno::ENOTDIR);
+            }
+            Ok(self
+                .0
+                .created_files
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|p| DirEntry {
+                    name: p.trim_start_matches('/').to_string(),
+                    kind: FileKind::File,
+                })
+                .collect())
+        }
+
+        fn open(&self, path: &str, _write_intent: bool) -> Result<Handle, Errno> {
+            if self.0.created_files.lock().unwrap().contains(path) {
+                Ok(Handle(
+                    self.0
+                        .next_handle
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                ))
+            } else {
+                Err(Errno::ENOENT)
+            }
+        }
+
+        fn read(&self, _handle: Handle, _offset: u64, _size: u32) -> Result<Vec<u8>, Errno> {
+            Ok(Vec::new())
+        }
+
+        fn release(&self, _handle: Handle) {}
+
+        fn statfs(&self) -> Result<crate::StatfsInfo, Errno> {
+            Ok(crate::StatfsInfo {
+                block_size: 512,
+                max_name_length: 255,
+                ..Default::default()
+            })
+        }
+
+        fn create(&self, path: &str) -> Result<Handle, Errno> {
+            self.0
+                .created_files
+                .lock()
+                .unwrap()
+                .insert(path.to_string());
+            Ok(Handle(
+                self.0
+                    .next_handle
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            ))
+        }
+
+        fn truncate(&self, _path: &str, _size: u64) -> Result<(), Errno> {
+            Ok(())
+        }
+
+        /// The one instrumented call - content itself is discarded (this probe only cares about
+        /// dispatch-thread behavior, not correctness of stored bytes).
+        fn write(&self, _handle: Handle, _offset: u64, data: &[u8]) -> Result<u32, Errno> {
+            use std::sync::atomic::Ordering;
+            let now = self.0.concurrent_writes.fetch_add(1, Ordering::AcqRel) + 1;
+            self.0
+                .peak_concurrent_writes
+                .fetch_max(now, Ordering::AcqRel);
+
+            self.0
+                .stack_sizes_by_thread
+                .lock()
+                .unwrap()
+                .entry(std::thread::current().id())
+                .or_insert_with(current_thread_stack_size);
+
+            std::thread::sleep(self.0.delay);
+
+            self.0.concurrent_writes.fetch_sub(1, Ordering::AcqRel);
+            Ok(data.len() as u32)
+        }
+    }
+
+    /// Drives real concurrent write load against a real libfuse3 mount to observe WinFSP's
+    /// Windows counterpart already measured (`agent-todos/done/
+    /// determine-winfsp-dispatch-pool-and-stack-size.md`): libfuse3's actual dispatch-thread
+    /// concurrency, and each dispatch thread's real stack size.
+    ///
+    /// `#[ignore]`d, same reasoning as the Windows side's equivalent test
+    /// (`crates/mountfs/tests/windows_mount.rs`): a slower, load-driving observation test, not a
+    /// correctness check with a "right answer" to assert on every run. Run explicitly with `cargo
+    /// test -p mountfs --lib -- --ignored real_mount_dispatch_thread_pool_and_stack_size
+    /// --nocapture` to see the numbers.
+    #[ignore = "slow, load-driving observation test - see doc comment"]
+    #[test]
+    fn real_mount_dispatch_thread_pool_and_stack_size() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU64, AtomicUsize};
+
+        let state = Arc::new(DispatchProbeState {
+            concurrent_writes: AtomicUsize::new(0),
+            peak_concurrent_writes: AtomicUsize::new(0),
+            stack_sizes_by_thread: Mutex::new(std::collections::HashMap::new()),
+            delay: Duration::from_millis(150),
+            created_files: Mutex::new(std::collections::BTreeSet::new()),
+            next_handle: AtomicU64::new(1),
+        });
+        let fs = DispatchProbeFs(Arc::clone(&state));
+
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mount(fs, &mount_path, true))
+        };
+
+        // The probe filesystem starts with an empty root, so readiness has to be an actual write
+        // attempt, not a "listing is non-empty" check - retried until it succeeds.
+        let probe_path = mount_path.join("_ready_probe.txt");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::fs::write(&probe_path, b"x").is_ok() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s (requires /dev/fuse access)"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // 24 concurrent native OS threads, each writing 3 files in turn - comfortably above any
+        // plausible real pool size, so the observed peak reflects libfuse3's own ceiling, not this
+        // test's own thread count.
+        let writer_threads: Vec<_> = (0..24)
+            .map(|i| {
+                let mount_path = mount_path.clone();
+                std::thread::spawn(move || {
+                    for j in 0..3 {
+                        let path = mount_path.join(format!("w{i}-{j}.txt"));
+                        std::fs::write(&path, b"abc")
+                            .expect("write against the probe must succeed");
+                    }
+                })
+            })
+            .collect();
+        for writer in writer_threads {
+            writer.join().expect("writer thread must not panic");
+        }
+
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+
+        // Read the shared counters directly - this test's filesystem instance lives in this same
+        // process, so no IPC is needed (unlike the Windows side's separate-child-process
+        // equivalent, which has to write results to a file for the test to read back).
+        let peak = state
+            .peak_concurrent_writes
+            .load(std::sync::atomic::Ordering::Acquire);
+        let stack_sizes: Vec<usize> = state
+            .stack_sizes_by_thread
+            .lock()
+            .unwrap()
+            .values()
+            .copied()
+            .collect();
+
+        println!("libfuse3 dispatch-thread pool and stack size, measured on this machine:");
+        println!("  peak concurrent write() dispatches: {peak}");
+        println!(
+            "  distinct dispatch threads observed: {}",
+            stack_sizes.len()
+        );
+        println!("  stack sizes (bytes): {stack_sizes:?}");
+
+        assert!(
+            peak >= 1,
+            "expected at least one write() to have run, got peak={peak}"
+        );
+        assert!(
+            !stack_sizes.is_empty(),
+            "expected at least one dispatch thread's stack size to have been recorded"
+        );
+        for size in &stack_sizes {
+            assert!(
+                (256 * 1024..=16 * 1024 * 1024).contains(size),
+                "a dispatch thread's stack size ({size} bytes) is outside a plausible range \
+                 (256 KiB..=16 MiB) - either the measurement is wrong, or this machine's real \
+                 value genuinely needs the RAM-budget reserve calculation revisited"
+            );
+        }
     }
 }
