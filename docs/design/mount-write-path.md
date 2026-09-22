@@ -40,35 +40,57 @@ DESIGN-MOUNT-010 below.
 
 ### The delay formula (`crates/cli/src/backpressure.rs`)
 
-The delay grows linearly with `backlog_spilled_bytes` and, deliberately, with the size of the
-`write()` call it is being added to, capped at a fixed maximum regardless of either input. Scaling
-by call size specifically keeps the delay's effective throttle - bytes of `write()` payload allowed
-through per second, below the cap - independent of whatever write granularity the calling tool
-happens to use, rather than punishing a tool that flushes in small chunks far harder than one
-moving the same total bytes in large ones purely because it makes more, smaller calls. This was
-verified as a real effect, not a theoretical one: a calibration mount session on WSL2/Linux driving
-a real libfuse3 mount observed ~8 KiB as a typical `write()` length from ordinary buffered client
-I/O (`std::io::BufWriter`'s default capacity) - well under the ~128 KiB a size-oblivious, purely
-backlog-scaled version of this formula would implicitly need to assume as "the" write size for its
-effective-bandwidth reasoning to hold.
+The delay grows linearly with `bytesInPersistQueue` - the total bytes across every closed
+(`release()`d), not-yet-durably-persisted generation in the session, whether that content is
+currently resident in memory or has spilled to disk (DESIGN-MOUNT-010 below) - and, deliberately,
+with the size of the `write()` call it is being added to:
 
-The formula's slope constant and its 250 ms cap are anchored to the Scala predecessor's own
-severity, not derived from first principles: `Backend.scala`'s equivalent delay reached its own
-"severe but working" point (250 ms per 32 KiB persist-queue chunk, ~131 KiB/s effective) once its
-signal - all queued bytes, not just spilled ones, further multiplied by queue *file count* - grew
-large. This project's signal is narrower (DESIGN-MOUNT-010's spill-only bytes, no file-count
-factor, since the common case never spills at all - see that section below), and a spilled byte
-here is already a worse state than a merely-queued Scala byte. So the same 250 ms cap is kept,
-chosen to land at the same effective-bandwidth floor (~512 KiB/s) once backlog reaches the level of
-a genuinely severe, sustained overflow, independent of the caller's own write size. The cap itself
-also bounds worst-case per-call latency directly - a FUSE/WinFSP dispatch thread blocked this long
-is one fewer available for every other concurrent request meanwhile - which matters most for a
-caller using unusually large individual `write()` calls, where the backlog-and-size-scaled delay
-before capping would otherwise grow furthest past it.
+```
+storeDelayMillis = max(0, bytesInPersistQueue - freeZoneBytes) * writeLength / SLOPE_DIVISOR
+```
 
-Deliberately left out of this formula: a multiplicative factor for how many files are currently
-queued (Scala's second factor) - `JobPool` tracks no such count, and revisiting that is its own,
-separate, deliberately deferred scope.
+with defaults `freeZoneBytes = 1_000_000_000` (1 GB) and `SLOPE_DIVISOR = 180_000_000_000`, both
+CLI-configurable. Two anchor points fix these constants: no delay at all while the backlog stays at
+or below 1 GB (the `max(0, ...)` clamp is load-bearing, not merely defensive - without it, a
+below-`freeZoneBytes` backlog makes the subtraction go negative and, carried into an unsigned
+multiplication, either panics or wraps to a spurious large delay instead of correctly adding none);
+500 ms added to a 10 kB write once the backlog reaches 10 GB. Solving `500ms = (10_000_000_000 -
+1_000_000_000) * 10_000 / SLOPE_DIVISOR` for `SLOPE_DIVISOR` gives `180_000_000_000`. Scaling by
+call size keeps the delay's effective throttle - bytes of `write()` payload allowed through per
+second, above the free zone - independent of whatever write granularity the calling tool happens to
+use, rather than punishing a tool that flushes in small chunks far harder than one moving the same
+total bytes in large ones purely because it makes more, smaller calls. This was verified as a real
+effect, not a theoretical one: a calibration mount session on WSL2/Linux driving a real libfuse3
+mount observed ~8 KiB as a typical `write()` length from ordinary buffered client I/O
+(`std::io::BufWriter`'s default capacity).
+
+Unlike an earlier version of this formula, there is deliberately no upper cap: the tool's default
+settings are sized for files up to roughly 5 GB - a single 5 GB file's initial persist of a 10 kB
+chunk adds ~222 ms, growing only as more backlog accumulates - so an operator working within that
+range experiences an increasingly graceful slowdown rather than a hard "persist pause", with no need
+for the delay to plateau. Because chunking/hashing/persisting runs on a thread pool separate from
+the FUSE/WinFSP dispatch threads `write()` delays (this section's own pool split, above), an
+unbounded delay on a dispatch thread does not, by itself, stop that pool from continuing to drain
+the backlog. Thread-starvation scenarios specific to this design remain worth watching for
+empirically (see "Open question: FUSE/WinFSP dispatch-thread starvation" below) rather than ruled
+out by construction.
+
+`bytesInPersistQueue` is incremented when a generation is handed off to the pool at `release()` -
+the same scoping DESIGN-MOUNT-010 already uses for its own backlog tracking, only closed generations
+count, never a file still being actively written through an open handle (see "Alternative
+considered and rejected: backpressure over all spilled bytes, including a still-open write" further
+below) - and decremented as soon as each chunk within it finishes processing (persisted, or found
+already deduplicated) inside `Settler::complete_chunk`, not only once the whole generation's last
+chunk completes: a large file's contribution to the backlog shrinks incrementally as it is worked
+through, rather than dropping to zero in one step at the very end.
+
+### Open question: FUSE/WinFSP dispatch-thread starvation
+
+Not yet investigated empirically: whether an unbounded `write()` delay under a severe, sustained
+backlog can starve the FUSE/WinFSP dispatch pool badly enough to matter in practice - e.g. every
+dispatch thread blocked in its own delay long enough that the pool cannot service unrelated,
+unaffected requests promptly. Revisit with a targeted test - deliberately extreme settings, not the
+defaults above - if this ever becomes a live concern; no such test exists yet.
 
 How a failure discovered only during this background processing - after `release()` has already
 returned success - gets surfaced is DESIGN-MOUNT-009 below; a queryable or mount-browsable form of
@@ -204,10 +226,14 @@ covers every byte currently not durably committed anywhere in the session at onc
 still arriving through an open handle and content already released but still waiting on its
 background job. A session-wide budget is what actually bounds this mount's memory footprint - a
 per-file budget would let enough concurrent writers multiply it without limit, defeating the point
-of having one at all. The budget is configurable, defaulting to 256 MiB - large enough that the
-common case (an ordinary file, one or a few concurrent writers) never spills at all, small enough
-that even several sessions running on the same machine stay within a modest, predictable memory
-footprint.
+of having one at all. The budget is the caching portion of DESIGN-MEMORY-001's session-wide RAM
+budget (in [`ram-budget.md`](ram-budget.md)) - the gross, operator-configurable limit (256 MiB by
+default) minus the SQLite and thread-stack reserves that budget already accounts for - rather than
+its own free-standing constant. With that budget's own default and typical reserves, the common case
+(an ordinary file, one or a few concurrent writers) still never spills at all, while even several
+mount sessions running on the same machine stay within a modest, predictable memory footprint. How
+much of the available budget any one open file handle may claim at a given write is
+DESIGN-MOUNT-019 below.
 
 Once the shared budget is exhausted, further content spills to a private temporary file, one per
 file whose write cache has grown past its share of the budget - defaulting to the OS temp
@@ -236,20 +262,21 @@ can still be much larger than the content actually written, for exactly the work
 writes, a `truncate`-then-partial-fill pattern) most likely to spill in meaningful volume to begin
 with.
 
-This same tracking is also what DESIGN-MOUNT-006's backpressure keys off, narrowed to one part of
-it: the signal that scales the delay `write()` adds is the spilled-to-disk bytes belonging
-specifically to files that have already been released and are waiting on DESIGN-MOUNT-006's
-background job - not a file still being actively written through an open handle, even once its own
-share of the budget has spilled. A file not yet released has no background job running for it yet
-(chunking/hashing only start at `release()`), so delaying its `write()` calls would not relieve
-anything - the backlog that delay exists to relieve is specifically the released, not-yet-persisted
-work still waiting on the shared pool. Zero such bytes spilled means zero added delay; the delay
-grows smoothly as that total grows, with no fixed threshold where it turns on abruptly. This still
-reuses tracking the write cache already needs for its own memory management, rather than
-introducing a wholly separate backlog metric (e.g. a queue-depth count) alongside it, and ties the
-delay to an actual resource under pressure for the specific backlog it can affect - memory
-exhausted for released-but-unpersisted work, spilling into slower disk I/O - rather than an
-indirect proxy for it.
+DESIGN-MOUNT-006's backpressure delay keys off a related but distinct signal, `bytesInPersistQueue`:
+not spillage specifically, but every byte belonging to a generation that has already been released
+and is still waiting on DESIGN-MOUNT-006's background job, whether that content currently sits in
+memory or has spilled to disk - not a file still being actively written through an open handle,
+even once its own share of the budget has spilled. A file not yet released has no background job
+running for it yet (chunking/hashing only start at `release()`), so delaying its `write()` calls
+would not relieve anything - the backlog that delay exists to relieve is specifically the released,
+not-yet-persisted work still waiting on the shared pool. Zero such bytes queued means zero added
+delay; the delay grows smoothly as that total grows, with no fixed threshold where it turns on
+abruptly, and - unlike an earlier formulation scoped to spilled bytes only - with no dependency on
+whether the shared memory budget above has actually been exhausted: a released generation still
+fully resident in memory contributes to the backlog exactly as much as one that has spilled. This
+still reuses tracking the write cache and settle pipeline already need for their own bookkeeping,
+rather than introducing a wholly separate backlog metric (e.g. a queue-depth count) alongside it,
+and ties the delay to actual outstanding work rather than an indirect proxy for it.
 
 ### Alternative considered and rejected: a per-file memory budget
 
@@ -293,6 +320,52 @@ getting it wrong silently would be worse than the status quo of simply defaultin
 directory - an explicit, operator-provided override is a simpler, more predictable answer to the
 same underlying need.
 
+## DESIGN-MOUNT-019: A file handle's write-cache share grows via a halving formula toward equilibrium
+Status: decided
+
+DESIGN-MOUNT-010's shared budget needs a rule for how much of it any single open file handle may
+claim at a given write, not just an overall ceiling. Each `write()` call may grow that handle's own
+in-memory cache share by:
+
+```
+sizeToCacheInRAM = max(0, min(writeLength, (availableRAMCacheBudget - currentHandleRAMCacheSize) / 2))
+```
+
+computed and reserved atomically against DESIGN-MOUNT-010's shared `MemoryBudget` (a single CAS
+loop, not a separate lock), so concurrent writers on different handles never race each other's
+reservation. `availableRAMCacheBudget` is the portion of the shared budget not currently claimed by
+any handle; `currentHandleRAMCacheSize` is this handle's own claim so far. Anything past what this
+grants spills to disk (DESIGN-MOUNT-010 above), same as before.
+
+### Why this converges, rather than needing a separate cap
+
+Halving the gap between a handle's current share and the available budget, and adding that (up to
+`writeLength`) to the handle's share, converges the handle's claim toward the point where its own
+share equals the budget still available to it. Writing `A` for `availableRAMCacheBudget` and `H` for
+`currentHandleRAMCacheSize`, the formula's steady state is `H' = H + (A - H)/2`, which equals `A`
+exactly at `H = A` and only there - for `H < A`, `H' > H` but `H' < A`, and the *next* write
+recomputes `A` against the now-larger `H` and repeats. For a single active handle, "available"
+shrinks by the same amount its own share grows, so its claim converges to half the total shared
+budget: 50% after enough writes, then a second concurrently open handle's own share converges to
+half of what remains (25% of the total), a third to half of what remains after that, and so on -
+reproducing the 50%/25%/... sequence a strict binary split across staggered opens would give,
+without tracking handle count or open order explicitly anywhere. `min(writeLength, ...)` keeps a
+single small write from claiming more than it actually needs; `max(0, ...)` is not merely
+defensive - without it, a second handle opened after a first has already claimed most of the budget
+computes a negative gap, which as an unsigned quantity would either panic or wrap to a large
+positive reservation instead of correctly claiming nothing until the first handle's share shrinks
+(which, per "Deliberately not rebalanced" below, never happens while that handle stays open).
+
+### Deliberately not rebalanced once granted
+
+A handle's cache share never shrinks for as long as the handle stays open, even if a later handle's
+own growing claim leaves little "available" budget behind for it - DESIGN-MOUNT-010 already states
+this design choice for the shared budget as a whole; this formula is the concrete mechanism that
+choice is implemented through. A user with one or two large files open, editing small files
+alongside them, keeps those large files' cache shares intact - shrinking them would need to actively
+displace already-cached content back out to spillover mid-session, adding real complexity for
+benefit that has not been shown to matter in practice.
+
 ## DESIGN-MOUNT-011: Overwriting an existing file's content creates a new history entry
 Status: implemented (crates/db/src/tree.rs)
 
@@ -333,13 +406,14 @@ regardless of how often the metadata row itself gets replaced.
 
 ### Alternative considered and rejected: backpressure over all spilled bytes, including a still-open write
 
-Scaling the backpressure delay off every currently spilled byte in the session, including a file
-still being actively written and not yet released, was considered and rejected: chunking/hashing
-for such a file has not started (DESIGN-MOUNT-006 starts it at `release()`), so nothing is draining
-its spillover yet - delaying its own `write()` calls could not relieve that backlog, only slow the
-one write responsible for it, with the delay climbing for the rest of that single write's duration
-regardless of how the background pool is actually doing. Scoping the signal to released,
-already-queued work ties the delay to a backlog `write()`'s throttling can actually help drain.
+Scaling the backpressure delay off every currently queued (not-yet-durably-persisted) byte in the
+session, including a file still being actively written and not yet released, was considered and
+rejected: chunking/hashing for such a file has not started (DESIGN-MOUNT-006 starts it at
+`release()`), so nothing is draining its backlog yet - delaying its own `write()` calls could not
+relieve that backlog, only slow the one write responsible for it, with the delay climbing for the
+rest of that single write's duration regardless of how the background pool is actually doing.
+Scoping the signal to released, already-queued work ties the delay to a backlog `write()`'s
+throttling can actually help drain.
 
 ## DESIGN-MOUNT-012: The write cache tracks only session-written byte ranges, not a full copy
 Status: implemented (crates/cli/src/write_cache.rs)

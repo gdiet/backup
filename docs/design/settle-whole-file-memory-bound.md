@@ -9,7 +9,13 @@ alike, since both settle through the same engine (`crates/cli/src/settle.rs`).
 
 ## Not yet decided: how the bound is actually achieved
 
-Status: idea
+Status: superseded-by DESIGN-INGEST-001
+
+Superseded rather than pursued further: DESIGN-INGEST-001 (in
+[`ingest-bounded-pipeline.md`](ingest-bounded-pipeline.md)) removes the whole-file chunking mode
+this document's two-pass scheme exists to bound, and caps content-defined chunking's own target size
+at 23 bits (96 MiB maximum chunk size) - so `chunk_buffer`'s worst case is already a small, fixed
+bound by construction, with no separate hash-then-write scheme needed to achieve it.
 
 ### The problem, precisely
 

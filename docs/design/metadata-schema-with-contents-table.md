@@ -137,33 +137,42 @@ Status: decided
 A single-row `repository_settings` table, holding the settings this project's requirements
 currently call for: `cdc_target_size_bits` and `creation_time`. REQ-STORAGE-003 in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) requires
-the chunking strategy and target chunk size to be configurable at repository creation and fixed
-for the repository's lifetime; REQ-STORAGE-008 in the same file requires a repository's creation
+the target chunk size to be configurable at repository creation and fixed for the repository's
+lifetime, within a fixed range; REQ-STORAGE-008 in the same file requires a repository's creation
 date to be reliably determinable, the same way.
 
-`cdc_target_size_bits` is nullable rather than paired with a separate `chunking` enum column:
-`NULL` selects whole-file chunking (`cdc::SingleChunkChunker`), a value selects CDC chunking with
-that `target_size_bits` (`cdc::CdcChunker`) - mirroring `cdc::ChunkerConfig::new`'s own
-`Option<u32>` parameter exactly (`crates/cdc/src/lib.rs`). A two-column representation (an enum
-plus an always-`NOT NULL` magnitude column) can represent a state that is never actually
-meaningful - a stored bits value while chunking is disabled - which then has to be prevented by
-convention alone; the single nullable column makes that state impossible to represent at all.
+`cdc_target_size_bits` is `NOT NULL`: REQ-STORAGE-003 no longer offers a separate whole-file
+chunking mode, so every repository always uses content-defined chunking
+(`cdc::CdcChunker`) at its own configured `target_size_bits` - mirroring
+`cdc::ChunkerConfig::new`'s own `Option<u32>` parameter (`crates/cdc/src/lib.rs`) is no longer
+needed here, since this application never passes that parameter's `None` case; `cdc` itself keeps
+`SingleChunkChunker` available as a general-purpose library capability regardless (DESIGN-MEMORY-001
+in [`ram-budget.md`](ram-budget.md)), just never invoked by this application's own schema-backed
+configuration.
 
-### Bounds: 6 to 30, sourced from `cdc`, not assumed
+### Bounds: 6 to 23, narrower than `cdc`'s own general range, sourced from this application's own RAM budget
 
-`chk_repository_settings_cdc_target_size_bits` matches `cdc::ChunkerConfig::new`'s own validation
-(`crates/cdc/src/lib.rs`) exactly: `target_size_bits` between 6 and 30 inclusive. The lower bound
-is a real correctness constraint of the chunking algorithm itself, not a stylistic choice - below
-6, `base_size` (`2^(target_size_bits-1)`) drops under 31, and the fingerprint warm-up computation
-underflows. The upper bound keeps the chunk-boundary mask comfortably narrower than the rolling
-fingerprint table's own 31-bit entries.
+`chk_repository_settings_cdc_target_size_bits` enforces `target_size_bits` between 6 and 23
+inclusive - narrower than `cdc::ChunkerConfig::new`'s own general validation
+(`crates/cdc/src/lib.rs`, 6 to 30 inclusive). The lower bound is shared with `cdc`'s own for the same
+reason (a real correctness constraint of the chunking algorithm itself: below 6, `base_size` -
+`2^(target_size_bits-1)` - drops under 31, and the fingerprint warm-up computation underflows). The
+upper bound is this application's own, tighter than `cdc`'s general one: DESIGN-MEMORY-001 (in
+[`ram-budget.md`](ram-budget.md)) fixes 23 bits as the point past which a single chunk's theoretical
+maximum size (96 MiB) can no longer be guaranteed to fit this application's own RAM budget for any
+repository configuration - a constraint specific to this application's own memory-bounded
+processing, not a property of the chunking algorithm itself, so `cdc`'s own general range stays
+unchanged (`crates/cdc` keeps validating up to 30, for a caller with a different memory budget of its
+own).
 
-A `db`-crate test asserts these bounds against `cdc::ChunkerConfig::new`'s actual validation
-directly (attempting an insert at `bits = 5` and `bits = 31`, expecting both to fail the same way
-`cdc` itself would reject them) rather than only documenting the two crates' bounds as "kept in
-sync by convention" - this schema's own review already found one instance of exactly this drift (a
-prior, now-superseded `10..30` assumption, versus this crate's actual `6..30`), reason enough not
-to trust a hand-maintained comment alone to catch the next one.
+A `db`-crate test asserts the lower bound against `cdc::ChunkerConfig::new`'s own validation
+directly (attempting an insert at `bits = 5`, expecting it to fail the same way `cdc` itself would
+reject it) rather than only documenting the two crates' shared lower bound as "kept in sync by
+convention" - this schema's own review already found one instance of exactly this kind of drift (a
+prior, now-superseded `10..30` assumption, versus this crate's actual `6..30`), reason enough not to
+trust a hand-maintained comment alone to catch the next one. The upper bound (`bits = 24` rejected,
+`bits = 23` accepted) is asserted directly against this application's own `23` constant instead,
+since it has no `cdc`-side counterpart to stay in sync with.
 
 ### Immutable after creation, independently of the range `CHECK`
 
