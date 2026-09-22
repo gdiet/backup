@@ -56,15 +56,26 @@ library's.
 ### Provisional dispatch-pool reserve
 
 The FUSE/WinFSP dispatch pool's own thread count and per-thread stack size are not yet measured on
-either platform - both are tracked as their own `agent-todos/` items
-(`agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md`,
-`agent-todos/determine-winfsp-dispatch-pool-and-stack-size.md`). Until real numbers land from
-whichever environment picks those up, the reserve uses a provisional, documented,
-CLI-overridable estimate: 16 dispatch threads x 8 MiB (a pthread-created worker thread's own default
-Linux stack size, distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default used
-for this project's own threads) = 128 MiB. Both the thread count and the per-thread size are chosen
+both platforms - each is tracked as its own `agent-todos/` item
+(`agent-todos/determine-libfuse3-dispatch-pool-and-stack-size.md`, still open;
+`agent-todos/done/determine-winfsp-dispatch-pool-and-stack-size.md`, measured). Until real numbers
+land for the still-open platform too, the reserve uses a provisional, documented, CLI-overridable
+estimate: 16 dispatch threads x 8 MiB (a pthread-created worker thread's own default Linux stack
+size, distinct from - and larger than - Rust's 2 MiB `std::thread::Builder` default used for this
+project's own threads) = 128 MiB. Both the thread count and the per-thread size are chosen
 conservatively high rather than risking an under-reserved budget that then lets the mount's actual
 memory use exceed the operator-visible ceiling once a real session's dispatch pool grows under load.
 An operator whose own environment measures differently can override the reserve directly rather than
-waiting for the agent-todos above to resolve; update this estimate (and the reserve's default in
-code) once real measurements land, per those agent-todos' own closing instructions.
+waiting for the still-open agent-todo above to resolve.
+
+WinFSP's own numbers, measured on `julius` (Intel i5-6200U, 2 cores/4 logical processors): dispatch
+concurrency peaked at 4 (matching this machine's own logical-processor count, not yet confirmed
+against a different core count), each dispatch thread's stack size exactly 1 MiB - both reproduced
+identically across two separate runs. This is already smaller on both axes than the conservative
+16 x 8 MiB estimate above, on this one machine - not yet reflected in the shared cross-platform
+constant, since that constant still has to cover the still-unmeasured Linux/libfuse3 side too, and a
+single machine's Windows core count is not a basis for lowering a number the Linux side might still
+need to be larger than. Revisit the actual constant (and consider whether it needs to become
+`#[cfg(windows)]`/`#[cfg(unix)]`-gated rather than shared, given the two platforms' numbers already
+look meaningfully different in this first measurement) once the Linux measurement lands too, per
+that agent-todo's own closing instructions.
