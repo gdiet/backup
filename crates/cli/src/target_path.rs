@@ -172,7 +172,7 @@ mod tests {
         let repo_root = dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .unwrap();
         let repo = db::open_repository(&repo_root).unwrap();

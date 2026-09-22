@@ -21,6 +21,8 @@ fn try_run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
+    ram_budget_gross_bytes: u64,
+    cache_size: Option<i64>,
 ) -> Result<(), String> {
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
     // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
@@ -42,6 +44,12 @@ fn try_run(
         }
         Err(err) => return Err(format!("error: {err}")),
     };
+    // DESIGN-MEMORY-001: applied before anything reads `cache_size` back for the RAM-budget
+    // computation (`DedupFs::new`), so an override actually takes effect for it.
+    if let Some(cache_size) = cache_size {
+        repo.set_cache_size(cache_size)
+            .map_err(|err| format!("error: --cache-size {cache_size}: {err}"))?;
+    }
 
     // Held for the rest of this function, across the blocking `mountfs::mount` call below, for
     // as long as this read-write mount session runs (DESIGN-MOUNT-008) - dropped, releasing the
@@ -90,8 +98,9 @@ fn try_run(
         read_write,
         repo_path,
         spill_dir.map(Path::to_path_buf),
+        ram_budget_gross_bytes,
     )
-    .map_err(|err| format!("error: could not open the write-failure log: {err}"))?;
+    .map_err(|err| format!("error: {err}"))?;
     if let Err(err) = mountfs::mount(fs, mountpoint, !read_write) {
         return Err(format!("mount failed: {err}"));
     }
@@ -104,6 +113,8 @@ pub fn run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
+    ram_budget_mb: u64,
+    cache_size: Option<i64>,
 ) {
     if let Err(message) = try_run(
         repo_path,
@@ -111,6 +122,8 @@ pub fn run(
         read_write,
         default_path_used,
         spill_dir,
+        ram_budget_mb * 1024 * 1024,
+        cache_size,
     ) {
         eprintln!("{message}");
         std::process::exit(1);
@@ -120,6 +133,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ram_budget;
 
     #[test]
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
@@ -129,8 +143,16 @@ mod tests {
         let repo_path = std::env::temp_dir().join("dfs-mount-test-no-default-repository-here");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint");
 
-        let message = try_run(&repo_path, &mountpoint, false, true, None)
-            .expect_err("must fail - repo_path holds no repository");
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            true,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            None,
+        )
+        .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
             "expected the actionable default-path message, got: {message}"
@@ -148,14 +170,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-mountpoint-does-not-exist-mnt");
         let _ = std::fs::remove_dir_all(&mountpoint);
 
-        let message = try_run(&repo_path, &mountpoint, false, false, None)
-            .expect_err("must fail - mountpoint does not exist");
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            None,
+        )
+        .expect_err("must fail - mountpoint does not exist");
         assert!(
             message.contains("does not exist"),
             "expected an actionable does-not-exist message, got: {message}"
@@ -170,7 +200,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
         // Created (not just built as a path), so the platform-specific mountpoint check above
@@ -181,8 +211,16 @@ mod tests {
         let spill_dir = std::env::temp_dir().join("dfs-mount-test-spill-dir-that-does-not-exist");
         let _ = std::fs::remove_dir_all(&spill_dir);
 
-        let message = try_run(&repo_path, &mountpoint, false, false, Some(&spill_dir))
-            .expect_err("must fail - spill_dir does not exist");
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            Some(&spill_dir),
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            None,
+        )
+        .expect_err("must fail - spill_dir does not exist");
         assert!(
             message.contains("--spill-dir"),
             "expected the actionable spill-dir message, got: {message}"
@@ -201,8 +239,16 @@ mod tests {
         let repo_path = std::env::temp_dir().join("dfs-mount-test-no-explicit-repository-here");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint");
 
-        let message = try_run(&repo_path, &mountpoint, false, false, None)
-            .expect_err("must fail - repo_path holds no repository");
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            None,
+        )
+        .expect_err("must fail - repo_path holds no repository");
         assert!(
             !message.contains("Pass a repository path"),
             "did not expect the default-path hint for an explicit path, got: {message}"
@@ -216,7 +262,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint-locked");
@@ -226,8 +272,16 @@ mod tests {
         let _held_elsewhere = db::acquire_write_lock(&repo_path)
             .expect("acquiring the write lock for the first time must succeed");
 
-        let message = try_run(&repo_path, &mountpoint, true, false, None)
-            .expect_err("must fail - the write lock is already held");
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            true,
+            false,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+            None,
+        )
+        .expect_err("must fail - the write lock is already held");
         assert!(
             message.contains("already locked"),
             "expected an actionable already-locked message, got: {message}"

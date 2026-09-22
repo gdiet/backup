@@ -30,17 +30,27 @@ impl MemoryBudget {
         }
     }
 
-    /// Reserves `n` bytes if available, without blocking. `false` means nothing was reserved.
-    fn try_acquire(&self, n: u64) -> bool {
-        self.available
+    /// DESIGN-MOUNT-019's per-handle growth formula (`docs/design/mount-write-path.md`), computed
+    /// and reserved atomically in one CAS loop: how much of `requested` (an open file handle's
+    /// current write) that handle's own cache share may grow by right now, given `handle_used`
+    /// bytes it has already claimed. Returns the granted amount (`0..=requested`, already reserved
+    /// from the shared budget) - less than `requested` means the write does not fully fit within
+    /// this handle's current fair share; a caller not using a partial grant must
+    /// [`release`](Self::release) it back.
+    pub fn try_acquire_share(&self, handle_used: u64, requested: u64) -> u64 {
+        let mut granted = 0u64;
+        let _ = self
+            .available
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |avail| {
-                avail.checked_sub(n)
-            })
-            .is_ok()
+                let share = avail.saturating_sub(handle_used) / 2;
+                granted = share.min(requested);
+                Some(avail - granted)
+            });
+        granted
     }
 
-    /// Returns `n` previously-[`try_acquire`](Self::try_acquire)d bytes to the shared budget,
-    /// making them available to other reservations again.
+    /// Returns `n` previously-[`try_acquire_share`](Self::try_acquire_share)d bytes to the shared
+    /// budget, making them available to other reservations again.
     fn release(&self, n: u64) {
         self.available.fetch_add(n, Ordering::AcqRel);
     }
@@ -180,32 +190,38 @@ impl WriteCache {
 
         match &mut self.backing {
             Backing::Memory(entries) => {
-                // Fast path: a pure append directly onto the immediately preceding entry extends
-                // it in place (amortized O(1), like an ordinary Vec push) instead of allocating a
-                // new entry next to it - without this, a file written as many small sequential
-                // writes (the common case for a straight file copy) would accumulate one entry
-                // per write, and any later full-range read would still be correct but needlessly
-                // slow to assemble. A write landing anywhere else becomes its own new entry;
-                // merging on that side too is not implemented; the same sequential-write pattern
-                // is the one worth optimizing for.
-                let appended = if let Some((&prev_start, prev_data)) =
-                    entries.range_mut(..position).next_back()
-                {
-                    prev_start + prev_data.len() as u64 == position
-                        && self.budget.try_acquire(data.len() as u64)
-                } else {
-                    false
-                };
-                if appended {
-                    let prev_data = entries.range_mut(..position).next_back().unwrap().1;
-                    prev_data.extend_from_slice(data);
-                    self.mem_bytes += data.len() as u64;
-                } else if self.budget.try_acquire(data.len() as u64) {
-                    entries.insert(position, data.to_vec());
-                    self.mem_bytes += data.len() as u64;
-                } else {
+                let want = data.len() as u64;
+                let granted = self.budget.try_acquire_share(self.mem_bytes, want);
+                if granted < want {
+                    // DESIGN-MOUNT-019: this write does not fully fit within this handle's
+                    // current fair share of the budget - a partial grant is not partially used
+                    // (the `Backing` enum has no representation for "part of this write is
+                    // memory-resident, part is spilled"), so it is released back and the whole
+                    // cache spills instead, same as an outright denial always has.
+                    if granted > 0 {
+                        self.budget.release(granted);
+                    }
                     self.spill_to_disk()?;
                     self.write_into_spill(position, data)?;
+                } else {
+                    // Fast path: a pure append directly onto the immediately preceding entry
+                    // extends it in place (amortized O(1), like an ordinary Vec push) instead of
+                    // allocating a new entry next to it - without this, a file written as many
+                    // small sequential writes (the common case for a straight file copy) would
+                    // accumulate one entry per write, and any later full-range read would still
+                    // be correct but needlessly slow to assemble. A write landing anywhere else
+                    // becomes its own new entry; merging on that side too is not implemented, the
+                    // same sequential-write pattern is the one worth optimizing for.
+                    let appended = entries.range_mut(..position).next_back().is_some_and(
+                        |(&prev_start, prev_data)| prev_start + prev_data.len() as u64 == position,
+                    );
+                    if appended {
+                        let prev_data = entries.range_mut(..position).next_back().unwrap().1;
+                        prev_data.extend_from_slice(data);
+                    } else {
+                        entries.insert(position, data.to_vec());
+                    }
+                    self.mem_bytes += want;
                 }
             }
             Backing::Spilled { .. } => self.write_into_spill(position, data)?,
@@ -428,6 +444,45 @@ mod tests {
     }
 
     #[test]
+    fn try_acquire_share_grants_half_the_available_budget_to_a_single_growing_handle() {
+        let budget = MemoryBudget::new(1000);
+        // First write: this handle owns nothing yet, so it may grow by up to half of what is
+        // available - converging directly to its 50% equilibrium, not gradually.
+        let granted = budget.try_acquire_share(0, 1000);
+        assert_eq!(granted, 500);
+        // A second write finds nothing further available for this same handle: it already sits
+        // exactly at its own equilibrium (DESIGN-MOUNT-019's `H = A` convergence point).
+        let granted = budget.try_acquire_share(500, 1000);
+        assert_eq!(granted, 0);
+    }
+
+    #[test]
+    fn try_acquire_share_gives_a_second_handle_half_of_what_the_first_left_behind() {
+        let budget = MemoryBudget::new(1000);
+        let first = budget.try_acquire_share(0, 1000);
+        assert_eq!(first, 500); // first handle converges to 50% of the total
+        let second = budget.try_acquire_share(0, 1000);
+        assert_eq!(second, 250); // second handle converges to 25% of the total
+        let third = budget.try_acquire_share(0, 1000);
+        assert_eq!(third, 125); // third handle converges to 12.5%
+    }
+
+    #[test]
+    fn try_acquire_share_grants_at_most_the_requested_amount_even_with_budget_to_spare() {
+        let budget = MemoryBudget::new(1000);
+        assert_eq!(budget.try_acquire_share(0, 10), 10);
+    }
+
+    #[test]
+    fn try_acquire_share_never_underflows_when_handle_used_exceeds_available() {
+        // A second handle's own already-claimed share can exceed what a first, larger handle has
+        // left as "available" system-wide - the max(0, ...) clamp (DESIGN-MOUNT-019) must return
+        // 0 here rather than panicking or wrapping via unsigned subtraction underflow.
+        let budget = MemoryBudget::new(1000);
+        assert_eq!(budget.try_acquire_share(2000, 100), 0);
+    }
+
+    #[test]
     fn write_then_read_back_exact_bytes() {
         let (mut cache, _dir) = cache(1000, 0);
         cache.write(0, b"hello world").unwrap();
@@ -517,9 +572,12 @@ mod tests {
 
     #[test]
     fn writing_past_the_shared_budget_spills_to_disk_and_still_reads_correctly() {
-        let (mut cache, _dir) = cache(10, 0);
+        // A single handle's own share caps at half the (remaining) budget (DESIGN-MOUNT-019): 20
+        // grants exactly 10 for the first write, leaving no further share for this same handle
+        // until it is released, so the second write spills.
+        let (mut cache, _dir) = cache(20, 0);
         cache.write(0, b"0123456789").unwrap();
-        cache.write(10, b"more").unwrap(); // pushes total past the 10-byte budget
+        cache.write(10, b"more").unwrap();
         assert_eq!(cache.spilled_bytes(), 14);
         let data = cache.read(0, 14, no_original).unwrap();
         assert_eq!(data, b"0123456789more");
@@ -527,7 +585,7 @@ mod tests {
 
     #[test]
     fn spilling_releases_the_budget_for_other_caches_to_use() {
-        let budget = Arc::new(MemoryBudget::new(10));
+        let budget = Arc::new(MemoryBudget::new(20));
         let dir = tempfile::tempdir().unwrap();
         let mut a = WriteCache::new(dir.path(), Arc::clone(&budget), 0);
         a.write(0, b"0123456789").unwrap();
@@ -555,8 +613,8 @@ mod tests {
 
     #[test]
     fn clearing_entries_below_the_budget_releases_it_for_reuse() {
-        let (mut cache, _dir) = cache(10, 0);
-        cache.write(0, b"0123456789").unwrap(); // uses the whole 10-byte budget
+        let (mut cache, _dir) = cache(20, 0);
+        cache.write(0, b"0123456789").unwrap(); // uses this handle's whole 10-byte share
         cache.write(0, b"XXXXX").unwrap(); // overwrites/shrinks the tracked footprint to 10 bytes total still (X's + tail 56789)
         // Still fits: total tracked bytes must not exceed original write size after overwrite.
         assert_eq!(cache.read(0, 10, no_original).unwrap(), b"XXXXX56789");

@@ -141,6 +141,17 @@ impl ChunkerConfig {
             None => ConfiguredChunker::Single(SingleChunkChunker::default()),
         }
     }
+
+    /// The largest chunk this config's own [`chunker`](Self::chunker) can ever produce -
+    /// `base_size * (target_size_bits + 1)`, see [`Self::chunker`]'s own doc comment. `None` for
+    /// whole-input chunking (`target_size_bits: None`), which has no such bound at all - a single
+    /// chunk covers however much input is fed to it.
+    pub fn max_chunk_size(&self) -> Option<u64> {
+        self.target_size_bits.map(|bits| {
+            let base_size = 1u64 << (bits - 1);
+            base_size * (bits as u64 + 1)
+        })
+    }
 }
 
 /// The chunker selected by [`ChunkerConfig::chunker`].
@@ -471,6 +482,20 @@ mod tests {
         assert_eq!(chunker.next(b"hello"), vec![]);
         assert_eq!(chunker.flush(), Some(5));
         assert_eq!(chunker.flush(), None); // resets after flush
+    }
+
+    #[test]
+    fn max_chunk_size_at_23_bits_is_96_mebibytes() {
+        // DESIGN-MEMORY-001's own cited figure (`docs/design/ram-budget.md`): the application-level
+        // ceiling this application enforces for REQ-STORAGE-003's chunking range.
+        let config = ChunkerConfig::new(Some(23)).unwrap();
+        assert_eq!(config.max_chunk_size(), Some(96 * 1024 * 1024));
+    }
+
+    #[test]
+    fn max_chunk_size_is_none_for_whole_input_chunking() {
+        let config = ChunkerConfig::new(None).unwrap();
+        assert_eq!(config.max_chunk_size(), None);
     }
 
     #[test]

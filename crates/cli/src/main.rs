@@ -15,6 +15,7 @@ mod ingest;
 mod list;
 mod mount;
 mod pending_files;
+mod ram_budget;
 mod reclaim;
 mod repo_path;
 mod restore;
@@ -32,34 +33,34 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-/// REQ-CLI-005's default when neither `--cdc-target-size-bits` nor `--whole-file` is given -
-/// content-defined chunking with an average chunk size a little above 1 MiB.
+/// REQ-CLI-005's default when `--cdc-target-size-bits` is not given - content-defined chunking
+/// with an average chunk size a little above 1 MiB.
 const DEFAULT_CDC_TARGET_SIZE_BITS: u32 = 20;
 
 #[derive(Args)]
-#[group(multiple = false)]
 struct ChunkingArgs {
-    /// Use content-defined chunking with this target chunk size, in bits (6-30) - average chunk
-    /// size ends up slightly above 2^bits. Defaults to 20 if neither this nor --whole-file is
-    /// given. This choice is fixed for the repository's lifetime once created - it cannot be
-    /// changed later.
+    /// Content-defined chunking's target chunk size, in bits (6-23) - average chunk size ends up
+    /// slightly above 2^bits. Defaults to 20 if not given. This choice is fixed for the
+    /// repository's lifetime once created - it cannot be changed later.
     #[arg(long)]
     cdc_target_size_bits: Option<u32>,
-    /// Use whole-file chunking - no sub-file deduplication. Fixed for the repository's lifetime
-    /// once created, same as --cdc-target-size-bits.
-    #[arg(long)]
-    whole_file: bool,
 }
 
-/// Resolves `ChunkingArgs` into the value `create_repo::run` expects: `None` for whole-file
-/// chunking, `Some(bits)` for content-defined chunking at an explicit or defaulted target size
-/// (REQ-CLI-005).
-fn resolve_cdc_target_size_bits(whole_file: bool, explicit_bits: Option<u32>) -> Option<u32> {
-    if whole_file {
-        None
-    } else {
-        Some(explicit_bits.unwrap_or(DEFAULT_CDC_TARGET_SIZE_BITS))
-    }
+/// Resolves `ChunkingArgs` into the value `create_repo::run` expects: an explicit or defaulted
+/// target size (REQ-CLI-005) - REQ-STORAGE-003 no longer offers a separate whole-file mode.
+fn resolve_cdc_target_size_bits(explicit_bits: Option<u32>) -> u32 {
+    explicit_bits.unwrap_or(DEFAULT_CDC_TARGET_SIZE_BITS)
+}
+
+#[derive(Args)]
+struct RamBudgetArgs {
+    /// The gross, operator-configurable RAM budget for caching/buffering not-yet-durable content
+    /// (REQ-OPERABILITY-006), in megabytes. The SQLite connection's own `cache_size` and a
+    /// per-thread stack reserve are subtracted from this to get the actual caching budget
+    /// (DESIGN-MEMORY-001) - a repository whose own chunking configuration cannot fit within what
+    /// remains is refused rather than exceeding this bound once running.
+    #[arg(long, default_value_t = ram_budget::DEFAULT_GROSS_BUDGET_BYTES / (1024 * 1024))]
+    ram_budget_mb: u64,
 }
 
 #[derive(Subcommand)]
@@ -72,6 +73,8 @@ enum Commands {
         path: Option<PathBuf>,
         #[command(flatten)]
         chunking: ChunkingArgs,
+        #[command(flatten)]
+        ram_budget: RamBudgetArgs,
     },
     // REQ-MOUNT-001.
     /// Mounts a repository as a real filesystem.
@@ -99,6 +102,13 @@ enum Commands {
         /// to resolve to unless overridden here. Must already exist.
         #[arg(long)]
         spill_dir: Option<PathBuf>,
+        #[command(flatten)]
+        ram_budget: RamBudgetArgs,
+        /// Overrides the database connection's SQLite `cache_size`, in SQLite's own pragma units
+        /// (positive: a page count; negative: an approximate byte budget in KiB) - DESIGN-MEMORY-001.
+        /// Without this, SQLite's own built-in default is left untouched.
+        #[arg(long)]
+        cache_size: Option<i64>,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -337,11 +347,19 @@ fn main() {
     let time_millis = now_millis();
 
     match cli.command {
-        Commands::CreateRepo { path, chunking } => {
-            let cdc_target_size_bits =
-                resolve_cdc_target_size_bits(chunking.whole_file, chunking.cdc_target_size_bits);
+        Commands::CreateRepo {
+            path,
+            chunking,
+            ram_budget,
+        } => {
+            let cdc_target_size_bits = resolve_cdc_target_size_bits(chunking.cdc_target_size_bits);
             let (path, default_path_used) = resolve_repo_path(path);
-            create_repo::run(&path, cdc_target_size_bits, default_path_used);
+            create_repo::run(
+                &path,
+                cdc_target_size_bits,
+                ram_budget.ram_budget_mb,
+                default_path_used,
+            );
             // Only reached once create_repo::run has actually succeeded (it exits the process on
             // failure) - meta/ does not exist yet beforehand, unlike every other command below.
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
@@ -351,6 +369,8 @@ fn main() {
             mountpoint,
             read_write,
             spill_dir,
+            ram_budget,
+            cache_size,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -360,6 +380,8 @@ fn main() {
                 read_write,
                 default_path_used,
                 spill_dir.as_deref(),
+                ram_budget.ram_budget_mb,
+                cache_size,
             );
         }
         Commands::Unlock { path } => {
@@ -462,17 +484,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_cdc_target_size_bits_defaults_to_20_when_neither_flag_given() {
-        assert_eq!(resolve_cdc_target_size_bits(false, None), Some(20));
+    fn resolve_cdc_target_size_bits_defaults_to_20_when_not_given() {
+        assert_eq!(resolve_cdc_target_size_bits(None), 20);
     }
 
     #[test]
     fn resolve_cdc_target_size_bits_respects_an_explicit_target_size() {
-        assert_eq!(resolve_cdc_target_size_bits(false, Some(24)), Some(24));
-    }
-
-    #[test]
-    fn resolve_cdc_target_size_bits_whole_file_overrides_to_none() {
-        assert_eq!(resolve_cdc_target_size_bits(true, None), None);
+        assert_eq!(resolve_cdc_target_size_bits(Some(22)), 22);
     }
 }

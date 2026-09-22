@@ -128,7 +128,7 @@ mod tests {
     fn repo() -> (crate::Repository, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let repo_root = dir.path().join("repo");
-        let settings = RepositorySettings::new(Some(20), 1_700_000_000_000);
+        let settings = RepositorySettings::new(20, 1_700_000_000_000);
         init_repository(&repo_root, settings).expect("init must succeed");
         let repo = open_repository(&repo_root).expect("open must succeed");
         (repo, dir)

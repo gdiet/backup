@@ -20,6 +20,7 @@ use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem, StatfsIn
 
 use crate::failure_log::{Failure, FailureLog};
 use crate::pending_files::{NewGeneration, PendingFiles};
+use crate::ram_budget::{self, DispatchPool};
 use crate::settle_pool::{JobPool, SettleJob};
 use crate::write_cache::MemoryBudget;
 
@@ -27,7 +28,7 @@ pub struct DedupFs {
     repo: Arc<db::Repository>,
     store: Arc<store::ByteStore>,
     read_write: bool,
-    cdc_target_size_bits: Option<u32>,
+    cdc_target_size_bits: u32,
     pending: PendingFiles,
     pool: JobPool,
     budget: Arc<MemoryBudget>,
@@ -43,15 +44,38 @@ impl DedupFs {
     /// is the write cache's spillover directory (DESIGN-MOUNT-010/018) - `None` defaults to the
     /// OS temp directory, the same as before this parameter existed. The caller is responsible
     /// for validating a given `spill_dir` actually exists (`crate::mount`'s eager check) - this
-    /// constructor does not fail just because a `Some` value happens not to.
+    /// constructor does not fail just because a `Some` value happens not to. `ram_budget_gross_bytes`
+    /// is DESIGN-MEMORY-001's operator-configurable total (`--ram-budget-mb`) - any `--cache-size`
+    /// override must already have been applied to `repo`'s connection before this call, so it is
+    /// reflected in the `cache_size` reserve read back below.
     pub fn new(
         repo: db::Repository,
         store: store::ByteStore,
         read_write: bool,
         repo_root: &Path,
         spill_dir: Option<PathBuf>,
+        ram_budget_gross_bytes: u64,
     ) -> io::Result<Self> {
         let cdc_target_size_bits = repo.settings().cdc_target_size_bits();
+        let worker_count = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(1);
+        // DESIGN-MEMORY-001 (`docs/design/ram-budget.md`): the shared write-cache budget is the
+        // gross configurable limit minus this connection's own `cache_size` and a stack reserve
+        // for the CDC/hash/persist pool plus a real mount session's own FUSE/WinFSP dispatch pool.
+        let cache_size_bytes = repo.cache_size_bytes().map_err(io::Error::other)?;
+        let caching_budget_bytes = ram_budget::caching_budget_bytes(
+            ram_budget_gross_bytes,
+            cache_size_bytes,
+            worker_count as u64,
+            DispatchPool::Fuse,
+        );
+        let max_chunk_size = cdc::ChunkerConfig::new(Some(cdc_target_size_bits))
+            .expect("cdc_target_size_bits was already validated when the repository was created")
+            .max_chunk_size()
+            .expect("Some(bits) always yields a bounded max_chunk_size");
+        ram_budget::check_fits_max_chunk_size(caching_budget_bytes, max_chunk_size)
+            .map_err(io::Error::other)?;
         let repo = Arc::new(repo);
         let store = Arc::new(store);
         let failure_log = if read_write {
@@ -59,9 +83,6 @@ impl DedupFs {
         } else {
             None
         };
-        let worker_count = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(1);
         let failure_log_for_pool = failure_log.clone();
         let pool = JobPool::new(
             worker_count,
@@ -91,7 +112,7 @@ impl DedupFs {
             cdc_target_size_bits,
             pending: PendingFiles::new(),
             pool,
-            budget: Arc::new(MemoryBudget::default()),
+            budget: Arc::new(MemoryBudget::new(caching_budget_bytes)),
             temp_dir: spill_dir.unwrap_or_else(std::env::temp_dir),
             failure_log,
         })
@@ -489,14 +510,22 @@ mod tests {
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(Some(12), 1_700_000_000_000),
+            db::RepositorySettings::new(12, 1_700_000_000_000),
         )
         .unwrap();
         let fs_repo = db::open_repository(&repo_root).unwrap();
         let verify_repo = db::open_repository(&repo_root).unwrap();
         let verify_store = store::ByteStore::new(db::data_dir(&repo_root), true);
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), !read_write);
-        let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root, None).unwrap();
+        let fs = DedupFs::new(
+            fs_repo,
+            fs_store,
+            read_write,
+            &repo_root,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+        )
+        .unwrap();
         (fs, verify_repo, verify_store, repo_dir)
     }
 
@@ -653,7 +682,7 @@ mod tests {
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(Some(12), 1_700_000_000_000),
+            db::RepositorySettings::new(12, 1_700_000_000_000),
         )
         .unwrap();
         let fs_repo = db::open_repository(&repo_root).unwrap();
@@ -662,7 +691,15 @@ mod tests {
         // disk. `create`'s own empty-content settle never calls `store.write` at all (no chunks),
         // so it still succeeds even here - only a settle with real bytes hits this.
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), true);
-        let fs = DedupFs::new(fs_repo, fs_store, true, &repo_root, None).unwrap();
+        let fs = DedupFs::new(
+            fs_repo,
+            fs_store,
+            true,
+            &repo_root,
+            None,
+            ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
+        )
+        .unwrap();
 
         let handle = fs.create("/a.txt").unwrap();
         fs.write(handle, 0, b"hello").unwrap();

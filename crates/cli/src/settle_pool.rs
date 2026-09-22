@@ -120,7 +120,7 @@ type FailureHook = Box<dyn Fn(&SettleJob, JobError) + Send + Sync>;
 struct Context {
     repo: Arc<db::Repository>,
     store: Arc<store::ByteStore>,
-    cdc_target_size_bits: Option<u32>,
+    cdc_target_size_bits: u32,
     on_failure: FailureHook,
 }
 
@@ -144,7 +144,7 @@ impl JobPool {
         worker_count: usize,
         repo: Arc<db::Repository>,
         store: Arc<store::ByteStore>,
-        cdc_target_size_bits: Option<u32>,
+        cdc_target_size_bits: u32,
         on_failure: impl Fn(&SettleJob, JobError) + Send + Sync + 'static,
     ) -> Self {
         let (sender, receiver) = mpsc::channel::<SettleJob>();
@@ -307,7 +307,7 @@ mod tests {
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(None, 1_700_000_000_000),
+            db::RepositorySettings::new(12, 1_700_000_000_000),
         )
         .unwrap();
         let repo = Arc::new(db::open_repository(&repo_root).unwrap());
@@ -356,7 +356,7 @@ mod tests {
             1,
             Arc::clone(&repo),
             Arc::clone(&store),
-            None,
+            12,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -410,7 +410,7 @@ mod tests {
             1,
             Arc::clone(&repo),
             Arc::clone(&store),
-            None,
+            12,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -441,7 +441,7 @@ mod tests {
             1,
             Arc::clone(&repo),
             Arc::clone(&store),
-            None,
+            12,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -472,7 +472,7 @@ mod tests {
         let generation = write_and_release(&registry, 1, b"x", &budget, temp_dir.path());
         assert_eq!(generation.spilled_bytes(), 1);
 
-        let pool = JobPool::new(1, Arc::clone(&repo), Arc::clone(&store), None, |_, _| {});
+        let pool = JobPool::new(1, Arc::clone(&repo), Arc::clone(&store), 12, |_, _| {});
         pool.submit(SettleJob {
             parent_id: 0,
             name: "x.txt".to_string(),

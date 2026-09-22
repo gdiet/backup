@@ -36,7 +36,7 @@ fn main() {
 
     fs::create_dir_all(&base).expect("create bench base directory");
     let repo_root = base.join("repo");
-    init_repository(&repo_root, RepositorySettings::new(None, now_millis()))
+    init_repository(&repo_root, RepositorySettings::new(20, now_millis()))
         .expect("init bench repository");
     let repo = open_repository(&repo_root).expect("open bench repository");
     let root_id = repo

@@ -54,11 +54,11 @@ impl std::error::Error for SettleError {}
 pub fn settle(
     repo: &db::Repository,
     store: &store::ByteStore,
-    cdc_target_size_bits: Option<u32>,
+    cdc_target_size_bits: u32,
     size: u64,
     mut read: impl FnMut(u64, u32) -> io::Result<Vec<u8>>,
 ) -> Result<i64, SettleError> {
-    let config = ChunkerConfig::new(cdc_target_size_bits)
+    let config = ChunkerConfig::new(Some(cdc_target_size_bits))
         .expect("cdc_target_size_bits was already validated when the repository was created");
     let mut settler = Settler::new(repo, store, config.chunker());
 
@@ -196,7 +196,7 @@ mod tests {
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(Some(12), 1_700_000_000_000),
+            db::RepositorySettings::new(12, 1_700_000_000_000),
         )
         .unwrap();
         let repo = db::open_repository(&repo_root).unwrap();
@@ -223,16 +223,16 @@ mod tests {
     #[test]
     fn settling_an_empty_file_creates_a_zero_length_content_with_no_chunks() {
         let (repo, _rd, store, _sd) = repo_and_store();
-        let content_id = settle(&repo, &store, Some(12), 0, |_, _| Ok(Vec::new())).unwrap();
+        let content_id = settle(&repo, &store, 12, 0, |_, _| Ok(Vec::new())).unwrap();
         assert_eq!(repo.resolve_extents(content_id).unwrap(), Vec::new());
         assert_eq!(read_back(&repo, &store, content_id), Vec::new());
     }
 
     #[test]
-    fn settling_a_small_whole_file_chunk_stores_and_reads_back_the_same_bytes() {
+    fn settling_a_small_file_that_fits_in_one_chunk_stores_and_reads_back_the_same_bytes() {
         let (repo, _rd, store, _sd) = repo_and_store();
         let content = b"hello world".to_vec();
-        let content_id = settle(&repo, &store, None, content.len() as u64, |pos, len| {
+        let content_id = settle(&repo, &store, 12, content.len() as u64, |pos, len| {
             Ok(content[pos as usize..(pos as usize + len as usize)].to_vec())
         })
         .unwrap();
@@ -249,7 +249,7 @@ mod tests {
         let first = settle(
             &repo,
             &store,
-            None,
+            12,
             content.len() as u64,
             read(content.clone()),
         )
@@ -257,7 +257,7 @@ mod tests {
         let second = settle(
             &repo,
             &store,
-            None,
+            12,
             content.len() as u64,
             read(content.clone()),
         )
@@ -272,7 +272,7 @@ mod tests {
         // varied enough (not a single repeated byte) to actually exercise CDC chunk boundaries.
         let size = (READ_WINDOW as usize) * 2 + 12345;
         let content: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
-        let content_id = settle(&repo, &store, Some(16), size as u64, |pos, len| {
+        let content_id = settle(&repo, &store, 16, size as u64, |pos, len| {
             Ok(content[pos as usize..(pos as usize + len as usize)].to_vec())
         })
         .unwrap();
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn a_read_failure_is_reported_rather_than_silently_producing_wrong_content() {
         let (repo, _rd, store, _sd) = repo_and_store();
-        let err = settle(&repo, &store, None, 10, |_, _| {
+        let err = settle(&repo, &store, 12, 10, |_, _| {
             Err(io::Error::other("simulated read failure"))
         })
         .unwrap_err();

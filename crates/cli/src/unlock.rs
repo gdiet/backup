@@ -88,7 +88,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
 
@@ -107,7 +107,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
         std::fs::write(
@@ -134,7 +134,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
 
@@ -169,7 +169,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo_path);
         db::init_repository(
             &repo_path,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .expect("repository setup for this test must succeed");
         let held = db::acquire_write_lock(&repo_path)

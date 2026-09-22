@@ -805,7 +805,7 @@ fn database_size_bytes(conn: &Connection) -> Result<u64, Error> {
 /// Reads back the single `repository_settings` row - shared by [`open_repository`] and
 /// [`open_repository_read_only`], which differ only in how `conn` itself was opened.
 fn read_settings(conn: &Connection) -> Result<RepositorySettings, Error> {
-    let (cdc_target_size_bits, creation_time_millis): (Option<u32>, i64) = conn.query_row(
+    let (cdc_target_size_bits, creation_time_millis): (u32, i64) = conn.query_row(
         "SELECT cdc_target_size_bits, creation_time FROM repository_settings WHERE id = 1",
         (),
         |row| Ok((row.get(0)?, row.get(1)?)),
@@ -897,7 +897,7 @@ mod tests {
     use super::*;
 
     fn settings() -> RepositorySettings {
-        RepositorySettings::new(Some(20), 1_700_000_000_000)
+        RepositorySettings::new(20, 1_700_000_000_000)
     }
 
     #[test]
@@ -947,11 +947,8 @@ mod tests {
         // there, deterministically, only after init_repository_contents has already created data/
         // and meta.tmp/ - exercising the cleanup path without needing a real unsupported
         // filesystem.
-        let err = init_repository(
-            &repo_root,
-            RepositorySettings::new(Some(3), 1_700_000_000_000),
-        )
-        .expect_err("an out-of-range cdc_target_size_bits must fail via the CHECK constraint");
+        let err = init_repository(&repo_root, RepositorySettings::new(3, 1_700_000_000_000))
+            .expect_err("an out-of-range cdc_target_size_bits must fail via the CHECK constraint");
         assert!(
             matches!(err, Error::Sqlite(_)),
             "expected a CHECK constraint failure, got: {err:?}"

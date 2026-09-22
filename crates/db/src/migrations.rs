@@ -13,16 +13,17 @@ const V1: &str = r#"
 -- (Repository settings) in metadata-schema-with-contents-table.md.
 CREATE TABLE repository_settings (
   id                   INTEGER PRIMARY KEY,
-  -- NULL selects whole-file chunking (no CDC); a value selects CDC chunking with that
-  -- target_size_bits - mirrors cdc::ChunkerConfig's own Option<u32> shape exactly.
-  cdc_target_size_bits INTEGER,
+  -- REQ-STORAGE-003: content-defined chunking's target size, 6 to 23 bits - narrower than
+  -- cdc::ChunkerConfig's own general 6-to-30 validation, per DESIGN-MEMORY-001's RAM-budget
+  -- ceiling (docs/design/ram-budget.md).
+  cdc_target_size_bits INTEGER NOT NULL,
   -- Unix epoch milliseconds, matching tree_entries.time's own unit - REQ-STORAGE-008. The actual
   -- creation moment for a natively created repository; a migrated repository's source root tree
   -- entry's own time for one adopted from Scala.
   creation_time        INTEGER NOT NULL,
   CONSTRAINT chk_repository_settings_id CHECK (id = 1),
   CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (
-    cdc_target_size_bits IS NULL OR cdc_target_size_bits BETWEEN 6 AND 30
+    cdc_target_size_bits BETWEEN 6 AND 23
   )
 );
 

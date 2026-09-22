@@ -19,7 +19,7 @@ use crate::target_path;
 struct Ctx<'a> {
     repo: &'a db::Repository,
     store: &'a store::ByteStore,
-    cdc_target_size_bits: Option<u32>,
+    cdc_target_size_bits: u32,
 }
 
 /// Accumulates one ingest run's result: how many files actually landed in the repository, plus a
@@ -603,7 +603,7 @@ mod tests {
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
             &repo_root,
-            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+            db::RepositorySettings::new(20, 1_700_000_000_000),
         )
         .unwrap();
         let repo = db::open_repository(&repo_root).unwrap();
