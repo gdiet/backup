@@ -6,7 +6,7 @@ file bytes into chunked, deduplicated, stored content within DESIGN-MEMORY-001's
 [`ram-budget.md`](ram-budget.md)).
 
 ## DESIGN-INGEST-001: Bounded, per-file-sequential, cross-file-parallel chunk pipeline
-Status: decided
+Status: implemented (crates/cli/src/ingest.rs)
 
 Because REQ-STORAGE-003 no longer offers a whole-file chunking mode and caps content-defined
 chunking's target size at 23 bits (96 MiB maximum chunk size), a source file - however large - can
@@ -28,15 +28,24 @@ minimum budget to run at all, rather than unconditionally requiring room for the
 worst case.
 
 Within that budget, multiple source files are processed in parallel - `N = min(ram_budget /
-max_chunk_size, available_parallelism())` files in flight at once, each on its own worker thread (the
-same `crates/cli/src/settle_pool.rs::JobPool` shape already used for the mount's own settle jobs,
-applied here to whole source files instead) - because CPU-bound hashing/CDC scanning, not source read
-or store write I/O, is expected to be the limiting factor for the common case of a fast source and a
-mostly-unchanged tree (REQ-PERFORMANCE-002 in
+max_chunk_size, available_parallelism())` files in flight at once, each on its own worker thread (a
+fixed-size pool of the same shape as `crates/cli/src/settle_pool.rs::JobPool`, applied here to whole
+source files instead of mount write-cache generations, but with each submission individually
+waitable rather than fire-and-forget - a directory's own REQ-INGEST-005 mtime touch must wait for
+that directory's own direct file children to actually finish settling) - because CPU-bound
+hashing/CDC scanning, not source read or store write I/O, is expected to be the limiting factor for
+the common case of a fast source and a mostly-unchanged tree (REQ-PERFORMANCE-002 in
 [`../../requirements/non-functional/performance.md`](../../requirements/non-functional/performance.md)).
 Each individual file is processed strictly sequentially, one chunk at a time, on its own thread:
 intra-file parallel chunking is deliberately not built - see "Alternative considered and rejected:
 intra-file parallelism" below.
+
+Directory traversal itself stays synchronous: recursing into a subdirectory blocks until that
+subdirectory's own recursive call returns, and only that subdirectory's direct file children are
+dispatched to the worker pool. Each directory level waits for all of its own submitted file jobs
+before applying its own mtime touch, avoiding a race between an in-flight file settle (which bumps
+its parent directory's mtime as a side effect) and the explicit, REQ-INGEST-005-mandated mtime
+override for that directory.
 
 ### Alternative considered and rejected: intra-file parallelism
 

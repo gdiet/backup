@@ -1,25 +1,151 @@
 //! `dfs ingest` - REQ-INGEST-001/002/003/004/005/006/007 in `requirements/functional/ingest.md`.
 //! Recursively imports one or more real filesystem paths into a repository target directory,
 //! deduplicating their content along the way. The target path is resolved via `crate::target_path`
-//! (REQ-INGEST-007's templated/creatable segments, DESIGN-CLI-006).
+//! (REQ-INGEST-007's templated/creatable segments, DESIGN-CLI-006). DESIGN-INGEST-001 (`docs/
+//! design/ingest-bounded-pipeline.md`) is the bounded, per-file-sequential, cross-file-parallel
+//! chunk pipeline this module implements: `FileJobPool` below.
 
 use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::UNIX_EPOCH;
 
 use time::OffsetDateTime;
 
 use crate::ignore_rules::{self, BackupIgnore, EffectiveRules};
+use crate::ram_budget::{self, DispatchPool};
 use crate::settle::{self, SettleError};
 use crate::target_path;
 
-/// The handles one ingest run needs, threaded unchanged through every level of its recursion.
-struct Ctx<'a> {
-    repo: &'a db::Repository,
-    store: &'a store::ByteStore,
+/// Shared, read-only state every ingest worker thread needs - DESIGN-INGEST-001's own analogue of
+/// `crate::settle_pool::JobPool`'s `Context`.
+struct PoolCtx {
+    repo: Arc<db::Repository>,
+    store: Arc<store::ByteStore>,
     cdc_target_size_bits: u32,
+}
+
+/// One file ready to be read, chunked, and settled.
+struct FileJob {
+    source_path: PathBuf,
+    metadata: fs::Metadata,
+    target_parent_id: i64,
+    name: String,
+    reference: Option<Arc<HashMap<String, db::Entry>>>,
+    result_tx: mpsc::Sender<Result<Outcome, String>>,
+}
+
+/// A submitted [`FileJob`]'s eventual result - unlike `crate::settle_pool::JobPool::submit`, this
+/// pool's caller needs to wait for specific jobs (a directory's own REQ-INGEST-005 mtime touch is
+/// only safe once that directory's own direct file children have actually settled, not merely been
+/// queued), not just hand work off and move on.
+struct FileJobHandle(mpsc::Receiver<Result<Outcome, String>>);
+
+impl FileJobHandle {
+    fn wait(self) -> Result<Outcome, String> {
+        self.0
+            .recv()
+            .expect("the worker that received this job always sends a result before exiting")
+    }
+}
+
+/// DESIGN-INGEST-001's bounded worker pool: `worker_count` threads (`min(ram_budget /
+/// max_chunk_size, available_parallelism())`) process queued file-import jobs, each file strictly
+/// sequential on its own thread - no intra-file parallelism.
+struct FileJobPool {
+    sender: Option<mpsc::Sender<FileJob>>,
+    workers: Vec<thread::JoinHandle<()>>,
+}
+
+impl FileJobPool {
+    fn new(worker_count: usize, ctx: PoolCtx) -> Self {
+        let (sender, receiver) = mpsc::channel::<FileJob>();
+        let receiver = Arc::new(Mutex::new(receiver));
+        let ctx = Arc::new(ctx);
+        let workers = (0..worker_count.max(1))
+            .map(|_| {
+                let receiver = Arc::clone(&receiver);
+                let ctx = Arc::clone(&ctx);
+                thread::spawn(move || {
+                    loop {
+                        let job = {
+                            let receiver = receiver.lock().expect("not poisoned");
+                            receiver.recv()
+                        };
+                        let Ok(job) = job else {
+                            return;
+                        };
+                        let result = ingest_file_job(
+                            &ctx,
+                            &job.source_path,
+                            &job.metadata,
+                            job.target_parent_id,
+                            &job.name,
+                            job.reference.as_deref(),
+                        );
+                        // The receiving end (FileJobHandle) may already have been dropped if a
+                        // caller only ever waits on a subset of submitted jobs - not the case
+                        // today (every submit is eventually waited on), but not this worker's
+                        // concern either way.
+                        let _ = job.result_tx.send(result);
+                    }
+                })
+            })
+            .collect();
+        Self {
+            sender: Some(sender),
+            workers,
+        }
+    }
+
+    /// Submits `source_path`/`metadata` (named `name` under `target_parent_id`, with `reference`'s
+    /// REQ-INGEST-003 acceleration data) and returns a handle the caller can [`FileJobHandle::wait`]
+    /// on - never blocks itself, the same non-blocking hand-off shape as
+    /// `crate::settle_pool::JobPool::submit`.
+    fn submit(
+        &self,
+        source_path: PathBuf,
+        metadata: fs::Metadata,
+        target_parent_id: i64,
+        name: String,
+        reference: Option<Arc<HashMap<String, db::Entry>>>,
+    ) -> FileJobHandle {
+        let (result_tx, result_rx) = mpsc::channel();
+        self.sender
+            .as_ref()
+            .expect("only cleared in Drop, after which submit can no longer be called")
+            .send(FileJob {
+                source_path,
+                metadata,
+                target_parent_id,
+                name,
+                reference,
+                result_tx,
+            })
+            .expect("worker threads only exit once every sender is dropped, including this one");
+        FileJobHandle(result_rx)
+    }
+}
+
+impl Drop for FileJobPool {
+    fn drop(&mut self) {
+        // Dropping the sender closes the channel, so each worker's `recv()` returns `Err` once
+        // every already-queued job has been delivered - only then do the joins below return.
+        self.sender = None;
+        for worker in std::mem::take(&mut self.workers) {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// The handles one ingest run needs, threaded unchanged through every level of its recursion.
+struct Ctx {
+    repo: Arc<db::Repository>,
+    pool: FileJobPool,
 }
 
 /// Accumulates one ingest run's result: how many files actually landed in the repository, plus a
@@ -52,6 +178,7 @@ fn try_run(
     target: &str,
     reference: Option<&str>,
     force_reference: bool,
+    ram_budget_gross_bytes: u64,
 ) -> Result<String, String> {
     let repo = match db::open_repository(repo_path) {
         Ok(repo) => repo,
@@ -67,11 +194,48 @@ fn try_run(
     // Held for the rest of this run (DESIGN-MAINTENANCE-001 in
     // `docs/design/repository-locking.md`), same as a read-write mount session.
     let _write_lock = db::acquire_write_lock(repo_path).map_err(|err| format!("error: {err}"))?;
+
+    // DESIGN-INGEST-001: refuse to start if the RAM budget cannot even hold one chunk of this
+    // repository's own configured size (REQ-OPERABILITY-006), before opening the store or
+    // touching the target path. The reserve below uses available_parallelism() as the worker
+    // count - the largest this pipeline could ever use - so the computed budget is never
+    // optimistic about how many threads it is actually reserving for.
+    let cdc_target_size_bits = repo.settings().cdc_target_size_bits();
+    let max_chunk_size = cdc::ChunkerConfig::new(Some(cdc_target_size_bits))
+        .expect("cdc_target_size_bits was already validated when the repository was created")
+        .max_chunk_size()
+        .expect("Some(bits) always yields a bounded max_chunk_size");
+    let available_parallelism = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1);
+    let cache_size_bytes = repo
+        .cache_size_bytes()
+        .map_err(|err| format!("error: {err}"))?;
+    let caching_budget_bytes = ram_budget::caching_budget_bytes(
+        ram_budget_gross_bytes,
+        cache_size_bytes,
+        available_parallelism as u64,
+        DispatchPool::None,
+    );
+    ram_budget::check_fits_max_chunk_size(caching_budget_bytes, max_chunk_size)
+        .map_err(|err| format!("error: {err}"))?;
+    let worker_count =
+        ((caching_budget_bytes / max_chunk_size).max(1) as usize).min(available_parallelism);
+
     let store = store::ByteStore::new(db::data_dir(repo_path), false);
+    let repo = Arc::new(repo);
+    let store = Arc::new(store);
+    let pool = FileJobPool::new(
+        worker_count,
+        PoolCtx {
+            repo: Arc::clone(&repo),
+            store,
+            cdc_target_size_bits,
+        },
+    );
     let ctx = Ctx {
-        repo: &repo,
-        store: &store,
-        cdc_target_size_bits: repo.settings().cdc_target_size_bits(),
+        repo: Arc::clone(&repo),
+        pool,
     };
 
     // REQ-INGEST-007's own "current date/time at run start" - captured once, so every
@@ -173,15 +337,16 @@ fn ingest_entry(
             reference_dir_id,
         )
     } else if metadata.is_file() {
-        let reference = reference_children(ctx.repo, reference_dir_id)?;
-        ingest_file(
-            ctx,
-            source_path,
-            &metadata,
-            target_parent_id,
-            name,
-            reference.as_ref(),
-        )
+        let reference = reference_children(&ctx.repo, reference_dir_id)?.map(Arc::new);
+        ctx.pool
+            .submit(
+                source_path.to_path_buf(),
+                metadata,
+                target_parent_id,
+                name.to_string(),
+                reference,
+            )
+            .wait()
     } else {
         Ok(Outcome::warning(format!(
             "{}: not a regular file or directory - skipped",
@@ -236,7 +401,7 @@ fn ingest_dir(
     let target_id = match ctx.repo.mkdir(target_parent_id, name, dir_mtime) {
         Ok(id) => id,
         Err(db::Error::EntryAlreadyExists { .. }) => {
-            match find_child(ctx.repo, target_parent_id, name)? {
+            match find_child(&ctx.repo, target_parent_id, name)? {
                 Some(entry) if entry.kind == db::EntryKind::Dir => entry.id,
                 _ => {
                     outcome.warnings.push(format!(
@@ -250,7 +415,7 @@ fn ingest_dir(
         Err(err) => return Err(format!("{}: {err}", source_dir.display())),
     };
 
-    let reference = reference_children(ctx.repo, reference_dir_id)?;
+    let reference = reference_children(&ctx.repo, reference_dir_id)?.map(Arc::new);
 
     let entries = match fs::read_dir(source_dir) {
         Ok(entries) => entries,
@@ -261,6 +426,12 @@ fn ingest_dir(
             return Ok(outcome);
         }
     };
+
+    // DESIGN-INGEST-001: this directory's own direct file children are submitted to the shared
+    // pool and run concurrently with each other (and with other directories' own in-flight jobs,
+    // up to the pool's worker count) - collected here so this directory's own REQ-INGEST-005
+    // mtime touch below can wait for exactly its own children, not the whole run.
+    let mut file_jobs = Vec::new();
 
     for entry in entries {
         let entry = match entry {
@@ -294,13 +465,13 @@ fn ingest_dir(
             continue;
         }
 
-        let child_outcome = if is_dir {
+        if is_dir {
             let child_reference_dir_id = reference
                 .as_ref()
                 .and_then(|children| children.get(child_name))
                 .filter(|entry| entry.kind == db::EntryKind::Dir)
                 .map(|entry| entry.id);
-            ingest_dir(
+            let child_outcome = ingest_dir(
                 ctx,
                 &entry.path(),
                 &child_metadata,
@@ -308,30 +479,36 @@ fn ingest_dir(
                 child_name,
                 &effective.propagate_into(child_name),
                 child_reference_dir_id,
-            )
+            )?;
+            outcome.merge(child_outcome);
         } else if child_metadata.is_file() {
-            ingest_file(
-                ctx,
-                &entry.path(),
-                &child_metadata,
+            file_jobs.push(ctx.pool.submit(
+                entry.path(),
+                child_metadata,
                 target_id,
-                child_name,
-                reference.as_ref(),
-            )
+                child_name.to_string(),
+                reference.clone(),
+            ));
         } else {
-            Ok(Outcome::warning(format!(
+            outcome.warnings.push(format!(
                 "{}: not a regular file or directory - skipped",
                 entry.path().display()
-            )))
-        };
-        outcome.merge(child_outcome?);
+            ));
+        }
+    }
+
+    for handle in file_jobs {
+        outcome.merge(handle.wait()?);
     }
 
     // REQ-INGEST-005: overrides every per-child `touch()` bump `mkdir`/`settle_file` above already
     // applied while populating this directory, so it ends up carrying the source directory's own
     // modification time rather than "when the import happened" - `docs/design/
     // directory-mtime-touch.md`'s directed-import case. Applied unconditionally, even for a
-    // directory with no children at all.
+    // directory with no children at all. Safe to apply only once every one of this directory's own
+    // direct file jobs above has actually settled (waited for just above) - each recursive
+    // ingest_dir call above already waited for its own children before returning, so nothing
+    // beneath this directory is still in flight by this point.
     ctx.repo
         .set_mtime(target_id, dir_mtime)
         .map_err(|err| format!("{}: {err}", source_dir.display()))?;
@@ -339,12 +516,12 @@ fn ingest_dir(
     Ok(outcome)
 }
 
-/// Imports one source file. Reuses a matching `reference` entry's already-settled content without
-/// reading this file again if its name, size, and modification time all match (REQ-INGEST-003);
-/// otherwise reads, chunks, and hashes it via [`settle::settle`], the same engine a mounted
-/// write's own background settle job uses.
-fn ingest_file(
-    ctx: &Ctx,
+/// Imports one source file, run on a [`FileJobPool`] worker thread. Reuses a matching `reference`
+/// entry's already-settled content without reading this file again if its name, size, and
+/// modification time all match (REQ-INGEST-003); otherwise reads, chunks, and hashes it via
+/// [`settle::settle`], the same engine a mounted write's own background settle job uses.
+fn ingest_file_job(
+    ctx: &PoolCtx,
     source_path: &Path,
     metadata: &fs::Metadata,
     target_parent_id: i64,
@@ -392,8 +569,8 @@ fn ingest_file(
         }
     };
     let content_id = settle::settle(
-        ctx.repo,
-        ctx.store,
+        &ctx.repo,
+        &ctx.store,
         ctx.cdc_target_size_bits,
         size,
         {
@@ -476,11 +653,11 @@ fn reference_children(
 }
 
 /// REQ-INGEST-006: checks that `reference_dir_id`'s own contents roughly correspond to what
-/// `sources` are about to import, before [`ingest_file`] is trusted to use it for REQ-INGEST-003's
-/// accelerated matching. The comparison covers `reference_dir_id`'s and `sources`'s own top-level
-/// entries, plus - for any name present as a directory on both sides - that directory's own
-/// immediate children one level deeper. Fails if the larger side's entry count exceeds 1.6 times
-/// the number of entries actually shared between the two sides, plus 1.
+/// `sources` are about to import, before [`ingest_file_job`] is trusted to use it for
+/// REQ-INGEST-003's accelerated matching. The comparison covers `reference_dir_id`'s and
+/// `sources`'s own top-level entries, plus - for any name present as a directory on both sides -
+/// that directory's own immediate children one level deeper. Fails if the larger side's entry
+/// count exceeds 1.6 times the number of entries actually shared between the two sides, plus 1.
 fn validate_reference(
     repo: &db::Repository,
     reference_dir_id: i64,
@@ -575,7 +752,6 @@ fn compare_one_level_deeper(
     (source_count, reference_children.len(), shared_count)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn run(
     repo_path: &Path,
     default_path_used: bool,
@@ -583,6 +759,7 @@ pub fn run(
     target: &str,
     reference: Option<&str>,
     force_reference: bool,
+    ram_budget_gross_bytes: u64,
 ) {
     match try_run(
         repo_path,
@@ -591,6 +768,7 @@ pub fn run(
         target,
         reference,
         force_reference,
+        ram_budget_gross_bytes,
     ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -639,6 +817,12 @@ mod tests {
         }
     }
 
+    /// Every test below uses this - large enough that an ordinary target size (20 bits, per
+    /// `setup`'s own repository) comfortably fits.
+    fn default_ram_budget() -> u64 {
+        ram_budget::DEFAULT_GROSS_BUDGET_BYTES
+    }
+
     #[test]
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-ingest-test-no-default-repository-here");
@@ -651,12 +835,35 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
             "expected the actionable default-path message, got: {message}"
         );
+    }
+
+    #[test]
+    fn try_run_refuses_a_ram_budget_too_small_for_the_configured_chunk_size() {
+        let (repo, repo_dir, source_root) = setup();
+        drop(repo);
+        let repo_root = repo_dir.path().join("repo");
+        fs::write(source_root.path().join("a.txt"), b"hello").unwrap();
+
+        // setup()'s repository is configured at 20 bits - a ~2 MiB max chunk size - so a 1 KiB
+        // gross budget cannot possibly hold one.
+        let message = try_run(
+            &repo_root,
+            false,
+            &[source_root.path().display().to_string()],
+            "/",
+            None,
+            false,
+            1024,
+        )
+        .expect_err("the RAM budget cannot fit even one chunk of this repository's chunk size");
+        assert!(message.contains("RAM budget too small"), "got: {message}");
     }
 
     #[test]
@@ -672,6 +879,7 @@ mod tests {
             "/no-such-target",
             None,
             false,
+            default_ram_budget(),
         )
         .expect_err("must fail - the target does not exist");
         assert!(message.contains("no such repository path"));
@@ -693,6 +901,7 @@ mod tests {
             "/+backups/[yyyy]",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed - the target path is creatable");
         assert!(message.contains("imported"));
@@ -724,6 +933,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
         assert!(message.contains("imported 1 file"));
@@ -764,6 +974,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
         assert!(message.contains("imported 2 file"));
@@ -784,6 +995,44 @@ mod tests {
     }
 
     #[test]
+    fn try_run_imports_a_directory_with_many_files_concurrently() {
+        // Exercises DESIGN-INGEST-001's cross-file parallelism with more files than a single
+        // worker could plausibly process this fast if it were still strictly sequential - not a
+        // timing assertion (too flaky), just a larger-than-trivial fan-out through the same code
+        // path the smaller tests above already cover one or two files at a time.
+        let (repo, repo_dir, source_root) = setup();
+        drop(repo);
+        let repo_root = repo_dir.path().join("repo");
+        let bulk = source_root.path().join("bulk");
+        fs::create_dir(&bulk).unwrap();
+        for i in 0..50 {
+            fs::write(bulk.join(format!("f{i}.txt")), format!("content {i}")).unwrap();
+        }
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &[bulk.display().to_string()],
+            "/",
+            None,
+            false,
+            default_ram_budget(),
+        )
+        .expect("must succeed");
+        assert!(message.contains("imported 50 file"), "got: {message}");
+
+        let repo = db::open_repository_read_only(&repo_root).unwrap();
+        for i in 0..50 {
+            assert!(
+                repo.resolve_path(&format!("/bulk/f{i}.txt"))
+                    .unwrap()
+                    .is_some(),
+                "f{i}.txt must have been imported"
+            );
+        }
+    }
+
+    #[test]
     fn try_run_excludes_entries_matched_by_a_backupignore_rule() {
         let (repo, repo_dir, source_root) = setup();
         drop(repo);
@@ -801,6 +1050,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
 
@@ -829,6 +1079,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
 
@@ -864,6 +1115,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
 
@@ -898,6 +1150,7 @@ mod tests {
             "/",
             None,
             false,
+            default_ram_budget(),
         )
         .expect("must succeed overall - only one item was unreadable");
         assert!(message.contains("imported 1 file"));
@@ -949,6 +1202,7 @@ mod tests {
             "/target",
             Some("/reference"),
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
 
@@ -994,6 +1248,7 @@ mod tests {
             "/",
             Some("/reference"),
             false,
+            default_ram_budget(),
         )
         .expect("must succeed");
 
@@ -1026,6 +1281,7 @@ mod tests {
             "/",
             Some("/"),
             false,
+            default_ram_budget(),
         )
         .expect_err("must fail - the reference does not correspond to the sources");
         assert!(message.contains("does not correspond closely enough"));
@@ -1050,6 +1306,7 @@ mod tests {
             "/",
             Some("/"),
             true,
+            default_ram_budget(),
         );
         assert!(
             message.is_ok(),

@@ -287,6 +287,8 @@ enum Commands {
         /// `mm`/`ss`, e.g. `[yyyy-MM-dd]`), resolved once against this run's own start time.
         #[arg(required = true, num_args = 2..)]
         paths: Vec<String>,
+        #[command(flatten)]
+        ram_budget: RamBudgetArgs,
     },
 }
 
@@ -482,6 +484,7 @@ fn main() {
             reference,
             force_reference,
             paths,
+            ram_budget,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -493,6 +496,7 @@ fn main() {
                 &target[0],
                 reference.as_deref(),
                 force_reference,
+                ram_budget.ram_budget_mb * 1024 * 1024,
             );
         }
     }
