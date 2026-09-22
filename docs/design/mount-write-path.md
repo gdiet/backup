@@ -334,8 +334,8 @@ sizeToCacheInRAM = max(0, min(writeLength, (availableRAMCacheBudget - currentHan
 computed and reserved atomically against DESIGN-MOUNT-010's shared `MemoryBudget` (a single CAS
 loop, not a separate lock), so concurrent writers on different handles never race each other's
 reservation. `availableRAMCacheBudget` is the portion of the shared budget not currently claimed by
-any handle; `currentHandleRAMCacheSize` is this handle's own claim so far. Anything past what this
-grants spills to disk (DESIGN-MOUNT-010 above), same as before.
+any handle; `currentHandleRAMCacheSize` is this handle's own claim so far. A `write()` call that does
+not fully fit this grant spills - see "Once spilling starts" below for exactly what that means.
 
 ### Why this converges, rather than needing a separate cap
 
@@ -365,6 +365,29 @@ choice is implemented through. A user with one or two large files open, editing 
 alongside them, keeps those large files' cache shares intact - shrinking them would need to actively
 displace already-cached content back out to spillover mid-session, adding real complexity for
 benefit that has not been shown to matter in practice.
+
+### Once spilling starts, it never reconsiders memory - and never migrates what is already cached
+
+A `write()` call that does not fully fit a handle's current share spills only that call's own data,
+to a private, lazily-created spill file - never the handle's pre-existing memory-resident entries,
+which stay exactly where they are for the rest of the handle's lifetime. From that first spill
+onward, every later write for a not-yet-cached byte range goes straight to the spill file without
+even attempting to grow the handle's memory share again, regardless of whether the shared budget has
+since freed up elsewhere - symmetric with "Deliberately not rebalanced once granted" above, just in
+the other direction: a handle's memory footprint, once fixed by however far it grew before its first
+spill, neither shrinks nor grows again. A read composes across both kinds of entries transparently
+(DESIGN-MOUNT-007), so this split is never visible to a caller. Because the memory-resident portion
+survives for as long as the handle itself does, its reservation against the shared budget is only
+returned when the handle closes - not at the moment it first starts spilling.
+
+### Alternative considered and rejected: migrating already-cached content to the spill file too
+
+An earlier implementation moved a handle's entire memory-resident content into its spill file at the
+moment it first needed to spill, releasing the handle's whole prior reservation back to the shared
+budget in that same step. Rejected: this trades a small implementation simplification (one code path
+decides where *all* of a handle's content lives, rather than two) for writing already-resident bytes
+to disk that had no need to move - the fact that some newer write does not fit is not itself a reason
+to displace content that already fits comfortably in memory.
 
 ## DESIGN-MOUNT-011: Overwriting an existing file's content creates a new history entry
 Status: implemented (crates/db/src/tree.rs)
@@ -434,6 +457,18 @@ settling read for that byte plus whatever untouched bytes the resulting chunk bo
 span, not a full copy of the file into the cache the moment it is opened. `crates/store` still
 being read-only-safe to use concurrently with itself (DESIGN-STORE-002) is what makes reading the
 original content on demand, interleaved with the session's own in-progress writes, unproblematic.
+
+### Alternative considered and rejected: a separate cache layer for truncate-grown zero ranges
+
+Tracking a truncate-grown region as its own explicit set of "allocated zero" ranges, in a cache
+layer separate from the tracked write entries, was considered and rejected as unnecessary here. A
+single scalar - `original_size`, capped down (never up) by `truncate` - already distinguishes "falls
+back to the pre-existing content" from "reads as zero" for every gap, because it only ever shrinks:
+once a byte position has been given up by a shrink, it stays in "zero" territory for the rest of the
+cache's lifetime no matter how many times the file is grown and shrunk again afterward. A dedicated
+range-tracking structure for zero regions would need its own merge/clear bookkeeping to answer a
+question this one comparison already answers exactly, for the specific access pattern this cache
+supports (one open write session, not a structure meant to persist zero-range knowledge beyond it).
 
 Settling a write (DESIGN-MOUNT-011) still needs the file's complete resulting byte stream to chunk
 and hash - the entries recorded here and the original-content fallback together are what a settling

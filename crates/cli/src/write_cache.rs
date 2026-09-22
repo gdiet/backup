@@ -1,7 +1,8 @@
-//! A per-open-file write cache (DESIGN-MOUNT-010/012 in `docs/design/mount-write-path.md`):
-//! memory-first up to a budget shared across the whole mount session, then spilling to a sparse
-//! temporary file; tracks only the byte ranges this session actually writes, falling back to the
-//! file's pre-existing content (via a caller-supplied reader, so this module stays independent of
+//! A per-open-file write cache (DESIGN-MOUNT-010/012/019 in `docs/design/mount-write-path.md`):
+//! memory-first up to a budget shared across the whole mount session, then spilling any range that
+//! does not fit to a sparse temporary file, without migrating what is already memory-resident;
+//! tracks only the byte ranges this session actually writes, falling back to the file's
+//! pre-existing content (via a caller-supplied reader, so this module stays independent of
 //! `crates/db`/`crates/store`) for everything else. Used by `crate::pending_files::GenerationSlot`.
 
 use std::collections::BTreeMap;
@@ -107,24 +108,60 @@ fn mark_sparse(file: &File) -> io::Result<()> {
     Ok(())
 }
 
-enum Backing {
-    /// `start -> bytes`, disjoint, sorted.
-    Memory(BTreeMap<u64, Vec<u8>>),
+/// A handle's private spillover file, created lazily on its first spill - DESIGN-MOUNT-019's
+/// "once spilling starts, it never reconsiders memory": every write for a not-yet-cached range
+/// lands here from then on, while whatever is already resident in [`WriteCache::mem_entries`]
+/// stays there untouched.
+struct SpillFile {
+    file: File,
+    path: PathBuf,
     /// `start -> length`, disjoint, sorted - the bytes themselves live in `file` at that same
     /// position.
-    Spilled {
-        file: File,
-        path: PathBuf,
-        ranges: BTreeMap<u64, u64>,
-    },
+    ranges: BTreeMap<u64, u64>,
 }
 
-impl Drop for Backing {
-    fn drop(&mut self) {
-        if let Backing::Spilled { path, .. } = self {
-            let _ = std::fs::remove_file(path);
-        }
+impl SpillFile {
+    fn create(temp_dir: &Path) -> io::Result<Self> {
+        let path = unique_spill_path(temp_dir);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        mark_sparse(&file)?;
+        Ok(Self {
+            file,
+            path,
+            ranges: BTreeMap::new(),
+        })
     }
+
+    fn write(&mut self, position: u64, data: &[u8]) -> io::Result<()> {
+        self.file.seek(SeekFrom::Start(position))?;
+        self.file.write_all(data)?;
+        self.ranges.insert(position, data.len() as u64);
+        Ok(())
+    }
+
+    fn read(&mut self, position: u64, len: u32) -> io::Result<Vec<u8>> {
+        let mut buf = vec![0u8; len as usize];
+        self.file.seek(SeekFrom::Start(position))?;
+        self.file.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+}
+
+impl Drop for SpillFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Which of [`WriteCache`]'s two backings a [`WriteCache::cached_ranges`] entry lives in.
+#[derive(Clone, Copy)]
+enum Source {
+    Mem,
+    Spill,
 }
 
 /// A single open file's not-yet-persisted write state. See the module doc comment.
@@ -137,10 +174,19 @@ pub struct WriteCache {
     /// region shrunk away and then grown back reads as zero, never as its old, truncated-away
     /// content.
     original_size: u64,
-    backing: Backing,
-    /// Bytes currently reserved from `budget` while `backing` is [`Backing::Memory`] - always `0`
-    /// once spilled.
+    /// `start -> bytes`, disjoint, sorted - byte ranges resident in memory. An entry here is never
+    /// migrated to `spill` once written (DESIGN-MOUNT-019): only a range not yet covered by either
+    /// backing ever spills.
+    mem_entries: BTreeMap<u64, Vec<u8>>,
+    /// Bytes currently reserved from `budget` for `mem_entries` - stays reserved for as long as
+    /// this cache exists, even after it starts spilling; released as entries are cleared or
+    /// overwritten, and in full once this cache is dropped.
     mem_bytes: u64,
+    /// `Some` once this cache has spilled at least one write to disk - stays `Some` for the rest
+    /// of this cache's lifetime (DESIGN-MOUNT-019): every later write for a not-yet-cached range
+    /// goes straight here, without ever attempting to grow `mem_entries` again, regardless of
+    /// whether the shared budget has since freed up.
+    spill: Option<SpillFile>,
     budget: Arc<MemoryBudget>,
     temp_dir: PathBuf,
 }
@@ -156,8 +202,9 @@ impl WriteCache {
         Self {
             size: original_size,
             original_size,
-            backing: Backing::Memory(BTreeMap::new()),
+            mem_entries: BTreeMap::new(),
             mem_bytes: 0,
+            spill: None,
             budget,
             temp_dir: temp_dir.into(),
         }
@@ -167,21 +214,21 @@ impl WriteCache {
         self.size
     }
 
-    /// The total bytes currently spilled to disk - `0` while still in memory. Test-only: no
-    /// production code reads this directly (DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure
-    /// signal is tracked at the `JobPool`/`Settler` level instead, `crate::settle_pool`), but it
-    /// stays a useful assertion for tests that need to confirm a write actually spilled.
+    /// The total bytes currently spilled to disk - `0` while nothing has spilled yet. Test-only:
+    /// no production code reads this directly (DESIGN-MOUNT-006's `bytesInPersistQueue`
+    /// backpressure signal is tracked at the `JobPool`/`Settler` level instead,
+    /// `crate::settle_pool`), but it stays a useful assertion for tests that need to confirm a
+    /// write actually spilled.
     #[cfg(test)]
     pub fn spilled_bytes(&self) -> u64 {
-        match &self.backing {
-            Backing::Memory(_) => 0,
-            Backing::Spilled { ranges, .. } => ranges.values().sum(),
-        }
+        self.spill.as_ref().map_or(0, |s| s.ranges.values().sum())
     }
 
     /// Writes `data` at `position`, extending the cache's logical size if this write reaches past
-    /// it. Buffers in memory while the shared budget allows it, otherwise spills this cache's
-    /// entire content to a private sparse temporary file and continues there.
+    /// it. Buffers in memory while the shared budget allows it; once a write does not fit, that
+    /// write (and every later write for a range not already cached) spills to a private sparse
+    /// temporary file instead, without disturbing what is already memory-resident
+    /// (DESIGN-MOUNT-019).
     pub fn write(&mut self, position: u64, data: &[u8]) -> io::Result<()> {
         if data.is_empty() {
             return Ok(());
@@ -189,43 +236,53 @@ impl WriteCache {
         let end = position + data.len() as u64;
         self.clear_range(position, Some(end));
 
-        match &mut self.backing {
-            Backing::Memory(entries) => {
-                let want = data.len() as u64;
-                let granted = self.budget.try_acquire_share(self.mem_bytes, want);
-                if granted < want {
-                    // DESIGN-MOUNT-019: this write does not fully fit within this handle's
-                    // current fair share of the budget - a partial grant is not partially used
-                    // (the `Backing` enum has no representation for "part of this write is
-                    // memory-resident, part is spilled"), so it is released back and the whole
-                    // cache spills instead, same as an outright denial always has.
-                    if granted > 0 {
-                        self.budget.release(granted);
-                    }
-                    self.spill_to_disk()?;
-                    self.write_into_spill(position, data)?;
-                } else {
-                    // Fast path: a pure append directly onto the immediately preceding entry
-                    // extends it in place (amortized O(1), like an ordinary Vec push) instead of
-                    // allocating a new entry next to it - without this, a file written as many
-                    // small sequential writes (the common case for a straight file copy) would
-                    // accumulate one entry per write, and any later full-range read would still
-                    // be correct but needlessly slow to assemble. A write landing anywhere else
-                    // becomes its own new entry; merging on that side too is not implemented, the
-                    // same sequential-write pattern is the one worth optimizing for.
-                    let appended = entries.range_mut(..position).next_back().is_some_and(
-                        |(&prev_start, prev_data)| prev_start + prev_data.len() as u64 == position,
-                    );
-                    if appended {
-                        let prev_data = entries.range_mut(..position).next_back().unwrap().1;
-                        prev_data.extend_from_slice(data);
-                    } else {
-                        entries.insert(position, data.to_vec());
-                    }
-                    self.mem_bytes += want;
+        if self.spill.is_some() {
+            // Already spilling: this handle never reattempts memory (DESIGN-MOUNT-019), even if
+            // the shared budget has since freed up.
+            self.write_into_spill(position, data)?;
+        } else {
+            let want = data.len() as u64;
+            let granted = self.budget.try_acquire_share(self.mem_bytes, want);
+            if granted < want {
+                // DESIGN-MOUNT-019: this write does not fully fit within this handle's current
+                // fair share of the budget - a partial grant is not partially used (no split
+                // representation for "half of this write is memory-resident, half is spilled"),
+                // so it is released back and this write spills in full. Content already resident
+                // in `mem_entries` from earlier writes is untouched.
+                if granted > 0 {
+                    self.budget.release(granted);
                 }
+                self.spill = Some(SpillFile::create(&self.temp_dir)?);
+                self.write_into_spill(position, data)?;
+            } else {
+                // Fast path: a pure append directly onto the immediately preceding entry extends
+                // it in place (amortized O(1), like an ordinary Vec push) instead of allocating a
+                // new entry next to it - without this, a file written as many small sequential
+                // writes (the common case for a straight file copy) would accumulate one entry per
+                // write, and any later full-range read would still be correct but needlessly slow
+                // to assemble. A write landing anywhere else becomes its own new entry; merging on
+                // that side too is not implemented, the same sequential-write pattern is the one
+                // worth optimizing for.
+                let appended = self
+                    .mem_entries
+                    .range_mut(..position)
+                    .next_back()
+                    .is_some_and(|(&prev_start, prev_data)| {
+                        prev_start + prev_data.len() as u64 == position
+                    });
+                if appended {
+                    let prev_data = self
+                        .mem_entries
+                        .range_mut(..position)
+                        .next_back()
+                        .unwrap()
+                        .1;
+                    prev_data.extend_from_slice(data);
+                } else {
+                    self.mem_entries.insert(position, data.to_vec());
+                }
+                self.mem_bytes += want;
             }
-            Backing::Spilled { .. } => self.write_into_spill(position, data)?,
         }
 
         self.size = self.size.max(end);
@@ -233,39 +290,10 @@ impl WriteCache {
     }
 
     fn write_into_spill(&mut self, position: u64, data: &[u8]) -> io::Result<()> {
-        let Backing::Spilled { file, ranges, .. } = &mut self.backing else {
-            unreachable!("write_into_spill is only ever called once already spilled")
-        };
-        file.seek(SeekFrom::Start(position))?;
-        file.write_all(data)?;
-        ranges.insert(position, data.len() as u64);
-        Ok(())
-    }
-
-    fn spill_to_disk(&mut self) -> io::Result<()> {
-        let Backing::Memory(entries) = &self.backing else {
-            return Ok(());
-        };
-        let path = unique_spill_path(&self.temp_dir);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
-        mark_sparse(&file)?;
-
-        let mut file = file;
-        let mut ranges = BTreeMap::new();
-        for (&start, data) in entries.iter() {
-            file.seek(SeekFrom::Start(start))?;
-            file.write_all(data)?;
-            ranges.insert(start, data.len() as u64);
-        }
-
-        self.budget.release(self.mem_bytes);
-        self.mem_bytes = 0;
-        self.backing = Backing::Spilled { file, path, ranges };
-        Ok(())
+        self.spill
+            .as_mut()
+            .expect("write_into_spill is only ever called once already spilling")
+            .write(position, data)
     }
 
     /// Truncates (or zero-extends) the cache's logical size. Shrinking discards any tracked
@@ -281,51 +309,55 @@ impl WriteCache {
     }
 
     /// Removes/trims tracked entries overlapping `[start, end)` (`end = None` meaning "to
-    /// infinity"), splitting an entry that only partially overlaps so its untouched portion(s)
-    /// survive under their own (possibly new) position.
+    /// infinity") in both backings, splitting an entry that only partially overlaps so its
+    /// untouched portion(s) survive under their own (possibly new) position.
     fn clear_range(&mut self, start: u64, end: Option<u64>) {
-        match &mut self.backing {
-            Backing::Memory(entries) => {
-                let overlapping: Vec<u64> = entries
-                    .iter()
-                    .filter(|&(&k, v)| overlaps(k, k + v.len() as u64, start, end))
-                    .map(|(&k, _)| k)
-                    .collect();
-                for k in overlapping {
-                    let data = entries.remove(&k).expect("key just found via iter()");
-                    let entry_end = k + data.len() as u64;
-                    if k < start {
-                        entries.insert(k, data[..(start - k) as usize].to_vec());
-                    }
-                    if let Some(end) = end
-                        && entry_end > end
-                    {
-                        entries.insert(end, data[(end - k) as usize..].to_vec());
-                    }
-                }
-                let new_total: u64 = entries.values().map(|v| v.len() as u64).sum();
-                if new_total < self.mem_bytes {
-                    self.budget.release(self.mem_bytes - new_total);
-                }
-                self.mem_bytes = new_total;
+        let overlapping: Vec<u64> = self
+            .mem_entries
+            .iter()
+            .filter(|&(&k, v)| overlaps(k, k + v.len() as u64, start, end))
+            .map(|(&k, _)| k)
+            .collect();
+        for k in overlapping {
+            let data = self
+                .mem_entries
+                .remove(&k)
+                .expect("key just found via iter()");
+            let entry_end = k + data.len() as u64;
+            if k < start {
+                self.mem_entries
+                    .insert(k, data[..(start - k) as usize].to_vec());
             }
-            Backing::Spilled { ranges, .. } => {
-                let overlapping: Vec<(u64, u64)> = ranges
-                    .iter()
-                    .filter(|&(&k, &len)| overlaps(k, k + len, start, end))
-                    .map(|(&k, &len)| (k, len))
-                    .collect();
-                for (k, len) in overlapping {
-                    ranges.remove(&k);
-                    let entry_end = k + len;
-                    if k < start {
-                        ranges.insert(k, start - k);
-                    }
-                    if let Some(end) = end
-                        && entry_end > end
-                    {
-                        ranges.insert(end, entry_end - end);
-                    }
+            if let Some(end) = end
+                && entry_end > end
+            {
+                self.mem_entries
+                    .insert(end, data[(end - k) as usize..].to_vec());
+            }
+        }
+        let new_total: u64 = self.mem_entries.values().map(|v| v.len() as u64).sum();
+        if new_total < self.mem_bytes {
+            self.budget.release(self.mem_bytes - new_total);
+        }
+        self.mem_bytes = new_total;
+
+        if let Some(spill) = &mut self.spill {
+            let overlapping: Vec<(u64, u64)> = spill
+                .ranges
+                .iter()
+                .filter(|&(&k, &len)| overlaps(k, k + len, start, end))
+                .map(|(&k, &len)| (k, len))
+                .collect();
+            for (k, len) in overlapping {
+                spill.ranges.remove(&k);
+                let entry_end = k + len;
+                if k < start {
+                    spill.ranges.insert(k, start - k);
+                }
+                if let Some(end) = end
+                    && entry_end > end
+                {
+                    spill.ranges.insert(end, entry_end - end);
                 }
             }
         }
@@ -350,23 +382,23 @@ impl WriteCache {
         let cached = self.cached_ranges();
         let mut cached = cached.into_iter().peekable();
         // Skip ranges entirely before `pos`.
-        while cached.peek().is_some_and(|&(start, l)| start + l <= pos) {
+        while cached.peek().is_some_and(|&(start, l, _)| start + l <= pos) {
             cached.next();
         }
 
         while pos < end {
             match cached.peek().copied() {
-                Some((start, l)) if start <= pos => {
+                Some((start, l, source)) if start <= pos => {
                     let avail = (start + l) - pos;
                     let take = avail.min(end - pos) as u32;
-                    result.extend_from_slice(&self.read_cached(pos, take)?);
+                    result.extend_from_slice(&self.read_cached(pos, take, source)?);
                     pos += u64::from(take);
                     if pos >= start + l {
                         cached.next();
                     }
                 }
                 next => {
-                    let gap_end = next.map_or(end, |(start, _)| start.min(end));
+                    let gap_end = next.map_or(end, |(start, _, _)| start.min(end));
                     let gap_len = (gap_end - pos) as u32;
                     if pos < self.original_size {
                         let take = gap_len.min((self.original_size - pos) as u32);
@@ -385,32 +417,47 @@ impl WriteCache {
         Ok(result)
     }
 
-    fn cached_ranges(&self) -> Vec<(u64, u64)> {
-        match &self.backing {
-            Backing::Memory(entries) => entries.iter().map(|(&k, v)| (k, v.len() as u64)).collect(),
-            Backing::Spilled { ranges, .. } => ranges.iter().map(|(&k, &v)| (k, v)).collect(),
+    /// Every tracked entry across both backings, merged and sorted by position - disjoint, since
+    /// `clear_range` already keeps `mem_entries` and a spill's `ranges` each individually disjoint,
+    /// and a byte position is only ever tracked in one backing at a time.
+    fn cached_ranges(&self) -> Vec<(u64, u64, Source)> {
+        let mut ranges: Vec<(u64, u64, Source)> = self
+            .mem_entries
+            .iter()
+            .map(|(&k, v)| (k, v.len() as u64, Source::Mem))
+            .collect();
+        if let Some(spill) = &self.spill {
+            ranges.extend(spill.ranges.iter().map(|(&k, &v)| (k, v, Source::Spill)));
         }
+        ranges.sort_by_key(|&(k, _, _)| k);
+        ranges
     }
 
     /// Reads `len` bytes starting at `position`, which the caller guarantees falls entirely
-    /// inside one tracked entry.
-    fn read_cached(&mut self, position: u64, len: u32) -> io::Result<Vec<u8>> {
-        match &mut self.backing {
-            Backing::Memory(entries) => {
-                let (&start, data) = entries
+    /// inside one tracked entry in the backing `source` names.
+    fn read_cached(&mut self, position: u64, len: u32, source: Source) -> io::Result<Vec<u8>> {
+        match source {
+            Source::Mem => {
+                let (&start, data) = self
+                    .mem_entries
                     .range(..=position)
                     .next_back()
                     .expect("caller guarantees a covering entry exists");
                 let offset = (position - start) as usize;
                 Ok(data[offset..offset + len as usize].to_vec())
             }
-            Backing::Spilled { file, .. } => {
-                let mut buf = vec![0u8; len as usize];
-                file.seek(SeekFrom::Start(position))?;
-                file.read_exact(&mut buf)?;
-                Ok(buf)
-            }
+            Source::Spill => self
+                .spill
+                .as_mut()
+                .expect("source == Spill implies self.spill is Some")
+                .read(position, len),
         }
+    }
+}
+
+impl Drop for WriteCache {
+    fn drop(&mut self) {
+        self.budget.release(self.mem_bytes);
     }
 }
 
@@ -572,29 +619,65 @@ mod tests {
     }
 
     #[test]
-    fn writing_past_the_shared_budget_spills_to_disk_and_still_reads_correctly() {
+    fn writing_past_the_shared_budget_spills_only_the_write_that_does_not_fit() {
         // A single handle's own share caps at half the (remaining) budget (DESIGN-MOUNT-019): 20
         // grants exactly 10 for the first write, leaving no further share for this same handle
-        // until it is released, so the second write spills.
+        // until it is released, so the second write spills - but only the second write's own 4
+        // bytes, not the first write's already-memory-resident 10.
         let (mut cache, _dir) = cache(20, 0);
         cache.write(0, b"0123456789").unwrap();
         cache.write(10, b"more").unwrap();
-        assert_eq!(cache.spilled_bytes(), 14);
+        assert_eq!(cache.spilled_bytes(), 4);
+        assert_eq!(cache.mem_bytes, 10);
         let data = cache.read(0, 14, no_original).unwrap();
         assert_eq!(data, b"0123456789more");
     }
 
     #[test]
-    fn spilling_releases_the_budget_for_other_caches_to_use() {
+    fn a_handle_that_has_spilled_keeps_spilling_new_ranges_even_once_budget_frees_up_again() {
+        // A shared budget of 20: `a` claims its whole 10-byte share and then spills a further
+        // write, leaving `a` in spilling mode. Dropping a competing handle that held the rest of
+        // the budget frees it all up again - `a`'s own next write for a still-uncached range must
+        // still spill, not silently start caching in memory again, per DESIGN-MOUNT-019's "once
+        // spilling starts, it never reconsiders memory".
         let budget = Arc::new(MemoryBudget::new(20));
         let dir = tempfile::tempdir().unwrap();
         let mut a = WriteCache::new(dir.path(), Arc::clone(&budget), 0);
-        a.write(0, b"0123456789").unwrap();
-        a.write(10, b"more").unwrap(); // spills `a`, releasing its 10 reserved bytes
-        // Now b can acquire the same budget again.
+        a.write(0, b"0123456789").unwrap(); // claims a's whole 10-byte share
+        a.write(10, b"more").unwrap(); // does not fit -> a starts spilling
+        assert_eq!(a.spilled_bytes(), 4);
+
+        // Nothing else is competing for the budget, so plenty is technically available now.
+        drop(WriteCache::new(dir.path(), Arc::clone(&budget), 0));
+
+        a.write(14, b"even-more").unwrap();
+        assert_eq!(
+            a.spilled_bytes(),
+            13,
+            "a new write on an already-spilling handle must keep spilling, not re-acquire memory"
+        );
+        assert_eq!(
+            a.mem_bytes, 10,
+            "the original in-memory entry must stay untouched"
+        );
+        assert_eq!(
+            a.read(0, 23, no_original).unwrap(),
+            b"0123456789moreeven-more"
+        );
+    }
+
+    #[test]
+    fn dropping_a_cache_that_never_spilled_releases_its_whole_reservation() {
+        let budget = Arc::new(MemoryBudget::new(20));
+        let dir = tempfile::tempdir().unwrap();
+        let mut a = WriteCache::new(dir.path(), Arc::clone(&budget), 0);
+        a.write(0, b"0123456789").unwrap(); // claims a's whole 10-byte share
+        drop(a);
+
+        // With a's reservation released, b can claim the same share again.
         let mut b = WriteCache::new(dir.path(), Arc::clone(&budget), 0);
         b.write(0, b"0123456789").unwrap();
-        assert_eq!(a.read(0, 14, no_original).unwrap(), b"0123456789more");
+        assert_eq!(b.spilled_bytes(), 0);
         assert_eq!(b.read(0, 10, no_original).unwrap(), b"0123456789");
     }
 
@@ -605,10 +688,13 @@ mod tests {
             let pos = cache.size();
             cache.write(pos, chunk).unwrap();
         }
-        match &cache.backing {
-            Backing::Memory(entries) => assert_eq!(entries.len(), 1, "entries: {entries:?}"),
-            Backing::Spilled { .. } => panic!("must not have spilled at this size"),
-        }
+        assert!(cache.spill.is_none(), "must not have spilled at this size");
+        assert_eq!(
+            cache.mem_entries.len(),
+            1,
+            "entries: {:?}",
+            cache.mem_entries
+        );
         assert_eq!(cache.read(0, 6, no_original).unwrap(), b"aabbcc");
     }
 

@@ -759,15 +759,14 @@ mod tests {
 
     #[test]
     fn real_mount_concurrent_handles_converge_toward_the_per_handle_halving_formula() {
-        // `write_cache.rs`'s `spill_to_disk` migrates a cache's *entire* accumulated content to
-        // its spill file, not just the overflow past its share, and releases its whole prior
-        // in-memory grant back to the shared budget at that same moment - so "spill file size"
-        // does not mean "bytes past the fair share" the way a naive reading of the formula might
-        // suggest; once a handle spills at all, its spill file ends up holding everything it ever
-        // writes, migrated content and future writes alike. The externally-observable signal this
-        // test actually checks is binary, not a size split: does a handle spill *at all* for a
-        // write comfortably within a "first, alone" equilibrium, but not within a "second, after
-        // the first already claimed its share" one.
+        // `write_cache.rs` only spills a write that does not fit a handle's current share, never
+        // content already resident in memory from an earlier write (DESIGN-MOUNT-019). B's single
+        // write below is also its *first* write, so nothing was memory-resident yet for it to
+        // keep - its whole payload spills, same as it would for any handle whose very first write
+        // already exceeds its share. The externally-observable signal this test actually checks is
+        // binary, not a size split: does a handle spill *at all* for a write comfortably within a
+        // "first, alone" equilibrium, but not within a "second, after the first already claimed
+        // its share" one.
         let (mut fs, _verify_repo, _store, _dir) = setup(true);
         // 1,000,000-byte budget: DESIGN-MOUNT-019's first-handle-alone equilibrium is half of
         // that (500,000), second-handle-after-the-first's is half of what is left (~250,000).
@@ -824,8 +823,8 @@ mod tests {
         // above, so this is the only way left to observe which cache actually spilled. Content is
         // read *before* either handle is closed below - once closed, release() hands the
         // generation to the background settle pool, and `unmount_and_join` (via `JobPool`'s own
-        // `Drop`) waits for that to fully finish, including `Backing::Spilled`'s own `Drop`
-        // deleting the spill file - by then there would be nothing left to read.
+        // `Drop`) waits for that to fully finish, including `SpillFile`'s own `Drop` deleting the
+        // spill file - by then there would be nothing left to read.
         let spill_entries: Vec<_> = std::fs::read_dir(spill_dir.path())
             .expect("read spill_dir")
             .map(|entry| entry.expect("read spill_dir entry"))
