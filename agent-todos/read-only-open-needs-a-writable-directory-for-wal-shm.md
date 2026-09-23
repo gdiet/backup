@@ -61,20 +61,70 @@ pre-creating `-shm` alongside the database file at `create_repo` time, so it alw
 time a read-only-only environment ever opens it) - needs its own look before picking a fix, which
 is why this is parked rather than fixed inline.
 
+## `immutable=1` verified empirically (2026-09-23), including the concurrent-writer risk
+
+Prompted by the developer asking whether this holds on Windows too, and whether `immutable=1`
+genuinely opens a pristine, cleanly-closed repository on read-only media, plus what happens if a
+writer shows up anyway - answered here empirically (Linux only; Windows reasoned about, not run,
+see below) before picking a fix, per `AGENTS.md`'s "verify uncertain library/runtime behavior
+empirically" debugging discipline.
+
+- **`immutable=1` does open a pristine, cleanly-closed repository on genuinely read-only media.**
+  Reproduced directly with Python's `sqlite3` module (independent of this project's own `db` crate
+  code, to isolate the SQLite behavior itself) against a fresh `dfs create-repo` repository with
+  its `meta/` directory `chmod 555`ed: `file:<path>?mode=ro` alone fails the same way the Rust code
+  does (`attempt to write a readonly database`); `file:<path>?mode=ro&immutable=1` succeeds and
+  reads the schema/data correctly.
+- **Platform scope: this is not Linux-specific.** The `-shm`-creation requirement for opening a
+  WAL-mode database is part of SQLite's own generic WAL implementation, used identically across its
+  Unix and Windows (`win32`) VFS backends - not something either backend layers on top themselves.
+  `immutable`'s own documentation (see below) is written platform-agnostically, with no OS-specific
+  carve-out. Not run on real Windows/WinFSP in this session (no such access here) - reasoned from
+  documented SQLite internals, not independently confirmed on that platform.
+- **The concurrent-writer risk is real and documented, not hypothetical.** SQLite's own docs
+  (https://www.sqlite.org/uri.html, "immutable"): "If this query parameter... asserts that a
+  database file is immutable and that file changes anyhow, then SQLite might return incorrect
+  query results and/or SQLITE_CORRUPT errors." That is the actual contract `immutable=1` would ask
+  this project to uphold - not merely "you might see a stale snapshot."
+  - Empirically, on this SQLite build, actually violating it was much more benign than the docs'
+    worst case: a `immutable=1` connection opened before a concurrent write (a real `dfs ingest` in
+    a separate process), then queried again after, kept silently returning the pre-write snapshot -
+    no exception, no corruption. Repeated with heavier concurrent load (8 rounds of `dfs ingest`
+    plus `dfs db-compact` while the same connection stayed open across ~10s) - still just a frozen,
+    stale snapshot, no error surfaced. A **fresh** `immutable=1` connection opened after the write
+    saw the update correctly.
+  - This is not evidence the risk is overstated: the benign outcome only means none of these test
+    queries happened to need a disk page SQLite's own page cache had not already cached before the
+    write landed. `SQLITE_CORRUPT`/wrong-result is the documented failure mode for the case that
+    does need to fetch a page the file no longer matches what `immutable=1` told SQLite to assume -
+    not reproduced here, but not ruled out by a handful of manual test runs either.
+
+**Net effect on the design question above**: `immutable=1` is a real, working fix for the
+*pristine-repository-on-unwritable-media* case specifically (no other writer possible there, by
+definition of "unwritable media"), matching this todo's own opening finding and
+`docker/samba-mount/`'s use case. It is not a safe general replacement for
+`open_repository_read_only` if a concurrent `--read-write` session is genuinely expected while a
+read-only session is open elsewhere - that still needs the "next attempt" investigation below to
+settle before `immutable=1` could be adopted unconditionally.
+
 ## What the next attempt should do
 
 1. Confirm whether a read-only session is actually expected to run concurrently with an active
    `--read-write` session against the same repository today (check `REQ-MAINTENANCE-004` in
    `requirements/functional/maintenance.md` and any existing test coverage) - this settles whether
-   `immutable=1` is viable at all.
-2. If concurrent read-only + read-write is expected: consider whether `create_repo`/an initial
-   write-mode open leaving a `-shm` file behind permanently (rather than letting SQLite clean it up
-   on close) is a viable alternative that keeps read-only opens from ever needing to create one
-   themselves.
-3. If concurrent access is not actually expected/supported, `immutable=1` is likely the direct fix
-   - add a regression test against a pristine repository on a directory the test process cannot
-   write to (verified red against the current code, green after the fix, per `AGENTS.md`'s
-   debugging discipline).
+   `immutable=1` is viable unconditionally, or only for the specific
+   known-unwritable-media case (where a concurrent writer is structurally impossible regardless).
+2. If concurrent read-only + read-write is expected in the general case: consider whether
+   `create_repo`/an initial write-mode open leaving a `-shm` file behind permanently (rather than
+   letting SQLite clean it up on close) is a viable alternative that keeps read-only opens from
+   ever needing to create one themselves - or whether `open_repository_read_only` should only use
+   `immutable=1` when it can positively detect the directory is not writable (falling back to
+   today's plain `mode=ro` otherwise), rather than switching behavior unconditionally.
+3. Either way `immutable=1` ends up scoped, add a regression test against a pristine repository on
+   a directory the test process cannot write to (verified red against the current code, green after
+   the fix, per `AGENTS.md`'s debugging discipline) - and, if feasible, a second test that opens
+   `immutable=1` alongside a concurrent writer to document the actual (not just assumed) behavior
+   this project ends up relying on.
 4. Either way, `docker/samba-mount/README.md`'s current workaround (not bind-mounting `/repo`
    read-only) can be revisited once this is resolved - not blocking on it, since the workaround
    is fully safe as-is (`dfs mount`'s own read-only enforcement, both at the FUSE/kernel level via
