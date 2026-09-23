@@ -1,0 +1,8 @@
+# Keeps the Docker build context (docker/samba-mount's Dockerfile does
+# `COPY . .` then builds fresh with cargo inside the container) down to
+# just the source the build actually needs. Without this, `target/` alone
+# (regenerated fresh in the container anyway - stale host build artifacts
+# are never useful there) balloons the context into gigabytes.
+/target/
+/.git/
+/.local/
