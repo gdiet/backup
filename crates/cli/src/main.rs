@@ -123,6 +123,21 @@ enum Commands {
         cache_size: Option<i64>,
         #[command(flatten)]
         backpressure: BackpressureArgs,
+        // REQ-MOUNT-004/007.
+        /// Reveal and make browsable REQ-TREE-009's `[deleted]` view (and REQ-MOUNT-008's own
+        /// `[time]` presentation of it) through the mount, at the same locations `dfs list
+        /// --show-deleted` reveals them. Off by default, so an ordinary recursive tool walking
+        /// the mount never descends into deletion history without asking for it. Available on a
+        /// read-only mount too - recovery via moving an entry out of the view needs
+        /// `--read-write` as well, but browsing does not.
+        #[arg(long)]
+        show_deleted: bool,
+        /// REQ-MOUNT-007's second, escalating opt-in: additionally allows permanently purging an
+        /// entry from inside the `[deleted]` view (deleting it there, rather than only recovering
+        /// it by moving it out). Meaningless without `--show-deleted`, and without `--read-write`
+        /// - nothing mutating is ever allowed on a read-only mount regardless of this flag.
+        #[arg(long)]
+        purge: bool,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -388,6 +403,8 @@ fn main() {
             ram_budget,
             cache_size,
             backpressure,
+            show_deleted,
+            purge,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -402,6 +419,8 @@ fn main() {
                     ram_budget_gross_bytes: ram_budget.ram_budget_mb * 1024 * 1024,
                     backpressure_free_zone_bytes: backpressure.backpressure_free_zone_bytes,
                     backpressure_slope_divisor: backpressure.backpressure_slope_divisor,
+                    show_deleted,
+                    allow_purge: purge,
                 },
             );
         }

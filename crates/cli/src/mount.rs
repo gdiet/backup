@@ -140,6 +140,8 @@ mod tests {
             ram_budget_gross_bytes: ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             backpressure_free_zone_bytes: crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
+            show_deleted: false,
+            allow_purge: false,
         }
     }
 

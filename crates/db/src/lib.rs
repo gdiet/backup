@@ -457,12 +457,13 @@ impl Repository {
 
     /// Permanently removes the soft-deleted entry `id` - REQ-CLI-003's `--purge` case, addressed
     /// through REQ-TREE-009's `[deleted]` resolution rather than a live path. Refuses an `id` that
-    /// does not exist or is still live; if it is a directory, its own soft-deleted children are
-    /// purged along with it (REQ-TREE-008 guarantees none of them are live). Also performs
+    /// does not exist or is still live. If it is a directory with soft-deleted children and
+    /// `recursive` is `false`, refuses with [`Error::DirectoryNotEmpty`]; with `recursive` `true`,
+    /// they are purged along with it (REQ-TREE-008 guarantees none of them are live). Also performs
     /// REQ-STORAGE-004's reclaim cascade immediately, scoped to what this purge just orphaned - see
     /// [`PurgeResult`] and `tree::purge_deleted_entry`'s own doc comment.
-    pub fn purge_deleted_entry(&self, id: i64) -> Result<PurgeResult, Error> {
-        self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id))
+    pub fn purge_deleted_entry(&self, id: i64, recursive: bool) -> Result<PurgeResult, Error> {
+        self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id, recursive))
     }
 
     /// REQ-STORAGE-004's bulk sweep: purges every soft-deleted entry that has stayed soft-deleted
@@ -488,7 +489,7 @@ impl Repository {
 
         let mut result = ReclaimResult::default();
         for id in ids {
-            match self.purge_deleted_entry(id) {
+            match self.purge_deleted_entry(id, true) {
                 Ok(purge) => {
                     result.purged += 1 + purge.descendants;
                     result.reclaimed_bytes += purge.reclaimed_bytes;
@@ -504,6 +505,12 @@ impl Repository {
     /// exist or is soft-deleted, the same as [`Self::resolve_path`].
     pub fn entry_by_id(&self, id: i64) -> Result<Option<Entry>, Error> {
         self.with_connection(|conn, _cache| tree::get_by_id(conn, id))
+    }
+
+    /// Looks up the soft-deleted entry by its own id - `Ok(None)` if it does not exist or is
+    /// live, the mirror image of [`Self::entry_by_id`].
+    pub fn deleted_entry_by_id(&self, id: i64) -> Result<Option<DeletedEntry>, Error> {
+        self.with_connection(|conn, _cache| tree::deleted_entry_by_id(conn, id))
     }
 
     /// The live entry `id`'s current `(parent_id, name)` - `None` if it does not exist or is
@@ -625,6 +632,31 @@ impl Repository {
                 cache,
                 old_parent_id,
                 old_name,
+                new_parent_id,
+                new_name,
+                no_replace,
+                time_millis,
+            )
+        })
+    }
+
+    /// Recovers the soft-deleted entry `id` back to a live entry at `(new_parent_id, new_name)` -
+    /// REQ-MOUNT-004's own move-out-of-`[deleted]` recovery. See `tree::recover_deleted_entry`'s
+    /// own doc comment for the exact refusal/collision rules.
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_deleted_entry(
+        &self,
+        id: i64,
+        new_parent_id: i64,
+        new_name: &str,
+        no_replace: bool,
+        time_millis: i64,
+    ) -> Result<(), Error> {
+        self.with_transaction(|conn, cache| {
+            tree::recover_deleted_entry(
+                conn,
+                cache,
+                id,
                 new_parent_id,
                 new_name,
                 no_replace,
@@ -1461,7 +1493,7 @@ mod tests {
         }
         for id in ids {
             repo.unlink_file(id, 200).unwrap();
-            repo.purge_deleted_entry(id).unwrap();
+            repo.purge_deleted_entry(id, true).unwrap();
         }
 
         let result = repo.compact().expect("compact must succeed");

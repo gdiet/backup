@@ -85,6 +85,39 @@ pub(crate) fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Entry>, Err
     }))
 }
 
+/// The soft-deleted entry `id`, if it exists and is currently soft-deleted - `None` for a live or
+/// nonexistent `id` alike, the same "only this one state" symmetry [`get_by_id`] has for the live
+/// case. REQ-MOUNT-004/007's own read access to a `[deleted]`-addressed file's content needs this:
+/// `crate::dedup_fs`'s `open`/`read` only ever have the raw id a prior `resolve` call already
+/// established was soft-deleted, not the full path to re-resolve through
+/// [`list_deleted_children`] again.
+pub(crate) fn deleted_entry_by_id(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<DeletedEntry>, Error> {
+    conn.query_row(
+        "SELECT te.kind, te.time, te.content_id, c.length, te.deleted_at \
+         FROM tree_entries te LEFT JOIN contents c ON c.id = te.content_id \
+         WHERE te.id = ?1 AND te.deleted_at IS NOT NULL",
+        params![id],
+        |row| {
+            let length: Option<i64> = row.get(3)?;
+            Ok(DeletedEntry {
+                entry: Entry {
+                    id,
+                    kind: EntryKind::from_db(row.get(0)?),
+                    time_millis: row.get(1)?,
+                    content_id: row.get(2)?,
+                    size: length.unwrap_or(0) as u64,
+                },
+                deleted_at: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 fn require_dir(conn: &Connection, id: i64) -> Result<Entry, Error> {
     let entry = get_by_id(conn, id)?.ok_or(Error::NoSuchEntry(id))?;
     if entry.kind != EntryKind::Dir {
@@ -549,9 +582,12 @@ pub struct PurgeResult {
 /// Permanently removes the soft-deleted entry `id` from the tree - REQ-CLI-003's `--purge` case.
 /// Refuses an `id` that does not exist ([`Error::NoSuchEntry`]) or that is still live
 /// ([`Error::NotSoftDeleted`]) - only an entry already reached through REQ-TREE-009's `[deleted]`
-/// addressing is eligible. If `id` is a directory, its own soft-deleted children are purged first,
-/// recursively (REQ-TREE-008 guarantees none of them are live) - `tree_entries.parent_id`'s foreign
-/// key would otherwise refuse deleting a row still referenced by a child.
+/// addressing is eligible. If `id` is a directory with soft-deleted children (REQ-TREE-008
+/// guarantees none of them are live) and `recursive` is `false`, refuses with
+/// [`Error::DirectoryNotEmpty`] instead of purging them - the same shape of opt-in `rmdir` already
+/// makes for a live, non-empty directory. With `recursive` `true`, its children are purged first,
+/// since `tree_entries.parent_id`'s foreign key would otherwise refuse deleting a row still
+/// referenced by a child.
 ///
 /// The `tree_entries_ref_count_del` trigger (`migrations.rs`) decrements each purged file's
 /// `contents.ref_count` as a side effect of its row's own deletion. Reaching zero there does not by
@@ -560,7 +596,11 @@ pub struct PurgeResult {
 /// [`crate::content::reclaim_content`]) - "Purging a tree entry is also an arming point" in
 /// `docs/design/stale-backup-detection.md` records why purge does this itself rather than leaving
 /// it to a later, separate sweep.
-pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<PurgeResult, Error> {
+pub(crate) fn purge_deleted_entry(
+    conn: &Connection,
+    id: i64,
+    recursive: bool,
+) -> Result<PurgeResult, Error> {
     if id == 0 {
         // tree_entries_protect_root's own DELETE trigger would already refuse this (unlike
         // rmdir/unlink_file's soft-delete UPDATE, which it does not cover), but only as a raw
@@ -586,8 +626,11 @@ pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<PurgeRes
             .prepare("SELECT id FROM tree_entries WHERE parent_id = ?1")?
             .query_map(params![id], |row| row.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
+        if !recursive && !child_ids.is_empty() {
+            return Err(Error::DirectoryNotEmpty(id));
+        }
         for child_id in child_ids {
-            let child_result = purge_deleted_entry(conn, child_id)?;
+            let child_result = purge_deleted_entry(conn, child_id, recursive)?;
             result.descendants += 1 + child_result.descendants;
             result.reclaimed_bytes += child_result.reclaimed_bytes;
         }
@@ -598,6 +641,71 @@ pub(crate) fn purge_deleted_entry(conn: &Connection, id: i64) -> Result<PurgeRes
         result.reclaimed_bytes += crate::content::reclaim_content(conn, content_id)?;
     }
     Ok(result)
+}
+
+/// Recovers the soft-deleted entry `id` back to a live entry at `(new_parent_id, new_name)` -
+/// REQ-MOUNT-004's own "moved back out of the `[deleted]` view" recovery. Refuses an `id` that
+/// does not exist ([`Error::NoSuchEntry`]) or is not currently soft-deleted
+/// ([`Error::NotSoftDeleted`]). `new_parent_id` must be a live directory
+/// ([`Error::WrongKind`]/[`Error::NoSuchEntry`], the same as [`rename`]'s own target-parent check).
+/// Collision handling at `(new_parent_id, new_name)` mirrors [`rename`]'s own rules
+/// (REQ-MOUNT-009): a directory on either side is always refused, `no_replace` always refuses,
+/// otherwise an existing live file there is itself soft-deleted first. No cycle check is needed
+/// the way [`rename`] needs one: `new_parent_id` being required live already rules out `id` being
+/// one of its own ancestors, since REQ-TREE-008 guarantees every descendant of a soft-deleted
+/// directory is itself soft-deleted too.
+pub(crate) fn recover_deleted_entry(
+    conn: &Connection,
+    cache: &mut NameCache,
+    id: i64,
+    new_parent_id: i64,
+    new_name: &str,
+    no_replace: bool,
+    time_millis: i64,
+) -> Result<(), Error> {
+    let (deleted_at, kind): (Option<i64>, i64) = conn
+        .query_row(
+            "SELECT deleted_at, kind FROM tree_entries WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or(Error::NoSuchEntry(id))?;
+    if deleted_at.is_none() {
+        return Err(Error::NotSoftDeleted(id));
+    }
+    let kind = EntryKind::from_db(kind);
+
+    require_dir(conn, new_parent_id)?;
+
+    if let Some(target_id) = find_child_id(conn, cache, new_parent_id, new_name)? {
+        if no_replace {
+            return Err(Error::EntryAlreadyExists {
+                parent_id: new_parent_id,
+                name: new_name.to_string(),
+            });
+        }
+        let target_entry = get_by_id(conn, target_id)?.ok_or(Error::NoSuchEntry(target_id))?;
+        // REQ-MOUNT-009: a directory on either side of the collision is always refused.
+        if kind == EntryKind::Dir || target_entry.kind == EntryKind::Dir {
+            return Err(Error::EntryAlreadyExists {
+                parent_id: new_parent_id,
+                name: new_name.to_string(),
+            });
+        }
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            params![time_millis, target_id],
+        )?;
+    }
+
+    conn.execute(
+        "UPDATE tree_entries SET parent_id = ?1, name = ?2, deleted_at = NULL WHERE id = ?3",
+        params![new_parent_id, new_name, id],
+    )?;
+    cache.invalidate(new_parent_id);
+    touch(conn, new_parent_id, time_millis)?;
+    Ok(())
 }
 
 /// Whether `ancestor_id` is `descendant_id` itself, or one of its ancestors (walking up via
@@ -1196,7 +1304,9 @@ mod tests {
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
         repo.unlink_file(id, 200).unwrap();
 
-        let result = repo.purge_deleted_entry(id).expect("purge must succeed");
+        let result = repo
+            .purge_deleted_entry(id, true)
+            .expect("purge must succeed");
 
         assert_eq!(
             row_count(&repo, id),
@@ -1229,7 +1339,7 @@ mod tests {
             })
             .unwrap();
 
-        repo.purge_deleted_entry(id).unwrap();
+        repo.purge_deleted_entry(id, true).unwrap();
 
         let ref_count_after: i64 = repo
             .with_connection(|conn, _cache| {
@@ -1249,7 +1359,7 @@ mod tests {
         let content_id = insert_content(&repo, 1, 0xAA);
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
 
-        let err = repo.purge_deleted_entry(id).unwrap_err();
+        let err = repo.purge_deleted_entry(id, true).unwrap_err();
         assert!(matches!(err, Error::NotSoftDeleted(_)));
         assert_eq!(
             row_count(&repo, id),
@@ -1261,14 +1371,14 @@ mod tests {
     #[test]
     fn purge_deleted_entry_refuses_a_nonexistent_id() {
         let (repo, _dir) = repo();
-        let err = repo.purge_deleted_entry(999).unwrap_err();
+        let err = repo.purge_deleted_entry(999, true).unwrap_err();
         assert!(matches!(err, Error::NoSuchEntry(999)));
     }
 
     #[test]
     fn purge_deleted_entry_refuses_the_root() {
         let (repo, _dir) = repo();
-        let err = repo.purge_deleted_entry(0).unwrap_err();
+        let err = repo.purge_deleted_entry(0, true).unwrap_err();
         assert!(matches!(err, Error::CannotRemoveRoot));
     }
 
@@ -1282,7 +1392,7 @@ mod tests {
         repo.rmdir(dir_id, 200).unwrap();
 
         let result = repo
-            .purge_deleted_entry(dir_id)
+            .purge_deleted_entry(dir_id, true)
             .expect("purge of the directory must also purge its own deleted child");
 
         assert_eq!(
@@ -1299,6 +1409,44 @@ mod tests {
     }
 
     #[test]
+    fn purge_deleted_entry_non_recursive_refuses_a_directory_with_soft_deleted_children() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "a", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let file_id = repo.settle_file(dir_id, "f.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 150).unwrap();
+        repo.rmdir(dir_id, 200).unwrap();
+
+        let err = repo
+            .purge_deleted_entry(dir_id, false)
+            .expect_err("must refuse - the directory still has a soft-deleted child");
+        assert!(matches!(err, Error::DirectoryNotEmpty(id) if id == dir_id));
+        assert_eq!(
+            row_count(&repo, dir_id),
+            1,
+            "a refused non-recursive purge must leave the directory untouched"
+        );
+        assert_eq!(
+            row_count(&repo, file_id),
+            1,
+            "a refused non-recursive purge must leave the child untouched"
+        );
+    }
+
+    #[test]
+    fn purge_deleted_entry_non_recursive_succeeds_on_an_empty_soft_deleted_directory() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "empty", 100).unwrap();
+        repo.rmdir(dir_id, 200).unwrap();
+
+        let result = repo.purge_deleted_entry(dir_id, false).expect(
+            "must succeed - the directory has no children to conflict with recursive=false",
+        );
+        assert_eq!(result.descendants, 0);
+        assert_eq!(row_count(&repo, dir_id), 0);
+    }
+
+    #[test]
     fn purge_deleted_entry_reclaims_bytes_for_content_nothing_else_references() {
         let (repo, _dir) = repo();
         let (chunk_id, _ranges) = repo.reserve_and_insert_chunk(10, &[0xAA; 20]).unwrap();
@@ -1308,7 +1456,9 @@ mod tests {
         let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
         repo.unlink_file(id, 200).unwrap();
 
-        let result = repo.purge_deleted_entry(id).expect("purge must succeed");
+        let result = repo
+            .purge_deleted_entry(id, true)
+            .expect("purge must succeed");
 
         assert_eq!(
             result.reclaimed_bytes, 10,
@@ -1342,7 +1492,7 @@ mod tests {
         repo.unlink_file(first_id, 200).unwrap();
 
         let result = repo
-            .purge_deleted_entry(first_id)
+            .purge_deleted_entry(first_id, true)
             .expect("purge must succeed");
 
         assert_eq!(
@@ -1385,6 +1535,29 @@ mod tests {
     fn entry_by_id_returns_none_for_an_unknown_id() {
         let (repo, _dir) = repo();
         assert!(repo.entry_by_id(999).unwrap().is_none());
+    }
+
+    #[test]
+    fn deleted_entry_by_id_returns_none_for_a_live_entry() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        assert!(repo.deleted_entry_by_id(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn deleted_entry_by_id_returns_the_entry_once_soft_deleted() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        repo.rmdir(id, 200).unwrap();
+        let entry = repo.deleted_entry_by_id(id).unwrap().unwrap();
+        assert_eq!(entry.entry.id, id);
+        assert_eq!(entry.deleted_at, 200);
+    }
+
+    #[test]
+    fn deleted_entry_by_id_returns_none_for_an_unknown_id() {
+        let (repo, _dir) = repo();
+        assert!(repo.deleted_entry_by_id(999).unwrap().is_none());
     }
 
     #[test]
@@ -1491,5 +1664,140 @@ mod tests {
             .expect("replacing an existing file must succeed without no_replace");
         let replaced = repo.resolve_path("/new.txt").unwrap().unwrap();
         assert_eq!(replaced.id, 1);
+    }
+
+    #[test]
+    fn recover_deleted_entry_makes_it_live_again_at_the_given_location() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+        assert!(repo.resolve_path("/a.txt").unwrap().is_none());
+
+        repo.recover_deleted_entry(id, 0, "recovered.txt", false, 300)
+            .expect("recovery must succeed");
+
+        let entry = repo.resolve_path("/recovered.txt").unwrap().unwrap();
+        assert_eq!(entry.id, id);
+        assert!(
+            repo.deleted_entry_by_id(id).unwrap().is_none(),
+            "a recovered entry is no longer soft-deleted"
+        );
+    }
+
+    #[test]
+    fn recover_deleted_entry_can_recover_into_a_different_live_directory() {
+        let (repo, _dir) = repo();
+        let dest = repo.mkdir(0, "dest", 50).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        repo.recover_deleted_entry(id, dest, "a.txt", false, 300)
+            .expect("recovery must succeed");
+
+        assert_eq!(repo.resolve_path("/dest/a.txt").unwrap().unwrap().id, id);
+    }
+
+    #[test]
+    fn recover_deleted_entry_bumps_the_new_parents_mtime() {
+        let (repo, _dir) = repo();
+        let dest = repo.mkdir(0, "dest", 50).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        repo.recover_deleted_entry(id, dest, "a.txt", false, 300)
+            .unwrap();
+
+        assert_eq!(
+            repo.resolve_path("/dest").unwrap().unwrap().time_millis,
+            300
+        );
+    }
+
+    #[test]
+    fn recover_deleted_entry_refuses_a_live_entry() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+
+        let err = repo
+            .recover_deleted_entry(id, 0, "a.txt", false, 200)
+            .unwrap_err();
+        assert!(matches!(err, Error::NotSoftDeleted(_)));
+    }
+
+    #[test]
+    fn recover_deleted_entry_refuses_a_nonexistent_id() {
+        let (repo, _dir) = repo();
+        let err = repo
+            .recover_deleted_entry(999, 0, "a.txt", false, 200)
+            .unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn recover_deleted_entry_refuses_a_nonexistent_target_parent() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        let err = repo
+            .recover_deleted_entry(id, 999, "a.txt", false, 300)
+            .unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn recover_deleted_entry_refuses_a_file_target_parent() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let other_content = insert_content(&repo, 2, 0xBB);
+        let file_parent = repo
+            .settle_file(0, "not-a-dir.txt", 50, other_content)
+            .unwrap();
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+
+        let err = repo
+            .recover_deleted_entry(id, file_parent, "a.txt", false, 300)
+            .unwrap_err();
+        assert!(matches!(err, Error::WrongKind(_)));
+    }
+
+    #[test]
+    fn recover_deleted_entry_replaces_an_existing_live_file_unless_no_replace_is_set() {
+        let (repo, _dir) = repo();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+        let id = repo.settle_file(0, "a.txt", 100, content_a).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+        repo.settle_file(0, "a.txt", 250, content_b).unwrap();
+
+        let err = repo
+            .recover_deleted_entry(id, 0, "a.txt", true, 300)
+            .unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
+
+        repo.recover_deleted_entry(id, 0, "a.txt", false, 300)
+            .expect("replacing an existing live file must succeed without no_replace");
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(live.id, id);
+    }
+
+    #[test]
+    fn recover_deleted_entry_refuses_replacing_an_existing_live_directory() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a", 100, content_id).unwrap();
+        repo.unlink_file(id, 200).unwrap();
+        repo.mkdir(0, "a", 250).unwrap();
+
+        let err = repo
+            .recover_deleted_entry(id, 0, "a", false, 300)
+            .unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
     }
 }

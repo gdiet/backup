@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem, StatfsInfo};
 
+use crate::deleted;
 use crate::failure_log::{Failure, FailureLog};
 use crate::pending_files::{NewGeneration, PendingFiles};
 use crate::ram_budget::{self, DispatchPool};
@@ -34,6 +35,16 @@ pub struct Tuning {
     /// (`--backpressure-free-zone-bytes`/`--backpressure-slope-divisor`).
     pub backpressure_free_zone_bytes: u64,
     pub backpressure_slope_divisor: u128,
+    /// REQ-MOUNT-004's base opt-in (`--show-deleted`): makes REQ-TREE-009's `[deleted]` view (and
+    /// REQ-MOUNT-008's own `[time]` presentation of it) visible and browsable. Available on a
+    /// read-only mount too - recovery via move-out needs `read_write` as well, but browsing does
+    /// not.
+    pub show_deleted: bool,
+    /// REQ-MOUNT-007's second, escalating opt-in (`--purge`): additionally allows permanently
+    /// purging an entry from inside the view. Meaningless without `show_deleted`, and without
+    /// `read_write` - nothing mutating is ever allowed on a read-only mount regardless of this
+    /// flag.
+    pub allow_purge: bool,
 }
 
 pub struct DedupFs {
@@ -50,6 +61,8 @@ pub struct DedupFs {
     failure_log: Option<Arc<FailureLog>>,
     backpressure_free_zone_bytes: u64,
     backpressure_slope_divisor: u128,
+    show_deleted: bool,
+    allow_purge: bool,
 }
 
 impl DedupFs {
@@ -132,6 +145,8 @@ impl DedupFs {
             failure_log,
             backpressure_free_zone_bytes: tuning.backpressure_free_zone_bytes,
             backpressure_slope_divisor: tuning.backpressure_slope_divisor,
+            show_deleted: tuning.show_deleted,
+            allow_purge: tuning.allow_purge,
         })
     }
 }
@@ -169,8 +184,11 @@ fn to_errno(err: db::Error) -> Errno {
         | db::Error::LockUnavailable { .. }
         | db::Error::LockFileInaccessible { .. }
         | db::Error::ConnectionUnreliable(_)
-        // Never actually reaches here either: `DedupFs` never calls `purge_deleted_entry`
-        // (REQ-CLI-003's `--purge` case is CLI-only, not exposed through the mount).
+        // `unlink`/`rmdir`/`rename` against a `[deleted]`-addressed entry (REQ-MOUNT-007) resolve
+        // the path and call `purge_deleted_entry`/`recover_deleted_entry` as two separate calls,
+        // each its own transaction - a concurrent recovery of the same entry racing in between
+        // (single-threaded per call, but nothing stops a different handle) is the one way this
+        // reaches here for real, not a normal user-facing path.
         | db::Error::NotSoftDeleted(_)
         // Never actually reaches here either: `DedupFs` never calls `backup_metadata`/
         // `restore_metadata` (REQ-MAINTENANCE-001/002 are CLI-only, not exposed through the mount).
@@ -200,12 +218,140 @@ fn split_path(path: &str) -> Result<(&str, &str), Errno> {
     }
 }
 
+/// What a mount path resolves to once REQ-MOUNT-004/007/008's `[deleted]`/`[time]` addressing is
+/// taken into account - `crate::deleted::Resolved` plus [`TimeChildren`](Self::TimeChildren), the
+/// mount-only `[time]` view REQ-MOUNT-008 adds on top of it (never reached by `dfs list`/`dfs
+/// restore`, so it has no place in `crate::deleted::Resolved` itself).
+#[derive(Clone, Copy)]
+enum MountPath {
+    Live(db::Entry),
+    /// The `[deleted]` segment itself, naming `parent_id`'s own soft-deleted children.
+    DeletedChildren {
+        parent_id: i64,
+    },
+    /// The `[deleted]/[time]` segment - the same children as `DeletedChildren`, displayed with
+    /// REQ-MOUNT-008's always-timestamp-prefixed names instead.
+    TimeChildren {
+        parent_id: i64,
+    },
+    /// One specific soft-deleted entry, addressed by its own disambiguated (`[deleted]`) or
+    /// always-prefixed (`[time]`) display name - both name the same entry, indistinguishable from
+    /// here on.
+    Deleted(db::DeletedEntry),
+}
+
+impl From<deleted::Resolved> for MountPath {
+    fn from(resolved: deleted::Resolved) -> Self {
+        match resolved {
+            deleted::Resolved::Live(entry) => MountPath::Live(entry),
+            deleted::Resolved::DeletedChildren { parent_id } => {
+                MountPath::DeletedChildren { parent_id }
+            }
+            deleted::Resolved::Deleted(entry) => MountPath::Deleted(entry),
+        }
+    }
+}
+
 impl DedupFs {
-    fn resolve_required(&self, path: &str) -> Result<db::Entry, Errno> {
-        self.repo
-            .resolve_path(path)
+    /// Resolves `path`, honoring REQ-MOUNT-004/007/008's `[deleted]`/`[time]` addressing when
+    /// `self.show_deleted` is on - entirely inert when it is off, in which case this is exactly
+    /// `self.repo.resolve_path(path).map(MountPath::Live)`: `[deleted]`/`[time]` are not special
+    /// at all, the same as any other name that happens not to exist (REQ-MOUNT-004's own
+    /// off-by-default opt-in).
+    ///
+    /// `[time]` only ever appears immediately after a `[deleted]`-view resolution (REQ-MOUNT-008:
+    /// a second presentation of that one view, not its own independently addressable segment
+    /// anywhere else) - found by scanning for a `[time]` segment whose own preceding path segments
+    /// resolve to exactly [`MountPath::DeletedChildren`], so a live entry (or a soft-deleted one,
+    /// reached through a *different* `[deleted]` step) literally named `[time]` elsewhere is never
+    /// shadowed by this. One known, narrow limitation this does not resolve: a soft-deleted entry
+    /// literally named `[time]`, sitting directly inside the very `[deleted]` view being addressed,
+    /// becomes unreachable by that literal name once `[time]`'s own synthetic view takes the same
+    /// slot - REQ-TREE-009 solves the analogous, far more likely outer collision (a live entry
+    /// named `[deleted]`) explicitly; this inner one is not addressed by any agreed requirement
+    /// today and is left as a documented gap rather than inventing an unrequested escaping scheme.
+    fn resolve_mount_path(&self, path: &str) -> Result<Option<MountPath>, db::Error> {
+        if !self.show_deleted {
+            return Ok(self.repo.resolve_path(path)?.map(MountPath::Live));
+        }
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        for time_index in 0..segments.len() {
+            if segments[time_index] != deleted::TIME_SEGMENT {
+                continue;
+            }
+            let prefix = segments[..time_index].join("/");
+            let Some(deleted::Resolved::DeletedChildren { parent_id }) =
+                deleted::resolve_within(&self.repo, &prefix, mountfs::MAX_NAME_BYTES)?
+            else {
+                continue;
+            };
+            if time_index + 1 == segments.len() {
+                return Ok(Some(MountPath::TimeChildren { parent_id }));
+            }
+            let children = self.repo.list_deleted_children(parent_id)?;
+            let Some(entry) = deleted::find_by_timestamped_name(
+                &children,
+                segments[time_index + 1],
+                Some(mountfs::MAX_NAME_BYTES),
+            ) else {
+                return Ok(None);
+            };
+            return Ok(deleted::continue_from_deleted_entry(
+                &self.repo,
+                entry,
+                &segments,
+                time_index + 2,
+                Some(mountfs::MAX_NAME_BYTES),
+            )?
+            .map(MountPath::from));
+        }
+        Ok(
+            deleted::resolve_within(&self.repo, path, mountfs::MAX_NAME_BYTES)?
+                .map(MountPath::from),
+        )
+    }
+
+    fn resolve_mount_path_required(&self, path: &str) -> Result<MountPath, Errno> {
+        self.resolve_mount_path(path)
             .map_err(|e| self.to_errno_reporting_connection_death(e))?
             .ok_or(Errno::ENOENT)
+    }
+
+    /// The live entry at `parent_path`, required to be a real, live directory - `mkdir`/`create`/
+    /// `rename`/`utimens`'s own shared parent-resolution step. Refuses with `EACCES` rather than
+    /// `ENOENT`/`ENOTDIR` when `parent_path` resolves to any of REQ-MOUNT-004/007/008's synthetic
+    /// `[deleted]`/`[time]` locations - REQ-MOUNT-007: never a false success creating or moving
+    /// something into the view, always a clear, deliberate refusal instead.
+    fn resolve_live_parent(&self, parent_path: &str) -> Result<db::Entry, Errno> {
+        match self.resolve_mount_path_required(parent_path)? {
+            MountPath::Live(entry) => Ok(entry),
+            MountPath::DeletedChildren { .. }
+            | MountPath::TimeChildren { .. }
+            | MountPath::Deleted(_) => Err(Errno::EACCES),
+        }
+    }
+
+    /// The most recently soft-deleted child's own deletion timestamp among `parent_id`'s
+    /// soft-deleted children, as [`Attr::mtime_millis`] for the `[deleted]`/`[time]` view
+    /// containers themselves - `0` if there are none (a view is always addressable directly, per
+    /// REQ-TREE-009, even where nothing has ever been deleted at that location). Not covered by
+    /// any requirement's own guarantee, unlike a *contained* entry's real mtime (REQ-MOUNT-008);
+    /// matches `crate::list.rs`'s own established convention for the same synthetic marker.
+    fn synthetic_dir_attr(&self, parent_id: i64) -> Result<Attr, Errno> {
+        let children = self
+            .repo
+            .list_deleted_children(parent_id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+        let mtime_millis = children
+            .iter()
+            .map(|(_, e)| e.deleted_at)
+            .max()
+            .unwrap_or(0);
+        Ok(Attr {
+            kind: FileKind::Directory,
+            size: 0,
+            mtime_millis,
+        })
     }
 
     fn require_read_write(&self) -> Result<(), Errno> {
@@ -301,55 +447,177 @@ impl DedupFs {
             });
         }
     }
+
+    /// Appends REQ-TREE-009's `[deleted]` marker entry to `result` if `parent_id` has any
+    /// soft-deleted children - `readdir`'s own convention for both a live directory and a
+    /// soft-deleted directory's synthetic view (REQ-TREE-008: the latter's children are always
+    /// themselves soft-deleted, so the same marker-if-nonempty rule applies one level down).
+    /// Mirrors `crate::list.rs`'s established convention for the same marker.
+    fn push_deleted_marker(&self, result: &mut Vec<DirEntry>, parent_id: i64) -> Result<(), Errno> {
+        let children = self
+            .repo
+            .list_deleted_children(parent_id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+        if !children.is_empty() {
+            result.push(DirEntry {
+                name: deleted::DELETED_SEGMENT.to_string(),
+                kind: FileKind::Directory,
+            });
+        }
+        Ok(())
+    }
+
+    /// `readdir` for [`MountPath::DeletedChildren`]: `parent_id`'s own soft-deleted children under
+    /// REQ-TREE-009's disambiguated names, plus REQ-MOUNT-008's `[time]` marker so its own
+    /// chronological presentation of the same data stays discoverable by browsing.
+    fn readdir_deleted_children(&self, parent_id: i64) -> Result<Vec<DirEntry>, Errno> {
+        let children = self
+            .repo
+            .list_deleted_children(parent_id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+        let mut result: Vec<DirEntry> =
+            deleted::display_names_within(&children, mountfs::MAX_NAME_BYTES)
+                .into_iter()
+                .zip(&children)
+                .map(|(name, (_, entry))| DirEntry {
+                    name,
+                    kind: kind_to_mountfs(entry.entry.kind),
+                })
+                .collect();
+        result.push(DirEntry {
+            name: deleted::TIME_SEGMENT.to_string(),
+            kind: FileKind::Directory,
+        });
+        Ok(result)
+    }
+
+    /// `readdir` for [`MountPath::TimeChildren`]: the same children as
+    /// [`Self::readdir_deleted_children`], under REQ-MOUNT-008's always-timestamp-prefixed names
+    /// instead - no further synthetic entries, since `[time]` is not itself nested any deeper.
+    fn readdir_time_children(&self, parent_id: i64) -> Result<Vec<DirEntry>, Errno> {
+        let children = self
+            .repo
+            .list_deleted_children(parent_id)
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+        Ok(
+            deleted::timestamped_display_names(&children, Some(mountfs::MAX_NAME_BYTES))
+                .into_iter()
+                .zip(&children)
+                .map(|(name, (_, entry))| DirEntry {
+                    name,
+                    kind: kind_to_mountfs(entry.entry.kind),
+                })
+                .collect(),
+        )
+    }
 }
 
 impl MountFilesystem for DedupFs {
     fn getattr(&self, path: &str) -> Result<Attr, Errno> {
-        let entry = self.resolve_required(path)?;
-        let size = if entry.kind == db::EntryKind::File {
-            self.pending.current_size(entry.id).unwrap_or(entry.size)
-        } else {
-            entry.size
-        };
-        Ok(Attr {
-            kind: kind_to_mountfs(entry.kind),
-            size,
-            mtime_millis: entry.time_millis,
-        })
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => {
+                let size = if entry.kind == db::EntryKind::File {
+                    self.pending.current_size(entry.id).unwrap_or(entry.size)
+                } else {
+                    entry.size
+                };
+                Ok(Attr {
+                    kind: kind_to_mountfs(entry.kind),
+                    size,
+                    mtime_millis: entry.time_millis,
+                })
+            }
+            MountPath::DeletedChildren { parent_id } | MountPath::TimeChildren { parent_id } => {
+                self.synthetic_dir_attr(parent_id)
+            }
+            // REQ-MOUNT-008: `st_mtime` is always the entry's own real, stored modification time,
+            // never the deletion time, in either presentation - `entry.time_millis` already is.
+            MountPath::Deleted(entry) => Ok(Attr {
+                kind: kind_to_mountfs(entry.entry.kind),
+                size: entry.entry.size,
+                mtime_millis: entry.entry.time_millis,
+            }),
+        }
     }
 
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno> {
-        let entry = self.resolve_required(path)?;
-        if entry.kind != db::EntryKind::Dir {
-            return Err(Errno::ENOTDIR);
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => {
+                if entry.kind != db::EntryKind::Dir {
+                    return Err(Errno::ENOTDIR);
+                }
+                let children = self
+                    .repo
+                    .list_children(entry.id)
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+                // REQ-TREE-009: a real live entry already named `[deleted]` wins outright - it is
+                // already in `children` above, so the marker below is only added when nothing
+                // real occupies that name yet (matches `crate::list.rs`'s own convention).
+                let already_real = children
+                    .iter()
+                    .any(|(name, _)| name == deleted::DELETED_SEGMENT);
+                let mut result: Vec<DirEntry> = children
+                    .into_iter()
+                    .map(|(name, child)| DirEntry {
+                        name,
+                        kind: kind_to_mountfs(child.kind),
+                    })
+                    .collect();
+                if self.show_deleted && !already_real {
+                    self.push_deleted_marker(&mut result, entry.id)?;
+                }
+                Ok(result)
+            }
+            MountPath::DeletedChildren { parent_id } => self.readdir_deleted_children(parent_id),
+            MountPath::TimeChildren { parent_id } => self.readdir_time_children(parent_id),
+            MountPath::Deleted(entry) => {
+                if entry.entry.kind != db::EntryKind::Dir {
+                    return Err(Errno::ENOTDIR);
+                }
+                // REQ-TREE-008: a soft-deleted directory's own children are always themselves
+                // soft-deleted, so browsing further one level down works the same way the base
+                // `[deleted]` marker does for a live directory - never any live children to list.
+                let mut result = Vec::new();
+                self.push_deleted_marker(&mut result, entry.entry.id)?;
+                Ok(result)
+            }
         }
-        let children = self
-            .repo
-            .list_children(entry.id)
-            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
-        Ok(children
-            .into_iter()
-            .map(|(name, entry)| DirEntry {
-                name,
-                kind: kind_to_mountfs(entry.kind),
-            })
-            .collect())
     }
 
     fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
-        let entry = self.resolve_required(path)?;
-        if entry.kind == db::EntryKind::Dir {
-            return Err(Errno::EISDIR);
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => {
+                if entry.kind == db::EntryKind::Dir {
+                    return Err(Errno::EISDIR);
+                }
+                if write_intent {
+                    self.require_read_write()?;
+                    self.require_not_degraded()?;
+                }
+                // Every open counts toward the same handle count, read or write intent alike - a
+                // lingering reader delays a written generation's hand-off to the settle pool,
+                // which only costs latency, not correctness (DESIGN-MOUNT-007 keeps its content
+                // visible regardless).
+                self.pending.open(entry.id);
+                Ok(Handle(entry.id as u64))
+            }
+            MountPath::DeletedChildren { .. } | MountPath::TimeChildren { .. } => {
+                Err(Errno::EISDIR)
+            }
+            MountPath::Deleted(entry) => {
+                if entry.entry.kind == db::EntryKind::Dir {
+                    return Err(Errno::EISDIR);
+                }
+                if write_intent {
+                    return Err(Errno::EACCES);
+                }
+                // Deliberately not registered with `self.pending` - a soft-deleted entry's
+                // content never changes, so there is nothing for `write`/`truncate`/`release` to
+                // track here (`release`'s underlying `PendingFiles::release` already safely
+                // no-ops for a `file_id` never registered via `pending.open`).
+                Ok(Handle(entry.entry.id as u64))
+            }
         }
-        if write_intent {
-            self.require_read_write()?;
-            self.require_not_degraded()?;
-        }
-        // Every open counts toward the same handle count, read or write intent alike - a
-        // lingering reader delays a written generation's hand-off to the settle pool, which only
-        // costs latency, not correctness (DESIGN-MOUNT-007 keeps its content visible regardless).
-        self.pending.open(entry.id);
-        Ok(Handle(entry.id as u64))
     }
 
     fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
@@ -363,14 +631,26 @@ impl MountFilesystem for DedupFs {
         if let Some(result) = self.pending.read(file_id, offset, size, &resolve_content) {
             return result.map_err(|_| Errno::EIO);
         }
-        let entry = self
+        let live_entry = self
             .repo
             .entry_by_id(file_id)
-            .map_err(|e| self.to_errno_reporting_connection_death(e))?
-            .ok_or(Errno::EIO)?;
-        let content_id = entry.content_id.expect(
-            "kind=File entries always have a content_id (chk_tree_entries_kind_content_id)",
-        );
+            .map_err(|e| self.to_errno_reporting_connection_death(e))?;
+        // A `Handle` opened against a `MountPath::Deleted` entry (REQ-MOUNT-004) never registers
+        // with `self.pending` (see `open`'s own doc comment), so its content is only ever found
+        // here, not above - falls back to the soft-deleted lookup when the live one comes up
+        // empty.
+        let content_id = match live_entry {
+            Some(entry) => entry.content_id,
+            None => {
+                let deleted_entry = self
+                    .repo
+                    .deleted_entry_by_id(file_id)
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))?
+                    .ok_or(Errno::EIO)?;
+                deleted_entry.entry.content_id
+            }
+        }
+        .expect("kind=File entries always have a content_id (chk_tree_entries_kind_content_id)");
         crate::content_reader::read_content(&self.repo, &self.store, content_id, offset, size)
     }
 
@@ -389,7 +669,7 @@ impl MountFilesystem for DedupFs {
     fn mkdir(&self, path: &str) -> Result<(), Errno> {
         self.require_read_write()?;
         let (parent_path, name) = split_path(path)?;
-        let parent = self.resolve_required(parent_path)?;
+        let parent = self.resolve_live_parent(parent_path)?;
         self.repo
             .mkdir(parent.id, name, now_millis())
             .map_err(|e| self.to_errno_reporting_connection_death(e))?;
@@ -400,7 +680,7 @@ impl MountFilesystem for DedupFs {
         self.require_read_write()?;
         self.require_not_degraded()?;
         let (parent_path, name) = split_path(path)?;
-        let parent = self.resolve_required(parent_path)?;
+        let parent = self.resolve_live_parent(parent_path)?;
         // DESIGN-MOUNT-015: settles the canonical empty content immediately, so the new file has
         // a real tree_entries.id (and is visible to getattr/readdir/a second open) from the
         // start - no separate in-memory bookkeeping needed for "not yet in the database" at all.
@@ -425,47 +705,117 @@ impl MountFilesystem for DedupFs {
 
     fn unlink(&self, path: &str) -> Result<(), Errno> {
         self.require_read_write()?;
-        let entry = self.resolve_required(path)?;
-        if entry.kind != db::EntryKind::File {
-            return Err(Errno::EISDIR);
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => {
+                if entry.kind != db::EntryKind::File {
+                    return Err(Errno::EISDIR);
+                }
+                self.repo
+                    .unlink_file(entry.id, now_millis())
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))
+            }
+            // REQ-MOUNT-007: the view itself is never a delete target.
+            MountPath::DeletedChildren { .. } | MountPath::TimeChildren { .. } => {
+                Err(Errno::EACCES)
+            }
+            MountPath::Deleted(entry) => {
+                if entry.entry.kind != db::EntryKind::File {
+                    return Err(Errno::EISDIR);
+                }
+                if !self.allow_purge {
+                    return Err(Errno::EACCES);
+                }
+                self.repo
+                    .purge_deleted_entry(entry.entry.id, false)
+                    .map(|_| ())
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))
+            }
         }
-        self.repo
-            .unlink_file(entry.id, now_millis())
-            .map_err(|e| self.to_errno_reporting_connection_death(e))
     }
 
     fn rmdir(&self, path: &str) -> Result<(), Errno> {
         self.require_read_write()?;
-        let entry = self.resolve_required(path)?;
-        self.repo
-            .rmdir(entry.id, now_millis())
-            .map_err(|e| self.to_errno_reporting_connection_death(e))
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => self
+                .repo
+                .rmdir(entry.id, now_millis())
+                .map_err(|e| self.to_errno_reporting_connection_death(e)),
+            // REQ-MOUNT-007: the view itself is never a delete target.
+            MountPath::DeletedChildren { .. } | MountPath::TimeChildren { .. } => {
+                Err(Errno::EACCES)
+            }
+            MountPath::Deleted(entry) => {
+                if entry.entry.kind != db::EntryKind::Dir {
+                    return Err(Errno::ENOTDIR);
+                }
+                if !self.allow_purge {
+                    return Err(Errno::EACCES);
+                }
+                // REQ-MOUNT-007's non-recursive refusal: `purge_deleted_entry(_, false)` refuses
+                // `ENOTEMPTY` while soft-deleted children remain, matching ordinary `rmdir`'s own
+                // "target must be empty" contract rather than `dfs del --purge`'s recursive one.
+                self.repo
+                    .purge_deleted_entry(entry.entry.id, false)
+                    .map(|_| ())
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))
+            }
+        }
     }
 
     fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
         self.require_read_write()?;
-        let (old_parent_path, old_name) = split_path(old_path)?;
         let (new_parent_path, new_name) = split_path(new_path)?;
-        let old_parent = self.resolve_required(old_parent_path)?;
-        let new_parent = self.resolve_required(new_parent_path)?;
-        self.repo
-            .rename(
-                old_parent.id,
-                old_name,
-                new_parent.id,
-                new_name,
-                no_replace,
-                now_millis(),
-            )
-            .map_err(|e| self.to_errno_reporting_connection_death(e))
+        match self.resolve_mount_path_required(old_path)? {
+            // REQ-MOUNT-007: renaming the view itself is always refused, under either opt-in.
+            MountPath::DeletedChildren { .. } | MountPath::TimeChildren { .. } => {
+                Err(Errno::EACCES)
+            }
+            // REQ-MOUNT-004's recovery move-out: `resolve_live_parent` below already refuses
+            // (`EACCES`) a `new_path` that resolves into or within the view itself, so this is
+            // never reached for anything but a genuine move into the live tree.
+            MountPath::Deleted(entry) => {
+                let new_parent = self.resolve_live_parent(new_parent_path)?;
+                self.repo
+                    .recover_deleted_entry(
+                        entry.entry.id,
+                        new_parent.id,
+                        new_name,
+                        no_replace,
+                        now_millis(),
+                    )
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))
+            }
+            MountPath::Live(_) => {
+                let (old_parent_path, old_name) = split_path(old_path)?;
+                let old_parent = self.resolve_live_parent(old_parent_path)?;
+                let new_parent = self.resolve_live_parent(new_parent_path)?;
+                self.repo
+                    .rename(
+                        old_parent.id,
+                        old_name,
+                        new_parent.id,
+                        new_name,
+                        no_replace,
+                        now_millis(),
+                    )
+                    .map_err(|e| self.to_errno_reporting_connection_death(e))
+            }
+        }
     }
 
     fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
         self.require_read_write()?;
-        let entry = self.resolve_required(path)?;
-        self.repo
-            .set_mtime(entry.id, mtime_millis)
-            .map_err(|e| self.to_errno_reporting_connection_death(e))
+        match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => self
+                .repo
+                .set_mtime(entry.id, mtime_millis)
+                .map_err(|e| self.to_errno_reporting_connection_death(e)),
+            // REQ-MOUNT-007: nothing mutating is allowed against the view beyond the recovery
+            // move-out (`rename`) and, under the second opt-in, purging (`unlink`/`rmdir`).
+            MountPath::DeletedChildren { .. }
+            | MountPath::TimeChildren { .. }
+            | MountPath::Deleted(_) => Err(Errno::EACCES),
+        }
     }
 
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
@@ -493,7 +843,14 @@ impl MountFilesystem for DedupFs {
     fn truncate(&self, path: &str, size: u64) -> Result<(), Errno> {
         self.require_read_write()?;
         self.require_not_degraded()?;
-        let entry = self.resolve_required(path)?;
+        let entry = match self.resolve_mount_path_required(path)? {
+            MountPath::Live(entry) => entry,
+            // REQ-MOUNT-007: nothing mutating is allowed against the view beyond the recovery
+            // move-out (`rename`) and, under the second opt-in, purging (`unlink`/`rmdir`).
+            MountPath::DeletedChildren { .. }
+            | MountPath::TimeChildren { .. }
+            | MountPath::Deleted(_) => return Err(Errno::EACCES),
+        };
         if entry.kind != db::EntryKind::File {
             return Err(Errno::EISDIR);
         }
@@ -526,6 +883,8 @@ mod tests {
             ram_budget_gross_bytes: ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
             backpressure_free_zone_bytes: crate::backpressure::DEFAULT_FREE_ZONE_BYTES,
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
+            show_deleted: false,
+            allow_purge: false,
         }
     }
 
@@ -534,6 +893,30 @@ mod tests {
     /// test inspect what a background settle job eventually commits, which `release`/`truncate`
     /// deliberately never wait for (DESIGN-MOUNT-006).
     fn setup(read_write: bool) -> (DedupFs, db::Repository, store::ByteStore, tempfile::TempDir) {
+        setup_with_tuning(read_write, default_tuning())
+    }
+
+    /// Like [`setup`], but with REQ-MOUNT-004/007's `show_deleted`/`allow_purge` opt-ins
+    /// (otherwise off in [`default_tuning`]) explicitly chosen.
+    fn setup_deleted_view(
+        read_write: bool,
+        show_deleted: bool,
+        allow_purge: bool,
+    ) -> (DedupFs, db::Repository, store::ByteStore, tempfile::TempDir) {
+        setup_with_tuning(
+            read_write,
+            Tuning {
+                show_deleted,
+                allow_purge,
+                ..default_tuning()
+            },
+        )
+    }
+
+    fn setup_with_tuning(
+        read_write: bool,
+        tuning: Tuning,
+    ) -> (DedupFs, db::Repository, store::ByteStore, tempfile::TempDir) {
         let repo_dir = tempfile::tempdir().unwrap();
         let repo_root = repo_dir.path().join("repo");
         db::init_repository(
@@ -545,15 +928,7 @@ mod tests {
         let verify_repo = db::open_repository(&repo_root).unwrap();
         let verify_store = store::ByteStore::new(db::data_dir(&repo_root), true);
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), !read_write);
-        let fs = DedupFs::new(
-            fs_repo,
-            fs_store,
-            read_write,
-            &repo_root,
-            None,
-            default_tuning(),
-        )
-        .unwrap();
+        let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root, None, tuning).unwrap();
         (fs, verify_repo, verify_store, repo_dir)
     }
 
@@ -957,7 +1332,203 @@ mod tests {
         wait_for_settled(&verify_repo, "/a.txt", 0);
 
         fs.unlink("/a.txt").unwrap();
-        assert!(fs.resolve_required("/a.txt").is_err());
+        assert!(fs.resolve_mount_path_required("/a.txt").is_err());
+    }
+
+    /// Creates, releases, and soft-deletes (unlinks) a file named `a.txt` at the repository root -
+    /// the common starting point for the REQ-MOUNT-004/007/008 tests below.
+    fn create_and_delete_a_file(fs: &DedupFs, verify_repo: &db::Repository) {
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello").unwrap();
+        fs.release(handle);
+        wait_for_settled(verify_repo, "/a.txt", 5);
+        fs.unlink("/a.txt").unwrap();
+    }
+
+    #[test]
+    fn the_deleted_view_is_entirely_inert_without_the_show_deleted_opt_in() {
+        let (fs, verify_repo, _store, _dir) = setup(true);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        let root = fs.readdir("/").unwrap();
+        assert!(
+            !root.iter().any(|e| e.name == deleted::DELETED_SEGMENT),
+            "the [deleted] marker must not appear when show_deleted is off"
+        );
+        assert!(fs.getattr("/[deleted]").is_err());
+        assert!(fs.getattr("/[deleted]/a.txt").is_err());
+    }
+
+    #[test]
+    fn show_deleted_reveals_the_marker_and_lists_soft_deleted_children() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        let root = fs.readdir("/").unwrap();
+        let marker = root
+            .iter()
+            .find(|e| e.name == deleted::DELETED_SEGMENT)
+            .expect("the [deleted] marker must appear once there is deletion history");
+        assert_eq!(marker.kind, FileKind::Directory);
+
+        let view = fs.readdir("/[deleted]").unwrap();
+        assert!(view.iter().any(|e| e.name == deleted::TIME_SEGMENT));
+        let entry = view
+            .iter()
+            .find(|e| e.name == "a.txt")
+            .expect("the soft-deleted file must be listed under its own (unambiguous) name");
+        assert_eq!(entry.kind, FileKind::File);
+
+        let attr = fs.getattr("/[deleted]/a.txt").unwrap();
+        assert_eq!(attr.kind, FileKind::File);
+        assert_eq!(attr.size, 5);
+    }
+
+    #[test]
+    fn deleted_entries_are_readable_through_the_view() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        let handle = fs.open("/[deleted]/a.txt", false).unwrap();
+        let data = fs.read(handle, 0, 5).unwrap();
+        assert_eq!(data, b"hello");
+        fs.release(handle);
+    }
+
+    #[test]
+    fn write_intent_against_a_deleted_entry_is_refused() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(
+            fs.open("/[deleted]/a.txt", true).unwrap_err(),
+            Errno::EACCES
+        );
+    }
+
+    #[test]
+    fn the_time_view_lists_the_same_entry_with_its_deletion_timestamp_prefixed() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        let view = fs.readdir("/[deleted]/[time]").unwrap();
+        assert_eq!(view.len(), 1);
+        assert!(view[0].name.ends_with("a.txt"));
+        assert_ne!(view[0].name, "a.txt");
+    }
+
+    #[test]
+    fn recovery_via_rename_moves_a_deleted_entry_back_to_the_live_tree() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        fs.rename("/[deleted]/a.txt", "/restored.txt", false)
+            .unwrap();
+
+        let attr = fs.getattr("/restored.txt").unwrap();
+        assert_eq!(attr.kind, FileKind::File);
+        assert_eq!(attr.size, 5);
+        assert!(
+            fs.readdir("/[deleted]")
+                .unwrap()
+                .iter()
+                .all(|e| e.name == deleted::TIME_SEGMENT),
+            "only the always-present [time] marker should remain once a.txt is gone"
+        );
+    }
+
+    #[test]
+    fn renaming_the_view_itself_is_always_refused() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, true);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(
+            fs.rename("/[deleted]", "/somewhere", false).unwrap_err(),
+            Errno::EACCES
+        );
+    }
+
+    #[test]
+    fn moving_a_live_entry_into_the_view_is_refused() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+        let handle = fs.create("/b.txt").unwrap();
+        fs.release(handle);
+        wait_for_settled(&verify_repo, "/b.txt", 0);
+
+        assert_eq!(
+            fs.rename("/b.txt", "/[deleted]/b.txt", false).unwrap_err(),
+            Errno::EACCES
+        );
+    }
+
+    #[test]
+    fn purge_is_refused_without_the_second_opt_in() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(fs.unlink("/[deleted]/a.txt").unwrap_err(), Errno::EACCES);
+    }
+
+    #[test]
+    fn purge_permanently_removes_the_entry_under_the_second_opt_in() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, true);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        fs.unlink("/[deleted]/a.txt").unwrap();
+        assert!(fs.getattr("/[deleted]/a.txt").is_err());
+        assert!(
+            fs.readdir("/[deleted]")
+                .unwrap()
+                .iter()
+                .all(|e| e.name == deleted::TIME_SEGMENT),
+            "only the always-present [time] marker should remain once a.txt is gone"
+        );
+    }
+
+    #[test]
+    fn rmdir_on_the_view_itself_is_always_refused() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, true);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(fs.rmdir("/[deleted]").unwrap_err(), Errno::EACCES);
+    }
+
+    #[test]
+    fn rmdir_of_a_deleted_directory_refuses_ontop_of_soft_deleted_children_non_recursively() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, true);
+        fs.mkdir("/dir").unwrap();
+        let handle = fs.create("/dir/child.txt").unwrap();
+        fs.release(handle);
+        wait_for_settled(&verify_repo, "/dir/child.txt", 0);
+        fs.unlink("/dir/child.txt").unwrap();
+        fs.rmdir("/dir").unwrap();
+
+        assert_eq!(fs.rmdir("/[deleted]/dir").unwrap_err(), Errno::ENOTEMPTY);
+    }
+
+    #[test]
+    fn mkdir_and_create_refuse_a_parent_inside_the_view() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(fs.mkdir("/[deleted]/sub").unwrap_err(), Errno::EACCES);
+        assert_eq!(fs.create("/[deleted]/new.txt").unwrap_err(), Errno::EACCES);
+    }
+
+    #[test]
+    fn utimens_and_truncate_refuse_a_target_inside_the_view() {
+        let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true, false);
+        create_and_delete_a_file(&fs, &verify_repo);
+
+        assert_eq!(
+            fs.utimens("/[deleted]/a.txt", 123).unwrap_err(),
+            Errno::EACCES
+        );
+        assert_eq!(
+            fs.truncate("/[deleted]/a.txt", 0).unwrap_err(),
+            Errno::EACCES
+        );
     }
 
     #[test]

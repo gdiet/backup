@@ -157,7 +157,7 @@ fn delete_deleted(
         ));
     }
     let result = repo
-        .purge_deleted_entry(entry.entry.id)
+        .purge_deleted_entry(entry.entry.id, true)
         .map_err(|err| format!("error: {err}"))?;
     Ok(format!(
         "permanently purged {path}{} ({} bytes reclaimed)",

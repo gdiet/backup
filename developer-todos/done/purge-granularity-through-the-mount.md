@@ -48,3 +48,38 @@ a read-only mount too (REQ-MOUNT-004's text is not fully explicit about this).
 When picked up: confirm the `recursive: bool` approach (or an alternative, e.g. two separate
 functions instead of one flag) with the developer, then implement REQ-MOUNT-004/007/008's actual
 mount-side wiring - none of it exists yet in `crates/cli/src/dedup_fs.rs`/`mount.rs` today.
+
+## Done
+
+2026-09-23. The developer confirmed all three open points: the `recursive: bool` parameter on
+`purge_deleted_entry` as proposed; `--show-deleted`/`--purge` as the two `dfs mount` flag names;
+`--show-deleted` available on a read-only mount too.
+
+- `crates/db/src/tree.rs`/`lib.rs`: `purge_deleted_entry` gained `recursive: bool` (`dfs del
+  --purge` keeps calling it with `true`; the mount's `unlink`/`rmdir` call it with `false`, refusing
+  `Error::DirectoryNotEmpty`/`Errno::ENOTEMPTY` while soft-deleted children remain). New
+  `deleted_entry_by_id`/`recover_deleted_entry` operations back the mount's `getattr`/`open`/`read`
+  on a `[deleted]`-addressed entry and REQ-MOUNT-004's move-out recovery (`rename`), reusing
+  `rename`'s own REQ-MOUNT-009 collision rules.
+- `crates/cli/src/deleted.rs`: `resolve()`'s phase-2 (matching/descending through `[deleted]`
+  segments) refactored into reusable `resolve_deleted_children`/`continue_from_deleted_entry`, and
+  extended with length-aware (`mountfs::MAX_NAME_BYTES`) variants (`resolve_within`,
+  `display_names_within`) and REQ-MOUNT-008's `[time]` presentation
+  (`timestamped_display_names`/`find_by_timestamped_name`), all additive - no existing public
+  signature changed.
+- `crates/mountfs/src/lib.rs`: added `Errno::EACCES`/`EPERM`.
+- `crates/cli/src/dedup_fs.rs`: a `MountPath` enum (`Live`/`DeletedChildren`/`TimeChildren`/
+  `Deleted`) and `resolve_mount_path` compose `deleted::resolve_within` with the mount-only
+  `[time]` addressing. Every `MountFilesystem` method now honors it: `getattr`/`readdir`/`open`/
+  `read` expose the view (gated on `show_deleted`); `unlink`/`rmdir` purge under `allow_purge`
+  (`ENOTEMPTY` non-recursively, per the granularity decision above); `rename` handles the recovery
+  move-out via `recover_deleted_entry` and refuses any other mutation into/within/of the view
+  itself (`EACCES`); `mkdir`/`create`/`utimens`/`truncate` refuse a target or parent inside the view
+  the same way. 14 new unit tests in `dedup_fs.rs`'s own test module cover all of this.
+- `crates/cli/src/main.rs`/`mount.rs`: `dfs mount` gained `--show-deleted`/`--purge`, threaded
+  through `dedup_fs::Tuning`.
+- `requirements/functional/mount.md`'s REQ-MOUNT-004/007/008 were left at `Status: agreed`
+  deliberately - their own text already conditions that status on confirming behavior against a
+  real Explorer/Nautilus/WinFSP mount, which this environment cannot do; flipping to `implemented`
+  would be premature. Full workspace `cargo build`/`fmt`/`clippy -D warnings`/`test --skip
+  real_mount`/`doc --no-deps` all pass.

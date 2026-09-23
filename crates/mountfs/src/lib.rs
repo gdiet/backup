@@ -37,15 +37,17 @@
 pub struct Errno(pub i32);
 
 impl Errno {
+    pub const EPERM: Errno = Errno(1);
     pub const ENOENT: Errno = Errno(2);
     pub const EIO: Errno = Errno(5);
+    pub const EACCES: Errno = Errno(13);
     pub const EEXIST: Errno = Errno(17);
     pub const ENOTDIR: Errno = Errno(20);
     pub const EISDIR: Errno = Errno(21);
-    pub const EROFS: Errno = Errno(30);
-    pub const ENOTEMPTY: Errno = Errno(39);
-    pub const ENAMETOOLONG: Errno = Errno(36);
     pub const EINVAL: Errno = Errno(22);
+    pub const EROFS: Errno = Errno(30);
+    pub const ENAMETOOLONG: Errno = Errno(36);
+    pub const ENOTEMPTY: Errno = Errno(39);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
