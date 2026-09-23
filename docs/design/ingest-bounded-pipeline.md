@@ -58,6 +58,27 @@ available speedup for that shape of workload. Revisit only if a concrete workloa
 individual files, on storage fast enough for single-thread chunking speed to become the limiting
 factor, turns up - none is known today.
 
+### Alternative considered and rejected: per-file read/persist pipelining
+
+Overlapping one file's own read/CDC/hash work for its next chunk with the current chunk's
+still-in-flight persist - a lightweight, single-file analogue of DESIGN-MOUNT-010's mount write
+cache, without that cache's shared-budget or spillover machinery - was considered and not built.
+
+Writing `a` for read/CDC/hash time and `b` for persist time, one chunk costs `a + b` processed
+sequentially versus close to `max(a, b)` pipelined, for a speedup ceiling of `(a + b) / max(a, b)`:
+exactly `2x` (half the wall time) only where `a` and `b` are close to equal, falling back toward
+`1x` (no benefit) as either stage comes to dominate the other - a fast local read/hash against a
+slow persist target, or the reverse, both erode the ceiling toward zero. This ceiling is only
+reachable at all when a file is effectively running alone: cross-file parallelism above already
+provides the same overlap across every other concurrently active file, so pipelining inside one
+file adds nothing where enough other files are running to keep the worker pool busy. The narrower
+case where it could still matter - REQ-PERFORMANCE-002's own explicitly out-of-scope shape, a batch
+dominated by very few large files, or any batch's natural tail-off as its smaller files finish
+first - is real, but even there the reachable gain is a modest, bounded constant factor, not an
+unbounded one. Given that ceiling, and REQ-PERFORMANCE-002's own rationale for treating this shape
+of workload as secondary, no such pipelining is built for now. Revisit only if practical use turns
+up a workload where it would measurably matter - none is known today.
+
 ### Supersedes `settle-whole-file-memory-bound.md`'s two-pass approach
 
 [`settle-whole-file-memory-bound.md`](settle-whole-file-memory-bound.md) explored bounding

@@ -1,9 +1,9 @@
 # `settle`'s whole-file mode buffers unbounded memory; `ingest` also has no write buffering or parallelism
 
-**Status**: the memory-bound problem and the cross-file-parallelism gap are both resolved (see
-inline notes below). What remains open is narrower than the original title: whether `ingest` needs
-a write-buffering/latency-hiding layer per file, the way the mount's write cache has one. Kept
-under the original title for continuity with its own history.
+**Status**: all three original concerns are now resolved - the memory-bound problem, the
+cross-file-parallelism gap, and (see below) the write-buffering/latency-hiding question, decided
+against building for now rather than left unaddressed. Kept under the original title for
+continuity with its own history.
 
 **Noted**: 2026-09-04, during the informal WebDAV-network-drive performance exploration
 (`performance/notes/2026-09-04-julius-h-webdav-network-drive.md`), after the developer's own
@@ -26,12 +26,12 @@ requirement `--whole-file` is part of), `requirements/non-functional/performance
 
 ## The core problem: `--whole-file` mode buffers the entire content in memory before writing anything
 
-**Resolved** via `developer-todos/ram-budget-and-backpressure-redesign.md`'s implementation:
+**Resolved** via `developer-todos/done/ram-budget-and-backpressure-redesign.md`'s implementation:
 REQ-STORAGE-003 no longer offers a whole-file chunking mode at all (content is always
 content-defined-chunked), so `chunk_buffer` cannot exceed the repository's own configured maximum
 chunk size (96 MiB at the 23-bit ceiling) regardless of input size - see DESIGN-MEMORY-001 in
-[`../docs/design/ram-budget.md`](../docs/design/ram-budget.md) and DESIGN-INGEST-001 in
-[`../docs/design/ingest-bounded-pipeline.md`](../docs/design/ingest-bounded-pipeline.md). The
+[`../../docs/design/ram-budget.md`](../../docs/design/ram-budget.md) and DESIGN-INGEST-001 in
+[`../../docs/design/ingest-bounded-pipeline.md`](../../docs/design/ingest-bounded-pipeline.md). The
 "three levels" (requirement/design/implementation) below were all completed as part of that
 effort; kept here for the historical trail, not as a still-open ask.
 
@@ -116,8 +116,15 @@ in its own right (~0.17-0.21 MB/s, see the notes file above). Two independent fa
   file, reading from the local source and writing straight to `store::ByteStore` (which, for a
   repository on a slow medium, means straight onto that slow medium) with nothing buffering or
   absorbing the cost the way DESIGN-MOUNT-010's memory-then-local-SSD write cache does for a
-  mounted session. **Still open** - not addressed by DESIGN-INGEST-001 (see "What is worth a
-  closer look" below, which still applies to this bullet specifically).
+  mounted session. **Decided against, for now** - see "Alternative considered and rejected:
+  per-file read/persist pipelining" in
+  [`../../docs/design/ingest-bounded-pipeline.md`](../../docs/design/ingest-bounded-pipeline.md): the
+  reachable speedup from pipelining one file's read/hash against its own persist is bounded by a
+  small constant factor (2x at best, only where the two stages take about equally long, falling
+  toward no benefit as either dominates), and only reachable at all when a file runs effectively
+  alone - cross-file parallelism already provides the same overlap whenever enough other files keep
+  the worker pool busy. Real, but narrow: a batch dominated by very few large files, or any batch's
+  natural tail-off as smaller files finish first.
 - **No parallelism across files** - **resolved** by DESIGN-INGEST-001
   (`crates/cli/src/ingest.rs`'s `FileJobPool`): up to `min(ram_budget / max_chunk_size,
   available_parallelism())` files are now processed concurrently, one worker thread per file,
@@ -125,24 +132,30 @@ in its own right (~0.17-0.21 MB/s, see the notes file above). Two independent fa
 
 ### What is worth a closer look
 
-Not yet decided whether either of these is actually a problem worth fixing, or a reasonable
-consequence of `ingest` being a different tool for a different job (a one-shot bulk import,
-run once and waited on, versus a long-lived interactive mount session) - genuinely open, hence
-"confirm before starting" above. Concretely worth examining:
+Resolved while closing out this todo - see the design doc reference above for the write-buffering
+question's own reasoning. Kept here for the historical trail:
 
 - Whether `ingest`'s current single-threaded, unbuffered behavior is a real-world problem for its
   actual use case (REQ-INGEST-001's bulk import of a filesystem tree) or mostly shows up in an
   edge case like this session's slow-network-drive exploration - a large local-disk-to-local-disk
-  ingest never pays anywhere near this cost.
+  ingest never pays anywhere near this cost. **Answered**: bounded to a modest constant factor even
+  in the narrow case where it could matter at all (see above); not worth building preemptively.
 - ~~Whether adding parallelism across files... would help meaningfully~~ - **done**: added via
   DESIGN-INGEST-001's `FileJobPool` (see above).
-- Whether a write cache/buffering layer makes sense for `ingest` at all - unlike a mount session,
-  `ingest` already knows the full source file up front (no incremental `write()` calls arriving
-  from a live client to buffer between), so the *problem* DESIGN-MOUNT-010 solves (decoupling
-  client-visible latency from network cost) may not even apply the same way; parallelism alone
-  might be the more relevant lever here, not buffering.
+- ~~Whether a write cache/buffering layer makes sense for `ingest` at all~~ - **decided against,
+  for now** (see above).
 - If `ingest`'s current numbers are judged to be a real, worthwhile lower bound rather than a
-  representative one, that is itself worth writing down somewhere more permanent than this todo
-  (e.g. a note in `requirements/functional/ingest.md` or a new `DESIGN-INGEST-*` entry) so a future
-  performance comparison does not repeat the "ingest vs mount" mistake this session's own
-  first-draft write-up made before being corrected.
+  representative one, that is itself worth writing down somewhere more permanent than this todo -
+  **done**: `docs/design/ingest-bounded-pipeline.md`'s new subsection is that permanent record.
+
+## Done (2026-09-23)
+
+The write-buffering question is the last of this todo's three original concerns to close: the
+developer's own pipeline-speedup analysis (a two-stage `(a + b) / max(a, b)` ceiling, `2x` at best
+where read/hash and persist take about equally long, and only reachable when a file runs
+effectively alone) confirmed the reachable gain is a modest, bounded constant factor rather than
+worth building preemptively - written up in `docs/design/ingest-bounded-pipeline.md`'s new
+"Alternative considered and rejected: per-file read/persist pipelining" subsection, alongside the
+existing "intra-file parallelism" one it sits next to. No code changes; decided against building,
+not silently dropped.
+
