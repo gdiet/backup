@@ -38,3 +38,38 @@ how long it takes to clear (retry with backoff, timing it) or whether anything s
 clears it. If reproducible, this may be worth an operator-facing note in `docs/development.md` or
 wherever mount troubleshooting guidance would belong, or - if there turns out to be a reliable
 programmatic recovery step - something `dfs mount` itself could attempt before giving up.
+
+## Done
+
+**Completed**: 2026-09-23, by a Claude Code Desktop-App session on `julius` (native Windows, real
+WinFSP), following exactly the suggested approach above.
+
+Built the release CLI, created a throwaway repository, and ran a real `dfs mount --read-write`
+(via `Start-Process`, a genuine separate process - not a test's in-process thread) against it.
+Started a real 20-50 MiB write through the mount on a background job, then force-killed the mount
+process (`Stop-Process -Force`, i.e. `TerminateProcess` - not Ctrl+C) roughly 150-300 ms in, almost
+certainly while the write was still in flight and the process's dispatch thread was blocked inside
+WinFSP.
+
+**Result: no stuck state, every time.** After the write-lock's own already-documented recovery
+(`dfs unlock`, DESIGN-MAINTENANCE-001 - always needed after an abrupt kill, expected and unrelated
+to this question), a fresh `dfs mount` against the same repository - at a new mountpoint path, and
+separately at the *exact same* mountpoint path the killed process had used - started and became
+ready immediately, both times, with no "mount point in use" error at all. Repeated the full
+mount/write/abrupt-kill/unlock/remount cycle four more times in a row (five total): every single
+attempt started and became ready right away. Confirmed each successful mount was not just "started"
+but actually serving requests (a real write through it succeeded).
+
+**Conclusion**: the original "mount point in use" finding does **not** generalize to a real
+operator's `dfs mount` process being killed abruptly - it was specific to how the original test's
+mount thread died (an orphaned background thread inside a `cargo test` process that itself
+continues running other work and exits through the normal test-harness completion path, not a
+genuinely abrupt process-level termination the way `Stop-Process -Force` on a real, single-purpose
+`dfs mount` process is). WinFSP's kernel-mode driver evidently notices a real process's abrupt
+death promptly and cleanly releases its volume registration - the earlier stuck state was a test
+artifact, not a characteristic of this project's actual mount command. No operator-facing
+documentation or programmatic recovery step is needed based on this finding; the existing
+`dfs unlock` guidance for the (unrelated, already-documented) write-lock case remains the only
+actual recovery step needed after a crash.
+
+No Windows restart was needed at any point.
