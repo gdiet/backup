@@ -46,3 +46,34 @@ exists, is unit-tested, and its own doc comment explains it exists specifically 
    the "may refuse to write" concern above - the concrete case this was found for.
 4. Update `docker/samba-mount/README.md`'s "Known limitations" entry once this ships (remove it, or
    note it is resolved).
+
+## Done
+
+`DedupFs` now stores its own `data_dir` (`db::data_dir(repo_root)`, computed once in `new` - the
+same path `mount.rs` already passes to `store::ByteStore::new`), and `statfs`
+(`crates/cli/src/dedup_fs.rs`) calls `mountfs::disk_space(&self.data_dir)`, converting the
+returned (total, available) byte counts to block counts via the existing `block_size = 512`.
+`disk_space`'s own error (never expected in practice - `data/` is created by `create-repo` and
+always exists once a repository is open) maps to `Errno::EIO`, consistent with this file's
+existing style for unexpected I/O failures, rather than silently degrading back to zero.
+
+Added `statfs_reports_the_repository_data_dir_s_real_free_space`, a unit test against the existing
+`setup()` fixture (a real temp-directory repository, so `disk_space` genuinely succeeds). Verified
+red (temporarily reverted to the old zero-default `statfs` body, confirmed the test fails with
+`blocks=0`) and green again, per `AGENTS.md`'s debugging discipline.
+
+Also verified end-to-end against a real mount, beyond the unit test: rebuilt
+`docker/samba-mount/`'s image with this fix and re-ran its own verification session (the same
+repository, read-only) - `smbclient` now reports real free space for the share
+(`1055762868 blocks of size 1024. 766920216 blocks available`), matching `df` on the host almost
+exactly (`1055762868` total 1K-blocks, `767019480` available at the time of the separate `df`
+check moments later - the small available-space drift is expected, not a discrepancy). Not
+verified against real Windows Explorer specifically (no Windows/WinFSP access in this session) -
+the concrete client this was originally found for, so the "may refuse to write" concern is
+resolved in principle (a real, correct free-space figure is now reported) but not re-confirmed
+against that exact client.
+
+Full verification suite green (build/fmt/clippy -D warnings/test --workspace, including
+`real_mount_*`/doc). `docker/samba-mount/README.md`'s "Known limitations" section (which existed
+only for this one entry) is removed, and its "Verification status" section updated to reflect the
+fix instead of the original zero-blocks finding.

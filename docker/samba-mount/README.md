@@ -107,17 +107,6 @@ in `docker logs` - it does not sit out the mount-readiness timeout first. Run `d
 the repository (outside the container, or start this container once with `--read-write`) and
 retry.
 
-## Known limitations of this port, not present in the upstream native mounts
-
-- **No real free-space reporting**: `DedupFs::statfs` (`crates/cli/src/dedup_fs.rs`) currently
-  reports zero total/free blocks rather than a real figure - a Windows client that checks free
-  space before permitting a save (e.g. Explorer) may refuse to write through a `--read-write`
-  mount as a result. `mountfs::disk_space` (`crates/mountfs/src/disk_space.rs`) already exists and
-  is unit-tested, but is not yet wired into `statfs` - tracked separately in
-  `agent-todos/wire-disk-space-into-dedup-fs-statfs.md` rather than fixed here, since it is a
-  `dedup_fs.rs`/`mountfs` gap independent of this Samba experiment, not something specific to
-  running under Docker or Samba.
-
 ## Non-obvious problems already found and addressed here
 
 1. **`libfuse3-3` alone is not enough** - the `fuse3` package (providing the `fusermount3` setuid
@@ -171,9 +160,10 @@ read-only mount coming up and serving real content correctly over a real, authen
 session (`smbclient`: `ls`, `cd`, `get`, content matching byte-for-byte); a `--read-write` mount
 accepting a real `smbclient put`, round-tripping back correctly, and the written content still
 present via `dfs list` after a clean container shutdown; shutdown with a live SMB session attached
-completing in well under a second, not the full grace period. That same `smbclient` session also
-confirmed the "Known limitations" entry above directly: it reported "0 blocks available" for the
-share, matching `statfs`'s current zero-blocks default.
+completing in well under a second, not the full grace period; `smbclient` reporting the
+repository's real free space for the share (matching `df` on the host almost exactly), once
+`agent-todos/done/wire-disk-space-into-dedup-fs-statfs.md` resolved the zero-blocks gap this
+README originally found.
 
 `smb.conf`'s configuration itself (problems 1-4 above) was carried over unchanged from a prior
 implementation's separately-verified version of this same experiment, including a real

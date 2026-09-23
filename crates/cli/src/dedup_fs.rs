@@ -56,6 +56,11 @@ pub struct DedupFs {
     pool: JobPool,
     budget: Arc<MemoryBudget>,
     temp_dir: PathBuf,
+    /// The repository's own `data/` directory (`db::data_dir`) - [`Self::statfs`]'s target for
+    /// [`mountfs::disk_space`], a single-path query rather than an "enumerate every mounted
+    /// filesystem" one specifically to avoid recursing into this process's own mount point (see
+    /// that function's own doc comment).
+    data_dir: PathBuf,
     /// `None` for a read-only mount, which never submits a settle job that could produce a
     /// failure to log (DESIGN-MOUNT-009) in the first place.
     failure_log: Option<Arc<FailureLog>>,
@@ -142,6 +147,7 @@ impl DedupFs {
             pool,
             budget: Arc::new(MemoryBudget::new(caching_budget_bytes)),
             temp_dir: spill_dir.unwrap_or_else(std::env::temp_dir),
+            data_dir: db::data_dir(repo_root),
             failure_log,
             backpressure_free_zone_bytes: tuning.backpressure_free_zone_bytes,
             backpressure_slope_divisor: tuning.backpressure_slope_divisor,
@@ -659,8 +665,14 @@ impl MountFilesystem for DedupFs {
     }
 
     fn statfs(&self) -> Result<StatfsInfo, Errno> {
+        let block_size: u32 = 512;
+        let (total_bytes, available_bytes) =
+            mountfs::disk_space(&self.data_dir).map_err(|_| Errno::EIO)?;
         Ok(StatfsInfo {
-            block_size: 512,
+            blocks: total_bytes / block_size as u64,
+            blocks_free: available_bytes / block_size as u64,
+            blocks_available: available_bytes / block_size as u64,
+            block_size,
             max_name_length: mountfs::MAX_NAME_BYTES as u32,
             ..Default::default()
         })
@@ -969,6 +981,19 @@ mod tests {
             crate::content_reader::read_content(&verify_repo, &verify_store, content_id, 0, 11)
                 .unwrap();
         assert_eq!(data, b"hello world");
+    }
+
+    #[test]
+    fn statfs_reports_the_repository_data_dir_s_real_free_space() {
+        let (fs, _verify_repo, _store, _dir) = setup(true);
+        let info = fs.statfs().unwrap();
+        assert!(info.blocks > 0, "blocks={}", info.blocks);
+        assert!(
+            info.blocks_available > 0,
+            "blocks_available={}",
+            info.blocks_available
+        );
+        assert_eq!(info.blocks_free, info.blocks_available);
     }
 
     #[test]
