@@ -17,3 +17,17 @@ against what's already in `.claude/settings.json`'s `permissions.allow`, and ask
 about anything genuinely new (new recurring commands, not just the same cargo/git patterns already
 allowlisted). If nothing has meaningfully changed, say so briefly and move this file to `done/`
 rather than re-opening it again immediately.
+
+## Done (2026-09-23)
+
+Re-ran the skill against this session's own transcript (the only one available - this is an
+ephemeral remote container, so no history from other sessions/machines carries over). Result:
+almost everything observed was already covered, either by the existing `cargo build/clippy/fmt
+--check/doc/check/tree` entries or by commands Claude Code already auto-allows without a rule
+(`git status`/`log`/`diff`/`show`, `ls`, `grep`, etc.). The one new, genuinely read-only,
+above-threshold pattern was `git fetch` (11 occurrences, always `git fetch origin [<branch>]`,
+never mutates the working tree or local branches) - added as `Bash(git fetch *)`. Nothing else
+cleared the read-only/not-already-covered/≥3-occurrences bar. No meaningfully new category of
+recurring command turned up, so not worth a separate developer confirmation round beyond reporting
+the one addition in chat.
+
