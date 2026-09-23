@@ -79,3 +79,60 @@ work) explicitly work around the race rather than exposing it.
    (`crates/cli/src/mount.rs::try_run`) needs its own protection (and if so, design it properly -
    e.g. via `docs/design/`) rather than reusing the test-only fixed-sleep workaround, which was
    never intended as a production fix.
+
+## Done
+
+Root cause found, and it is not a libfuse3/kernel dispatch race at all - the "missing dispatches"
+were an artifact of a broken test-only readiness probe, not a real filesystem-level phenomenon.
+
+**What actually happened**: `mount_for_test`'s readiness probe retried `std::fs::write` against a
+path under `mount_path` until it succeeded. `mount_path` itself is a real, already-existing
+directory (`tempfile::tempdir()` creates it before the mount thread is even spawned) - and a plain
+write against a path inside it can succeed trivially against that *underlying* directory, entirely
+independent of whether libfuse's `mount(2)` call has attached over it yet. Confirmed directly: a
+throwaway test compared `stat(2)`'s `st_dev` for `mount_path` immediately before spawning the mount
+thread against `st_dev` at the exact moment the write-based probe reported success - they were
+still identical on every run (i.e. the "mount" had not actually attached yet), and an immediate
+`fusermount3 -u` right after failed with `entry for <path> not found in /etc/mtab`, proving the
+kernel itself did not yet consider that path mounted. Every operation that had appeared to "succeed
+without a corresponding `create()`/`write()` dispatch" was simply landing on the plain pre-mount
+directory, never touching FUSE, our dispatch handlers, or any kernel/libfuse-internal state at all.
+
+One piece of the original write-up survives unexplained but is now understood to be irrelevant: the
+`Ignoring invalid max threads value 4294967295 > max (100000)` message libfuse3 prints once per
+mount (visible in test output once `--nocapture` is used) is a real, pre-existing libfuse3 startup
+quirk from calling `fuse_main_real` without an explicit `-o max_threads=N` - unrelated to this
+investigation once the actual cause above was found; not otherwise investigated further, since it
+causes no test failures and produces no other observable effect.
+
+**Fix**: `mount_for_test` (`crates/cli/src/dedup_fs.rs`) now polls `stat(2)`'s `st_dev` for
+`mount_path`, comparing against the value captured before the mount thread was spawned, instead of
+write-probing. Once `st_dev` changes, every operation against that path is necessarily routed
+through FUSE, so no separate write-based check is needed on top of it. The `thread::sleep(200ms)`
+workaround is removed - no longer needed. Verified: both `real_mount_*` tests pass reliably (10x
+consecutive full-suite runs, plus repeated isolated single-test runs), and are measurably faster
+(no more baked-in 200ms x 2 delay). Full verification suite green (build/fmt/clippy -D
+warnings/test --workspace/doc). `agent-todos/done/real-libfuse3-mount-backpressure-and-handle-cap-test.md`'s
+own write-up of the original (mis)finding is corrected with a dated note pointing here, rather than
+rewritten, per this project's own `done/` convention of preserving the record.
+
+**Answers to "what the next attempt should do" above, now moot given the corrected root cause**:
+
+1. Tracing `DedupFs::open` was not needed - the dispatch handlers were never reached at all for the
+   affected operations, on either `open` or `create`.
+2. Testing against a realistic tool (`cp`/`rsync`) was not pursued - there is no dispatch race to
+   reproduce. The underlying "a pre-existing directory can absorb writes before a mount actually
+   attaches over it" characteristic is a standard, well-understood Unix mount property (true of any
+   mount type layered over a pre-existing directory, not specific to FUSE or this project), not a
+   defect a filesystem implementation can or should try to guard against from the inside.
+3. `crates/cli/src/mount.rs::try_run` needs no additional protection. `dfs mount` itself blocks
+   inside `mountfs::mount()` for the lifetime of the mount - it has no "is my own mount ready yet"
+   question to answer internally. The only place this class of race could matter is an *external*
+   caller (a script or service that wants to know when a `dfs mount` it just launched has become
+   usable) using a naive write-based readiness check of its own; that is a general Unix operations
+   concern (the standard, correct check is `mountpoint -q <path>` or a `st_dev` comparison, exactly
+   as `mount_for_test` now does), not something specific to this project's behavior or something
+   `dfs mount` could fix by changing its own startup sequence. No product-facing documentation
+   change made - REQ/design docs would only be warranted for a DedupFS-specific behavior, not a
+   generic Unix mount characteristic every caller of every mount-based tool already has to handle
+   correctly.

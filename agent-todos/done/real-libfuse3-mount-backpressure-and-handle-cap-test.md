@@ -83,3 +83,18 @@ timing fix in shared real-mount test infrastructure. `libc` added as a `crates/c
 `crates/mountfs/src/linux/sys.rs`, so a `sync_all()` call alone does not reliably force this
 filesystem's `write()` dispatch to have already run, the way it does for other `real_mount_*` tests
 that only need one large write per file, not the ordering guarantee this test's second one needs.
+
+### Correction (2026-09-23)
+
+Finding 1 above was a misdiagnosis, corrected while resolving the follow-up agent-todo it spawned
+(`agent-todos/done/mount-readiness-dispatch-race-root-cause.md`). There is no libfuse3/kernel
+dispatch race: `mount_path` is a real, already-existing directory (`tempfile::tempdir()`), and the
+old readiness probe (a retried `std::fs::write` until it succeeded) could succeed against that
+*underlying* directory itself, before libfuse's `mount(2)` call had actually attached over it -
+confirmed by comparing `stat(2)`'s `st_dev` before spawning the mount thread and at the moment the
+probe reported success: they were still identical, and an immediate `fusermount3 -u` failed with
+"entry ... not found in /etc/mtab". Every operation that appeared to "succeed without dispatching"
+was simply landing on the plain pre-mount directory, not on FUSE at all. `mount_for_test` now polls
+`st_dev` directly instead of write-probing, and the `thread::sleep(200ms)` workaround this file
+originally described is gone - once `st_dev` changes, every operation against that path is
+necessarily routed through FUSE.

@@ -656,9 +656,18 @@ mod tests {
     }
 
     /// Spawns a real libfuse3 mount of `fs` on its own thread and blocks until it is actually
-    /// ready to serve requests - `fs`'s mounted tree starts empty, so "readiness" has to be an
-    /// actual write attempt succeeding, not a "listing is non-empty" check (mirroring
-    /// `crates/mountfs/src/linux/mod.rs`'s own `DispatchProbeFs` real-mount test).
+    /// ready to serve requests.
+    ///
+    /// Readiness is detected by polling `mount_path`'s own device number (`stat(2)`'s `st_dev`)
+    /// until it differs from what it was before the mount thread was spawned, rather than by a
+    /// write attempt succeeding - `mount_path` is a real, already-existing directory (from
+    /// `tempfile::tempdir()`), and a write against it can succeed trivially against that
+    /// underlying directory itself, before libfuse's `mount(2)` call has actually attached over
+    /// it - found the hard way: an earlier version of this helper used exactly such a write-based
+    /// probe, which reliably reported "ready" while `st_dev` still matched the pre-mount value,
+    /// confirmed via a still-failing `fusermount3 -u` immediately after ("entry ... not found in
+    /// /etc/mtab"). Once `st_dev` actually changes, every operation against `mount_path` is
+    /// necessarily routed through FUSE, so no separate write-based check is needed on top of it.
     ///
     /// Linux-only, like its two callers below: unmounting relies on `fusermount3`
     /// (`unmount_and_join`), which has no Windows equivalent this project uses, and
@@ -669,32 +678,28 @@ mod tests {
         fs: DedupFs,
         mount_path: &std::path::Path,
     ) -> thread::JoinHandle<io::Result<()>> {
+        use std::os::unix::fs::MetadataExt;
+        let dev_before_mount = std::fs::metadata(mount_path)
+            .expect("mount_path must exist before mounting")
+            .dev();
         let handle = {
             let mount_path = mount_path.to_path_buf();
             thread::spawn(move || mountfs::mount(fs, &mount_path, false))
         };
-        let probe_path = mount_path.join("_ready_probe.txt");
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if std::fs::write(&probe_path, b"x").is_ok() {
-                let _ = std::fs::remove_file(&probe_path);
+            let dev_now = std::fs::metadata(mount_path)
+                .expect("mount_path must remain statable while waiting for the mount")
+                .dev();
+            if dev_now != dev_before_mount {
                 break;
             }
             assert!(
                 Instant::now() < deadline,
                 "mount did not become ready within 5s (requires /dev/fuse access)"
             );
-            thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(5));
         }
-        // Found the hard way: a real client operation issued immediately after this probe
-        // succeeds can still return success without ever reaching this filesystem's own
-        // dispatch handlers at all (confirmed via temporary tracing - no create()/write() call
-        // observed server-side, yet the client-side syscalls reported Ok) - some libfuse3/kernel
-        // warm-up still settling in the moment right after the very first successful request,
-        // not anything specific to this probe's own file. A short, fixed pause here reliably
-        // avoided it in practice; there is no more precise readiness signal available than the
-        // probe above already uses.
-        thread::sleep(Duration::from_millis(200));
         handle
     }
 
