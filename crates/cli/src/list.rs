@@ -20,8 +20,16 @@ fn try_run(
     default_path_used: bool,
     target_path: &str,
     show_deleted: bool,
+    assume_read_only_medium: bool,
 ) -> Result<String, String> {
-    let repo = match db::open_repository_read_only(repo_path) {
+    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
+    // also succeeds against a pristine repository on a directory this process cannot write to.
+    let open = if assume_read_only_medium {
+        db::open_repository_read_only_immutable
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -136,8 +144,20 @@ fn list_deleted(
         .join("\n"))
 }
 
-pub fn run(repo_path: &Path, default_path_used: bool, target_path: &str, show_deleted: bool) {
-    match try_run(repo_path, default_path_used, target_path, show_deleted) {
+pub fn run(
+    repo_path: &Path,
+    default_path_used: bool,
+    target_path: &str,
+    show_deleted: bool,
+    assume_read_only_medium: bool,
+) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        target_path,
+        show_deleted,
+        assume_read_only_medium,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -154,7 +174,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-list-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "/", false)
+        let message = try_run(&repo_path, true, "/", false, false)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -164,6 +184,40 @@ mod tests {
             message.contains("explicitly"),
             "expected a hint to pass the path explicitly, got: {message}"
         );
+    }
+
+    // DESIGN-METADATA-013's actual CLI-level wiring check, mirroring `db`'s own
+    // `open_repository_read_only_immutable_succeeds_on_a_pristine_repository_over_an_unwritable_directory`
+    // test (which already covers the underlying mechanism in full) - this one just confirms
+    // `--assume-read-only-medium` actually reaches it through `list`, one representative command
+    // rather than all of `list`/`find`/`stats`/`restore`/`db-backup`/`mount`, which all thread it
+    // through identically. Unix-only for the same chmod-based reason as that test.
+    #[cfg(unix)]
+    #[test]
+    fn assume_read_only_medium_lets_list_open_a_pristine_repository_over_an_unwritable_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            db::RepositorySettings::new(20, 1_700_000_000_000),
+        )
+        .unwrap();
+        let meta_dir = repo_root.join("meta");
+        let original_permissions = std::fs::metadata(&meta_dir).unwrap().permissions();
+        std::fs::set_permissions(&meta_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let without_flag = try_run(&repo_root, false, "/", false, false);
+        let with_flag = try_run(&repo_root, false, "/", false, true);
+        std::fs::set_permissions(&meta_dir, original_permissions).unwrap(); // before any assertion
+
+        assert!(
+            without_flag.is_err(),
+            "expected the plain open to fail against a pristine repository on an unwritable \
+             directory, got: {without_flag:?}"
+        );
+        assert_eq!(with_flag.unwrap(), "/: empty");
     }
 
     fn setup() -> (db::Repository, tempfile::TempDir) {
@@ -184,7 +238,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed - root exists");
+        let message =
+            try_run(&repo_root, false, "/", false, false).expect("must succeed - root exists");
         assert_eq!(message, "/: empty");
     }
 
@@ -200,7 +255,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
+        let message = try_run(&repo_root, false, "/", false, false).expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(
@@ -226,7 +281,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/does-not-exist", false)
+        let message = try_run(&repo_root, false, "/does-not-exist", false, false)
             .expect_err("must fail - the path does not exist");
         assert!(
             message.contains("no such repository path"),
@@ -245,7 +300,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false)
+        let message = try_run(&repo_root, false, "/a.txt", false, false)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(
             message.contains("not a directory"),
@@ -271,7 +326,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
+        let message = try_run(&repo_root, false, "/", false, false).expect("must succeed");
         assert_eq!(
             message, "/: empty",
             "no [deleted] marker without --show-deleted"
@@ -285,7 +340,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true).expect("must succeed");
+        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
         assert!(message.contains(VIRTUAL_KIND));
         assert!(message.contains(DELETED_SEGMENT));
     }
@@ -297,7 +352,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true).expect("must succeed");
+        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
         assert!(!message.contains(DELETED_SEGMENT));
     }
 
@@ -309,7 +364,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true).expect("must succeed");
+        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
         let deleted_lines: Vec<&str> = message
             .lines()
             .filter(|line| line.ends_with(DELETED_SEGMENT))
@@ -333,8 +388,14 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, &format!("/{DELETED_SEGMENT}"), false)
-            .expect("must succeed");
+        let message = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}"),
+            false,
+            false,
+        )
+        .expect("must succeed");
         assert!(message.contains("gone.txt"));
         assert!(message.starts_with("file"));
     }
@@ -353,8 +414,14 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, &format!("/{DELETED_SEGMENT}"), false)
-            .expect("must succeed");
+        let message = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}"),
+            false,
+            false,
+        )
+        .expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
         assert_eq!(lines.len(), 2);
         assert_ne!(lines[0], lines[1]);
@@ -370,8 +437,14 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, &format!("/{DELETED_SEGMENT}/a"), false)
-            .expect_err("must fail - a deleted directory needs its own [deleted] step");
+        let message = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}/a"),
+            false,
+            false,
+        )
+        .expect_err("must fail - a deleted directory needs its own [deleted] step");
         assert!(message.contains(DELETED_SEGMENT));
     }
 }

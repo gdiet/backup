@@ -13,8 +13,20 @@ fn now_millis() -> i64 {
         .as_millis() as i64
 }
 
-fn try_run(repo_path: &Path, default_path_used: bool, target_path: &str) -> Result<String, String> {
-    let repo = match db::open_repository_read_only(repo_path) {
+fn try_run(
+    repo_path: &Path,
+    default_path_used: bool,
+    target_path: &str,
+    assume_read_only_medium: bool,
+) -> Result<String, String> {
+    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
+    // also succeeds against a pristine repository on a directory this process cannot write to.
+    let open = if assume_read_only_medium {
+        db::open_repository_read_only_immutable
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -89,8 +101,18 @@ fn age_label(creation_time_millis: i64) -> String {
     format!("{age_days} day(s)")
 }
 
-pub fn run(repo_path: &Path, default_path_used: bool, target_path: &str) {
-    match try_run(repo_path, default_path_used, target_path) {
+pub fn run(
+    repo_path: &Path,
+    default_path_used: bool,
+    target_path: &str,
+    assume_read_only_medium: bool,
+) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        target_path,
+        assume_read_only_medium,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -130,8 +152,8 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-stats-test-no-default-repository-here");
 
-        let message =
-            try_run(&repo_path, true, "/").expect_err("must fail - repo_path holds no repository");
+        let message = try_run(&repo_path, true, "/", false)
+            .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
             "expected the actionable default-path message, got: {message}"
@@ -145,7 +167,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/").expect("must succeed");
+        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
         assert!(message.contains("1 file(s)"));
         assert!(message.contains("logical size:   10 bytes"));
         assert!(message.contains("repository age"));
@@ -164,7 +186,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a").expect("must succeed");
+        let message = try_run(&repo_root, false, "/a", false).expect("must succeed");
         assert!(message.contains("1 file(s)"));
         assert!(message.contains("logical size:   10 bytes"));
         assert!(
@@ -187,7 +209,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/").expect("must succeed");
+        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
         assert!(message.contains("logical size:   20 bytes"));
         assert!(message.contains("physical size:  10 bytes"));
         assert!(message.contains("2.00x"), "got: {message}");
@@ -199,7 +221,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/").expect("must succeed");
+        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
         assert!(message.contains("0 dir(s), 0 file(s)"));
         assert!(message.contains("dedup ratio:    n/a"));
     }
@@ -210,7 +232,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/does-not-exist")
+        let message = try_run(&repo_root, false, "/does-not-exist", false)
             .expect_err("must fail - the path does not exist");
         assert!(message.contains("no such repository path"));
     }
@@ -222,7 +244,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt")
+        let message = try_run(&repo_root, false, "/a.txt", false)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(message.contains("not a directory"));
     }

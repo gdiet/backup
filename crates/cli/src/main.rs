@@ -64,6 +64,20 @@ struct RamBudgetArgs {
 }
 
 #[derive(Args)]
+struct ReadOnlyMediumArgs {
+    /// Asserts that the repository's storage cannot be modified by anything else for as long as
+    /// this command runs (e.g. genuine read-only media) - DESIGN-METADATA-013 in
+    /// docs/design/metadata-storage.md. Lets a read-only open succeed even against a pristine
+    /// repository (no prior read-write session) on a directory this process itself cannot write
+    /// to, which otherwise fails outright. Only pass this when the assertion is actually true:
+    /// violating it is undefined behavior at the SQLite level (possibly incorrect results or
+    /// corruption, not merely stale reads) if anything does modify the repository while this
+    /// command has it open.
+    #[arg(long)]
+    assume_read_only_medium: bool,
+}
+
+#[derive(Args)]
 struct BackpressureArgs {
     /// DESIGN-MOUNT-006's write() backpressure delay: below this much bytesInPersistQueue
     /// backlog, no delay is added at all.
@@ -138,6 +152,11 @@ enum Commands {
         /// - nothing mutating is ever allowed on a read-only mount regardless of this flag.
         #[arg(long)]
         purge: bool,
+        // Only meaningful without --read-write - a read-write mount already needs, and holds, the
+        // repository-wide write lock (REQ-MAINTENANCE-004), which already rules out a concurrent
+        // writer for the reason DESIGN-METADATA-013's assertion cares about.
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -156,6 +175,8 @@ enum Commands {
         repo: Option<PathBuf>,
         /// Directory to write the timestamped backup file into (which must already exist).
         target: PathBuf,
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-MAINTENANCE-002.
     /// Restores a repository's metadata from a prior `db-backup` file, wholesale-replacing the
@@ -227,6 +248,8 @@ enum Commands {
         /// Repository path to list.
         #[arg(default_value = "/")]
         path: String,
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-QUERY-002.
     /// Searches live entries anywhere in the repository by name, without mounting.
@@ -238,6 +261,8 @@ enum Commands {
         /// Name pattern to search for - case-insensitive, `*` matches any run of characters and
         /// `?` matches exactly one.
         pattern: String,
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-QUERY-003.
     /// Reports item counts and size statistics, repository-wide or for one directory's own
@@ -250,6 +275,8 @@ enum Commands {
         /// Repository path to report on. Repository age is only reported for the default, `/`.
         #[arg(default_value = "/")]
         path: String,
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -276,6 +303,8 @@ enum Commands {
         /// (which must already exist).
         #[arg(required = true, num_args = 2..)]
         paths: Vec<String>,
+        #[command(flatten)]
+        read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-INGEST-001/002/003/004/005/006.
     /// Imports one or more real filesystem paths into the repository, deduplicating their
@@ -405,6 +434,7 @@ fn main() {
             backpressure,
             show_deleted,
             purge,
+            read_only_medium,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -414,7 +444,10 @@ fn main() {
                 read_write,
                 default_path_used,
                 spill_dir.as_deref(),
-                cache_size,
+                mount::RepoOpenOptions {
+                    cache_size,
+                    assume_read_only_medium: read_only_medium.assume_read_only_medium,
+                },
                 dedup_fs::Tuning {
                     ram_budget_gross_bytes: ram_budget.ram_budget_mb * 1024 * 1024,
                     backpressure_free_zone_bytes: backpressure.backpressure_free_zone_bytes,
@@ -429,10 +462,20 @@ fn main() {
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
             unlock::run(&path, default_path_used);
         }
-        Commands::DbBackup { repo, target } => {
+        Commands::DbBackup {
+            repo,
+            target,
+            read_only_medium,
+        } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            db_backup::run(&repo, default_path_used, &target, time_millis);
+            db_backup::run(
+                &repo,
+                default_path_used,
+                &target,
+                time_millis,
+                read_only_medium.assume_read_only_medium,
+            );
         }
         Commands::DbRestore { repo, backup } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
@@ -463,20 +506,45 @@ fn main() {
             repo,
             show_deleted,
             path,
+            read_only_medium,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            list::run(&repo, default_path_used, &path, show_deleted);
+            list::run(
+                &repo,
+                default_path_used,
+                &path,
+                show_deleted,
+                read_only_medium.assume_read_only_medium,
+            );
         }
-        Commands::Find { repo, pattern } => {
+        Commands::Find {
+            repo,
+            pattern,
+            read_only_medium,
+        } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            find::run(&repo, default_path_used, &pattern);
+            find::run(
+                &repo,
+                default_path_used,
+                &pattern,
+                read_only_medium.assume_read_only_medium,
+            );
         }
-        Commands::Stats { repo, path } => {
+        Commands::Stats {
+            repo,
+            path,
+            read_only_medium,
+        } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            stats::run(&repo, default_path_used, &path);
+            stats::run(
+                &repo,
+                default_path_used,
+                &path,
+                read_only_medium.assume_read_only_medium,
+            );
         }
         Commands::Restore {
             repo,
@@ -484,6 +552,7 @@ fn main() {
             verify,
             best_effort,
             paths,
+            read_only_medium,
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
@@ -493,9 +562,12 @@ fn main() {
                 default_path_used,
                 sources,
                 Path::new(&target[0]),
-                overwrite,
-                verify,
-                best_effort,
+                restore::RestoreOptions {
+                    overwrite,
+                    verify,
+                    best_effort,
+                },
+                read_only_medium.assume_read_only_medium,
             );
         }
         Commands::Ingest {

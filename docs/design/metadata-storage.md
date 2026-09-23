@@ -697,3 +697,65 @@ all, living as a plain field alongside the connection inside the same `Mutex` (a
 name_cache }` struct), so it is unreachable except through that one lock. A future split to multiple
 concurrent connections backing one `Repository` would put more than one connection behind a single
 cache and needs to revisit that cache's own access pattern alongside the split, not after it.
+
+## DESIGN-METADATA-013: An opt-in `immutable=1` read-only open for genuinely read-only media
+
+Status: implemented (`crates/db/src/lib.rs`'s `open_repository_read_only_immutable`,
+`--assume-read-only-medium` on every command that opens read-only)
+
+`open_repository_read_only` (DESIGN-METADATA-012's "A lighter configuration for a genuinely
+read-only connection") fails against a pristine repository - one no write-mode connection has ever
+opened, so no `-shm`/`-wal` file exists alongside `meta/repository.sqlite3` yet - when the
+containing directory is not writable by the current process. Opening a WAL-mode database at all
+requires creating a `-shm` (shared-memory index) file if one does not already exist, and creating a
+file needs a writable directory regardless of the connection's own read-only flag. This directly
+contradicts that function's own stated purpose: working "even when the filesystem cannot reliably
+support a full write-mode connection open at all." Found while porting `docker/samba-mount/` (a
+`dfs mount`-via-Samba developer utility) - a repository bind-mounted read-only into a container hit
+exactly this.
+
+`open_repository_read_only_immutable` opens via SQLite's `immutable=1` URI parameter instead,
+which skips the WAL/`-shm` machinery entirely rather than needing to create it, succeeding against
+a pristine repository on unwritable media. Every command that offers a read-only open
+(`list`/`find`/`stats`/`restore`/`db-backup`, and `mount` without `--read-write`) also takes
+`--assume-read-only-medium`, which switches to this function - off (the existing, unconditionally
+safe `open_repository_read_only`) by default.
+
+An unconditional switch to `immutable=1` was rejected: `immutable=1` asserts that nothing else can
+modify the file for as long as the connection stays open, and this crate's write path holds no
+lock that would make that assertion generally true (a `--read-write` mount and a read-only `dfs
+list` against the same repository are not mutually exclusive today - only concurrent *mutating*
+sessions are, via REQ-MAINTENANCE-004's write lock). Violating the assertion is not merely a stale
+read: SQLite's own documentation (<https://www.sqlite.org/uri.html>, "immutable") states that a
+database changing anyway "might return incorrect query results and/or SQLITE_CORRUPT errors."
+Verified empirically (2026-09-23) that a violation can indeed go unnoticed in practice - an
+`immutable=1` connection held open across a real concurrent write from a separate process kept
+silently serving its original, now-stale snapshot with no error at all, even under repeated
+concurrent writes - which is exactly why this needs to stay an explicit, caller-asserted opt-in
+rather than a default: the caller is the only one who can actually know the assertion holds (e.g.
+because the medium is genuinely read-only, so no writer is even possible), and a silent wrong
+answer is a worse failure mode than the pristine-repository open simply continuing to fail without
+the flag.
+
+A different-shaped fix - making every read-only command default to a write-mode connection instead
+(reasoning: "it never issues a write statement, so it behaves like a reader"), gated by a flag for
+the *rare* genuinely-read-only-medium case - was considered and rejected the other way round from
+`--assume-read-only-medium`'s actual shape: it would reintroduce, for the common case, exactly the
+unreliable-write-mode-open problem `open_repository_read_only` exists to avoid (`Error::
+ConnectionUnreliable`'s WSL<->Windows 9p bridge case - see DESIGN-METADATA-012's own entry above
+and `README.md`'s "Known Limitations"), and `open_repository`'s automatic migration
+(DESIGN-METADATA-005) would then run as a silent side effect of a command that looks read-only,
+rather than the actionable `Error::SchemaNeedsMigration` a read-only open already gives today.
+
+### Building the `file:` URI safely
+
+`immutable=1` is only reachable through SQLite's URI filename syntax (no `OpenFlags` bit
+corresponds to it - unlike `SQLITE_OPEN_READ_ONLY`). `to_file_uri` (`crates/db/src/lib.rs`)
+converts an arbitrary path into one following SQLite's own documented six-step encoding recipe
+(<https://www.sqlite.org/uri.html>, "Converting A Filename Into A URI") rather than a hand-rolled
+one: percent-encode `?`/`#` (the only two characters that syntax requires escaping), turn
+backslashes into forward slashes and prepend a `/` before a Windows drive letter (both
+Windows-only), collapse runs of `/`. The path is absolutized first (`std::path::absolute` -
+lexical only, no filesystem access or symlink resolution) since a relative Windows path with a
+drive letter has no direct URI representation at all per the same page, and a relative path in
+general has no URI meaning independent of a process's current directory.

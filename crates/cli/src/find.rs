@@ -5,8 +5,20 @@ use std::path::Path;
 
 use crate::entry_format::{format_line, kind_label};
 
-fn try_run(repo_path: &Path, default_path_used: bool, pattern: &str) -> Result<String, String> {
-    let repo = match db::open_repository_read_only(repo_path) {
+fn try_run(
+    repo_path: &Path,
+    default_path_used: bool,
+    pattern: &str,
+    assume_read_only_medium: bool,
+) -> Result<String, String> {
+    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
+    // also succeeds against a pristine repository on a directory this process cannot write to.
+    let open = if assume_read_only_medium {
+        db::open_repository_read_only_immutable
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -32,8 +44,18 @@ fn try_run(repo_path: &Path, default_path_used: bool, pattern: &str) -> Result<S
         .join("\n"))
 }
 
-pub fn run(repo_path: &Path, default_path_used: bool, pattern: &str) {
-    match try_run(repo_path, default_path_used, pattern) {
+pub fn run(
+    repo_path: &Path,
+    default_path_used: bool,
+    pattern: &str,
+    assume_read_only_medium: bool,
+) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        pattern,
+        assume_read_only_medium,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -70,8 +92,8 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-find-test-no-default-repository-here");
 
-        let message =
-            try_run(&repo_path, true, "*").expect_err("must fail - repo_path holds no repository");
+        let message = try_run(&repo_path, true, "*", false)
+            .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
             "expected the actionable default-path message, got: {message}"
@@ -86,7 +108,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "one.jpg").expect("must succeed");
+        let message = try_run(&repo_root, false, "one.jpg", false).expect("must succeed");
         assert!(message.contains("/photos/one.jpg"));
         assert!(message.starts_with("file"));
     }
@@ -97,8 +119,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message =
-            try_run(&repo_root, false, "nope-*").expect("an empty result is not itself an error");
+        let message = try_run(&repo_root, false, "nope-*", false)
+            .expect("an empty result is not itself an error");
         assert!(message.contains("no matches"));
     }
 
@@ -110,7 +132,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "*.txt").expect("must succeed");
+        let message = try_run(&repo_root, false, "*.txt", false).expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("/a.txt"));

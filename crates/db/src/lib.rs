@@ -782,7 +782,12 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
 /// Meant for a caller that only ever reads - a read-only mount (REQ-MOUNT-002), in particular -
 /// and specifically for one that still needs to work even when the filesystem cannot reliably
 /// support a full write-mode connection open at all (observed over a WSL<->Windows 9p bridge; see
-/// `Error::ConnectionUnreliable` and README.md's "Known Limitations").
+/// `Error::ConnectionUnreliable` and README.md's "Known Limitations"). One case that still needs a
+/// writable directory despite never writing: a pristine repository (no `-shm`/`-wal` alongside
+/// `meta/repository.sqlite3` yet) on a directory this process genuinely cannot write to - opening
+/// a WAL-mode database at all requires creating a `-shm` file if one does not already exist, even
+/// for a read-only connection. See [`open_repository_read_only_immutable`] (DESIGN-METADATA-013 in
+/// `docs/design/metadata-storage.md`) for that case.
 pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> {
     ensure_repository_exists(repo_root)?;
 
@@ -793,6 +798,36 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
             | OpenFlags::SQLITE_OPEN_NO_MUTEX
             | OpenFlags::SQLITE_OPEN_URI,
     )?;
+    finish_read_only_open(repo_root, conn)
+}
+
+/// Like [`open_repository_read_only`], but asserts to SQLite that `repo_root`'s storage cannot be
+/// modified by anything else for as long as the returned [`Repository`] stays open (SQLite's own
+/// `immutable=1` URI parameter - DESIGN-METADATA-013 in `docs/design/metadata-storage.md`). Unlike
+/// the plain read-only open, this succeeds even against a pristine repository (no `-shm`/`-wal`
+/// yet) on a directory this process cannot write to, since it skips the WAL shared-memory-index
+/// machinery entirely rather than needing to create it.
+///
+/// Callers must only use this when the assertion is actually true - violating it is undefined
+/// behavior at the SQLite level (possibly incorrect query results or `SQLITE_CORRUPT`, not merely
+/// stale reads; see DESIGN-METADATA-013 for the empirical detail behind this).
+pub fn open_repository_read_only_immutable(repo_root: &Path) -> Result<Repository, Error> {
+    ensure_repository_exists(repo_root)?;
+
+    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+    let uri = format!("{}?mode=ro&immutable=1", to_file_uri(&db_path)?);
+    let conn = Connection::open_with_flags(
+        uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    finish_read_only_open(repo_root, conn)
+}
+
+/// Shared tail of [`open_repository_read_only`]/[`open_repository_read_only_immutable`]: the two
+/// differ only in how `conn` itself was opened.
+fn finish_read_only_open(repo_root: &Path, conn: Connection) -> Result<Repository, Error> {
     connection::configure_read_only_connection(&conn)?;
 
     if migrations::migrations().pending_migrations(&conn)? != 0 {
@@ -808,6 +843,37 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
         }),
         read_only: true,
     })
+}
+
+/// Converts `path` into a `file:` URI per SQLite's own canonical encoding rules
+/// (<https://www.sqlite.org/uri.html>, "Converting A Filename Into A URI"): `?`/`#` percent-encoded
+/// (the only two characters that URI syntax requires escaping here), backslashes turned into
+/// forward slashes and a leading `/` prepended before a Windows drive letter (both Windows-only,
+/// harmless no-ops on Unix paths, which never contain either), runs of `/` collapsed to one.
+/// Absolutized first (`std::path::absolute`, lexical only - does not touch the filesystem or
+/// resolve symlinks) since a relative Windows path with a drive letter cannot be expressed as a
+/// URI at all per the same page, and a relative path in general has no well-defined meaning as a
+/// URI path component independent of a process's current directory.
+fn to_file_uri(path: &Path) -> Result<String, Error> {
+    let absolute = std::path::absolute(path).map_err(Error::Io)?;
+    let path_str = absolute
+        .to_str()
+        .ok_or_else(|| Error::PathNotUtf8(absolute.clone()))?;
+
+    let mut encoded = path_str.replace('?', "%3f").replace('#', "%23");
+    if cfg!(windows) {
+        encoded = encoded.replace('\\', "/");
+    }
+    while encoded.contains("//") {
+        encoded = encoded.replace("//", "/");
+    }
+    let starts_with_drive_letter = encoded.len() >= 2
+        && encoded.as_bytes()[0].is_ascii_alphabetic()
+        && encoded.as_bytes()[1] == b':';
+    if cfg!(windows) && starts_with_drive_letter {
+        encoded.insert(0, '/');
+    }
+    Ok(format!("file:{encoded}"))
 }
 
 /// [`Repository::compact`]'s own result - the metadata store's size in bytes, before and after.
@@ -1078,6 +1144,92 @@ mod tests {
             matches!(err, Error::SchemaNeedsMigration(_)),
             "expected SchemaNeedsMigration, got: {err:?}"
         );
+    }
+
+    #[test]
+    fn open_repository_read_only_immutable_fails_on_a_directory_that_was_never_created_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_repository_read_only_immutable(dir.path()).unwrap_err();
+        assert!(matches!(err, Error::NoRepositoryHere(_)));
+    }
+
+    #[test]
+    fn open_repository_read_only_immutable_reads_back_the_settings_it_was_created_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only_immutable(&repo_root)
+            .expect("read-only immutable open must succeed");
+        assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn open_repository_read_only_immutable_refuses_a_mutating_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only_immutable(&repo_root)
+            .expect("read-only immutable open must succeed");
+        let err = repo.mkdir(0, "d", 1_700_000_000_000).unwrap_err();
+        assert!(
+            matches!(err, Error::ReadOnlyRepository),
+            "expected ReadOnlyRepository, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn open_repository_read_only_immutable_refuses_a_repository_behind_the_expected_schema_version()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(META_DIR)).unwrap();
+        Connection::open(repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+
+        let err = open_repository_read_only_immutable(&repo_root).unwrap_err();
+        assert!(
+            matches!(err, Error::SchemaNeedsMigration(_)),
+            "expected SchemaNeedsMigration, got: {err:?}"
+        );
+    }
+
+    // DESIGN-METADATA-013's actual reason to exist: a pristine repository (no -shm/-wal yet) on a
+    // directory this process cannot write to. Unix-only - chmod-based write denial has no direct
+    // Windows equivalent, and this is exercising a SQLite/OS-level property common to both
+    // platforms (see DESIGN-METADATA-013's own "not Linux-specific" note), not something that
+    // needs re-proving per platform.
+    #[cfg(unix)]
+    #[test]
+    fn open_repository_read_only_immutable_succeeds_on_a_pristine_repository_over_an_unwritable_directory()
+     {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let meta_dir = repo_root.join(META_DIR);
+        assert!(
+            !meta_dir.join("repository.sqlite3-shm").exists(),
+            "test setup must be pristine (no -shm yet) for this to actually exercise the fix"
+        );
+
+        let original_permissions = fs::metadata(&meta_dir).unwrap().permissions();
+        fs::set_permissions(&meta_dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let restore = || fs::set_permissions(&meta_dir, original_permissions.clone()).unwrap();
+
+        let plain_result = open_repository_read_only(&repo_root);
+        let immutable_result = open_repository_read_only_immutable(&repo_root);
+        restore(); // before any assertion, so a failing assertion still leaves the dir writable
+
+        assert!(
+            plain_result.is_err(),
+            "expected the plain read-only open to fail against a pristine repository on an \
+             unwritable directory (the bug DESIGN-METADATA-013 documents) - it did not, so this \
+             test may no longer be exercising what it claims to"
+        );
+        let repo = immutable_result.expect("read-only immutable open must succeed");
+        assert_eq!(repo.settings(), settings());
     }
 
     #[test]

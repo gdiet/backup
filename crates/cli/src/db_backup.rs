@@ -11,6 +11,7 @@ fn try_run(
     default_path_used: bool,
     target_dir: &Path,
     time_millis: i64,
+    assume_read_only_medium: bool,
 ) -> Result<String, String> {
     if !target_dir.is_dir() {
         return Err(format!(
@@ -19,7 +20,14 @@ fn try_run(
         ));
     }
 
-    let repo = match db::open_repository_read_only(repo_path) {
+    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
+    // also succeeds against a pristine repository on a directory this process cannot write to.
+    let open = if assume_read_only_medium {
+        db::open_repository_read_only_immutable
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -40,8 +48,20 @@ fn try_run(
         .map_err(|err| format!("error: {err}"))
 }
 
-pub fn run(repo_path: &Path, default_path_used: bool, target_dir: &Path, time_millis: i64) {
-    match try_run(repo_path, default_path_used, target_dir, time_millis) {
+pub fn run(
+    repo_path: &Path,
+    default_path_used: bool,
+    target_dir: &Path,
+    time_millis: i64,
+    assume_read_only_medium: bool,
+) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        target_dir,
+        time_millis,
+        assume_read_only_medium,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -71,8 +91,14 @@ mod tests {
         let repo_path = std::env::temp_dir().join("dfs-db-backup-test-no-default-repository-here");
         let target_dir = tempfile::tempdir().unwrap();
 
-        let message = try_run(&repo_path, true, target_dir.path(), 1_700_000_100_000)
-            .expect_err("must fail - repo_path holds no repository");
+        let message = try_run(
+            &repo_path,
+            true,
+            target_dir.path(),
+            1_700_000_100_000,
+            false,
+        )
+        .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
             "expected the actionable default-path message, got: {message}"
@@ -87,7 +113,7 @@ mod tests {
         let not_a_dir = dir.path().join("not-a-dir.txt");
         std::fs::write(&not_a_dir, b"hi").unwrap();
 
-        let message = try_run(&repo_root, false, &not_a_dir, 1_700_000_100_000)
+        let message = try_run(&repo_root, false, &not_a_dir, 1_700_000_100_000, false)
             .expect_err("must fail - the target is not a directory");
         assert!(message.contains("not a directory"));
     }
@@ -100,8 +126,14 @@ mod tests {
         let repo_root = dir.path().join("repo");
         let target_dir = tempfile::tempdir().unwrap();
 
-        let message =
-            try_run(&repo_root, false, target_dir.path(), 1_700_000_100_000).expect("must succeed");
+        let message = try_run(
+            &repo_root,
+            false,
+            target_dir.path(),
+            1_700_000_100_000,
+            false,
+        )
+        .expect("must succeed");
         assert!(message.contains("backed up repository metadata to"));
 
         let entries: Vec<_> = std::fs::read_dir(target_dir.path())

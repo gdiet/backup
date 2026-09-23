@@ -32,10 +32,12 @@ docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
   already-dying child to `entrypoint.sh` before it also exits.
 - `/repo` is mounted **writable** even for a read-only `dfs mount` session (no `MOUNT_ARGS`
   needed for that, the default) - not because the container ever writes repository content, but
-  because of a real `db` limitation found while verifying this port (see "Non-obvious problems" #5
-  below): a `-v ...:/repo:ro` bind mount can make a read-only `dfs mount` fail outright. Real
-  read-only safety does not depend on the bind mount's own read/write mode at all - see #5 for
-  why. See "Mount options" below for `--read-write` and every other `dfs mount` flag.
+  because a genuinely `:ro` bind mount can make a read-only `dfs mount` fail outright against a
+  pristine repository (see "Non-obvious problems" #5 below). Real read-only safety does not depend
+  on the bind mount's own read/write mode at all - see #5 for why. To actually use `:ro` anyway
+  (e.g. the repository genuinely lives on read-only media and nothing else could write to it),
+  add `:ro` back and pass `--assume-read-only-medium` via `MOUNT_ARGS` - see #5. See "Mount
+  options" below for `--read-write` and every other `dfs mount` flag.
 - Default SMB credentials: user `dedup`, password `dedup` (override via `-e SMB_USER=... -e
   SMB_PASSWORD=...`). Fixed-user auth, not guest access - modern Windows clients don't reliably
   allow anonymous SMB logons by default.
@@ -145,13 +147,17 @@ retry.
    database file`. Root cause is in `db`, not here: the metadata database is in `journal_mode =
    WAL`, and opening a WAL-mode SQLite database at all - even via a read-only connection - needs to
    create a `-shm` file if one does not already exist, which needs a writable directory regardless
-   of the connection's own read-only flag. Worked around here by never bind-mounting `/repo`
-   read-only (see "Build and run" above); the underlying `db` limitation is tracked in
-   `agent-todos/read-only-open-needs-a-writable-directory-for-wal-shm.md`, since it is not specific
-   to Docker or Samba. Dropping `:ro` does not weaken this container's actual read-only
-   enforcement: that already happens at the FUSE/kernel level (`-oro`, same as problem 3 above) and
-   at the `Repository` level (every mutating method refuses outright against a connection opened
-   via `open_repository_read_only`), neither of which depends on the bind mount's own mode.
+   of the connection's own read-only flag. Default here is to just not bind-mount `/repo` read-only
+   at all (see "Build and run" above) - that loses nothing, since this container's actual read-only
+   enforcement already happens at the FUSE/kernel level (`-oro`, same as problem 3 above) and at the
+   `Repository` level (every mutating method refuses outright against a connection opened via
+   `open_repository_read_only`), neither of which depends on the bind mount's own mode. `dfs
+   mount --assume-read-only-medium` (DESIGN-METADATA-013 in
+   `../../docs/design/metadata-storage.md`), added to resolve the underlying `db` limitation this
+   found (`agent-todos/done/read-only-open-needs-a-writable-directory-for-wal-shm.md`), is the way
+   to use a genuinely `:ro` bind mount here anyway - only pass it when the repository truly lives on
+   read-only media (or is otherwise guaranteed unwritable by anything else for the container's whole
+   lifetime): `-v /path/to/repository:/repo:ro -e MOUNT_ARGS="--assume-read-only-medium"`.
 
 ## Verification status
 

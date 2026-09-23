@@ -130,3 +130,48 @@ settle before `immutable=1` could be adopted unconditionally.
    is fully safe as-is (`dfs mount`'s own read-only enforcement, both at the FUSE/kernel level via
    libfuse's `-oro` and at the `Repository` level via `Error::ReadOnlyRepository`, does not depend
    on the bind mount's own read/write mode at all).
+
+## Done
+
+Resolved via option 2 above, in the shape the developer specifically proposed and the empirical
+findings above supported: an explicit, per-invocation opt-in (`--assume-read-only-medium`) rather
+than an unconditional switch or an auto-detection heuristic - `open_repository_read_only` itself is
+completely unchanged and stays the default everywhere, so nothing about today's concurrent
+read-only/read-write behavior changes for a caller that does not pass the new flag.
+
+**`crates/db/src/lib.rs`**: added `open_repository_read_only_immutable`, opening via SQLite's
+`immutable=1` URI parameter instead of a plain `SQLITE_OPEN_READ_ONLY` flag. `open_repository_read_
+only`/`open_repository_read_only_immutable` now share a `finish_read_only_open` tail (migration
+check, settings read, `Repository` construction) - the two functions only differ in how the
+connection itself is opened. `to_file_uri` builds the required `file:` URI following SQLite's own
+documented six-step canonical encoding rules, not a hand-rolled scheme. DESIGN-METADATA-013 in
+`docs/design/metadata-storage.md` records the decision, including why an unconditional switch (or
+flipping read tools to a write-mode-by-default posture, which the developer and I separately
+converged on rejecting - it would reintroduce the unreliable-write-mode-open problem
+`open_repository_read_only` exists to avoid, for the common case, to fix a rare one) were both
+rejected in favor of this explicit, narrowly-scoped opt-in.
+
+**`crates/cli`**: a new `ReadOnlyMediumArgs` (`--assume-read-only-medium`, `main.rs`, flattened
+like the existing `ChunkingArgs`/`RamBudgetArgs`/`BackpressureArgs`) is wired into every command
+that opens read-only - `list`/`find`/`stats`/`restore`/`db-backup`, and `mount` without
+`--read-write` (meaningless, and documented as such, with `--read-write` - a read-write mount
+already holds the write lock, ruling out a concurrent writer regardless). `mount::try_run`/`run`
+picked up a `RepoOpenOptions` struct (bundling `cache_size` and the new flag) and `restore::
+RestoreOptions` was made `pub(crate)` and constructed directly by `main.rs`, both purely to keep
+`try_run`/`run`'s own parameter counts under clippy's `too_many_arguments` threshold once the new
+flag pushed them to 8.
+
+**Tests, red/green-verified per `AGENTS.md`'s debugging discipline**: five new tests in
+`crates/db/src/lib.rs` (parity with `open_repository_read_only`'s own existing suite, plus the
+actual regression test - a pristine repository over a `chmod 555`'d directory: the plain open
+fails, the immutable one succeeds and reads correctly), and one CLI-level wiring test in
+`crates/cli/src/list.rs` confirming `--assume-read-only-medium` actually reaches the new `db`
+function through one representative command (the other five thread it through identically). Also
+manually verified end-to-end against the real, compiled `dfs` binary: `dfs list --repo <pristine
+repo, meta/ chmod 555>` fails without the flag, succeeds with it.
+
+Full verification suite green (build/fmt/clippy -D warnings/test --workspace/doc).
+`docker/samba-mount/README.md` updated too (small enough to just do alongside this, per
+`AGENTS.md`): its "Build and run"/problem-5 write-up now documents `--assume-read-only-medium` as
+the way to actually use a `:ro` bind mount there, rather than only documenting the workaround of
+not using `:ro` at all.

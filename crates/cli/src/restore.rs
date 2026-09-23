@@ -13,17 +13,20 @@ use crate::settle::HASH_WIDTH;
 
 /// The three independent restore behaviors a caller can opt into - bundled together since
 /// [`restore_entry`]/[`restore_dir`] thread them unchanged through every level of recursion.
+/// `pub(crate)` (and constructed directly by `main`) purely to keep [`run`]'s own parameter count
+/// under clippy's `too_many_arguments` threshold - not otherwise meant as a public surface of this
+/// module.
 #[derive(Clone, Copy)]
-struct RestoreOptions {
+pub(crate) struct RestoreOptions {
     /// REQ-RESTORE-004: replace a file that already exists at the destination, instead of
     /// failing that one item.
-    overwrite: bool,
+    pub(crate) overwrite: bool,
     /// REQ-RESTORE-003: additionally check each chunk's bytes against its own recorded hash: not
     /// requested at all, a mismatch is never even detected.
-    verify: bool,
+    pub(crate) verify: bool,
     /// REQ-RESTORE-003: zero-fill missing/incomplete stored data, or keep content that fails
     /// `verify`, instead of failing that item.
-    best_effort: bool,
+    pub(crate) best_effort: bool,
 }
 
 fn try_run(
@@ -32,6 +35,7 @@ fn try_run(
     sources: &[String],
     target: &Path,
     options: RestoreOptions,
+    assume_read_only_medium: bool,
 ) -> Result<String, String> {
     if !target.is_dir() {
         return Err(format!(
@@ -40,7 +44,14 @@ fn try_run(
         ));
     }
 
-    let repo = match db::open_repository_read_only(repo_path) {
+    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
+    // also succeeds against a pristine repository on a directory this process cannot write to.
+    let open = if assume_read_only_medium {
+        db::open_repository_read_only_immutable
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -454,16 +465,17 @@ pub fn run(
     default_path_used: bool,
     sources: &[String],
     target: &Path,
-    overwrite: bool,
-    verify: bool,
-    best_effort: bool,
+    options: RestoreOptions,
+    assume_read_only_medium: bool,
 ) {
-    let options = RestoreOptions {
-        overwrite,
-        verify,
-        best_effort,
-    };
-    match try_run(repo_path, default_path_used, sources, target, options) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        sources,
+        target,
+        options,
+        assume_read_only_medium,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -543,6 +555,7 @@ mod tests {
             &["/a".to_string()],
             target.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -565,6 +578,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect("must succeed");
         assert!(message.contains("restored 1 file"));
@@ -595,6 +609,7 @@ mod tests {
             &["/photos".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect("must succeed");
         assert!(message.contains("restored 2 file"));
@@ -624,6 +639,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail - the target file already exists");
         assert!(
@@ -652,6 +668,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(true, false, false),
+            false,
         )
         .expect("must succeed - overwrite was requested");
         assert!(message.contains("restored 1 file"));
@@ -679,6 +696,7 @@ mod tests {
             &["/a.txt".to_string(), "/b.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail overall - one item failed");
         assert!(message.contains("restored 1 file"));
@@ -700,6 +718,7 @@ mod tests {
             &["/does-not-exist".to_string(), "/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail overall - one item failed");
         assert!(message.contains("no such repository path"));
@@ -720,6 +739,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, true, false),
+            false,
         )
         .expect("must succeed - the content genuinely matches its recorded hash");
         assert!(message.contains("restored 1 file"));
@@ -747,6 +767,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, true, false),
+            false,
         )
         .expect_err("must fail - the stored bytes no longer match the recorded hash");
         assert!(message.contains("does not match its recorded hash"));
@@ -775,6 +796,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, true, true),
+            false,
         )
         .expect("must succeed - best-effort keeps mismatched content instead of failing");
         assert!(message.contains("restored 1 file"));
@@ -808,6 +830,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail - the stored data was never actually written");
         assert!(message.contains("missing or incomplete"));
@@ -835,6 +858,7 @@ mod tests {
             &["/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, true),
+            false,
         )
         .expect("must succeed - best-effort zero-fills missing data instead of failing");
         assert!(message.contains("restored 1 file"));
@@ -869,6 +893,7 @@ mod tests {
             &["/[deleted]/a.txt".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect("must succeed - the soft-deleted file is directly addressable");
         assert!(message.contains("restored 1 file"));
@@ -896,6 +921,7 @@ mod tests {
             &["/[deleted]/photos".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect("must succeed - restoring a soft-deleted directory descends into its own history");
         assert!(message.contains("restored 1 file"));
@@ -926,6 +952,7 @@ mod tests {
             &["/[deleted]/photos".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect("must succeed");
         assert!(message.contains("restored 2 file"));
@@ -964,6 +991,7 @@ mod tests {
             &["/[deleted]".to_string()],
             target_dir.path(),
             opts(false, false, false),
+            false,
         )
         .expect_err("must fail - [deleted] alone does not name one specific entry");
         assert!(message.contains("not one specific entry"));

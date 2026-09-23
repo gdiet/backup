@@ -10,6 +10,19 @@ use std::path::Path;
 
 use crate::dedup_fs::{DedupFs, Tuning};
 
+/// Database-connection-opening knobs `try_run` itself consumes, entirely before `DedupFs::new`
+/// (and thus `Tuning`, which that constructor needs) ever comes into play. Bundled into their own
+/// struct purely to keep `try_run`/[`run`]'s own parameter counts under clippy's
+/// `too_many_arguments` threshold - not otherwise a meaningful grouping elsewhere.
+pub struct RepoOpenOptions {
+    /// Overrides the database connection's SQLite `cache_size` (`--cache-size`) - DESIGN-MEMORY-001.
+    pub cache_size: Option<i64>,
+    /// DESIGN-METADATA-013's opt-in (`--assume-read-only-medium`) - meaningless (ignored) with a
+    /// read-write mount, which already holds the repository-wide write lock, ruling out a
+    /// concurrent writer for the same reason this assertion would otherwise exist to guarantee.
+    pub assume_read_only_medium: bool,
+}
+
 /// `mount`'s core logic, separated from `main`'s process-exit/eprintln side effects so the error
 /// path stays testable without touching a real mount. `default_path_used` distinguishes a
 /// `repo_path` the operator gave explicitly from one resolved via
@@ -21,7 +34,7 @@ fn try_run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
-    cache_size: Option<i64>,
+    open_options: RepoOpenOptions,
     tuning: Tuning,
 ) -> Result<(), String> {
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
@@ -30,6 +43,8 @@ fn try_run(
     // (Error::ConnectionUnreliable's case) even though the mount itself never writes.
     let open = if read_write {
         db::open_repository
+    } else if open_options.assume_read_only_medium {
+        db::open_repository_read_only_immutable
     } else {
         db::open_repository_read_only
     };
@@ -46,7 +61,7 @@ fn try_run(
     };
     // DESIGN-MEMORY-001: applied before anything reads `cache_size` back for the RAM-budget
     // computation (`DedupFs::new`), so an override actually takes effect for it.
-    if let Some(cache_size) = cache_size {
+    if let Some(cache_size) = open_options.cache_size {
         repo.set_cache_size(cache_size)
             .map_err(|err| format!("error: --cache-size {cache_size}: {err}"))?;
     }
@@ -113,7 +128,7 @@ pub fn run(
     read_write: bool,
     default_path_used: bool,
     spill_dir: Option<&Path>,
-    cache_size: Option<i64>,
+    open_options: RepoOpenOptions,
     tuning: Tuning,
 ) {
     if let Err(message) = try_run(
@@ -122,7 +137,7 @@ pub fn run(
         read_write,
         default_path_used,
         spill_dir,
-        cache_size,
+        open_options,
         tuning,
     ) {
         eprintln!("{message}");
@@ -159,7 +174,10 @@ mod tests {
             false,
             true,
             None,
-            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+            },
             default_tuning(),
         )
         .expect_err("must fail - repo_path holds no repository");
@@ -192,7 +210,10 @@ mod tests {
             false,
             false,
             None,
-            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+            },
             default_tuning(),
         )
         .expect_err("must fail - mountpoint does not exist");
@@ -227,7 +248,10 @@ mod tests {
             false,
             false,
             Some(&spill_dir),
-            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+            },
             default_tuning(),
         )
         .expect_err("must fail - spill_dir does not exist");
@@ -255,7 +279,10 @@ mod tests {
             false,
             false,
             None,
-            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+            },
             default_tuning(),
         )
         .expect_err("must fail - repo_path holds no repository");
@@ -288,7 +315,10 @@ mod tests {
             true,
             false,
             None,
-            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+            },
             default_tuning(),
         )
         .expect_err("must fail - the write lock is already held");
