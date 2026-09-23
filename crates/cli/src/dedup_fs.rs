@@ -659,6 +659,12 @@ mod tests {
     /// ready to serve requests - `fs`'s mounted tree starts empty, so "readiness" has to be an
     /// actual write attempt succeeding, not a "listing is non-empty" check (mirroring
     /// `crates/mountfs/src/linux/mod.rs`'s own `DispatchProbeFs` real-mount test).
+    ///
+    /// Linux-only, like its two callers below: unmounting relies on `fusermount3`
+    /// (`unmount_and_join`), which has no Windows equivalent this project uses, and
+    /// `crates/mountfs/src/windows/mod.rs` has no working in-process clean-shutdown call at all -
+    /// see the callers' own `#[cfg(target_os = "linux")]` for the full reasoning.
+    #[cfg(target_os = "linux")]
     fn mount_for_test(
         fs: DedupFs,
         mount_path: &std::path::Path,
@@ -692,6 +698,7 @@ mod tests {
         handle
     }
 
+    #[cfg(target_os = "linux")]
     fn unmount_and_join(mount_path: &std::path::Path, handle: thread::JoinHandle<io::Result<()>>) {
         let status = std::process::Command::new("fusermount3")
             .arg("-u")
@@ -710,6 +717,7 @@ mod tests {
     /// the kernel's page cache and never actually reach this filesystem's own `write()` dispatch
     /// at all (found the hard way while writing `DispatchProbeFs`'s own real-mount test), so
     /// `sync_all` is not optional here.
+    #[cfg(target_os = "linux")]
     fn timed_synced_write(path: &std::path::Path, payload: &[u8]) -> Duration {
         let start = Instant::now();
         let mut file = std::fs::File::create(path).expect("create against the mount must succeed");
@@ -720,6 +728,22 @@ mod tests {
         start.elapsed()
     }
 
+    // `unmount_and_join` above unconditionally calls `fusermount3`, a Linux-only tool with no
+    // Windows equivalent this project uses - and, unlike a `real_mount_` test that fails cleanly
+    // at runtime on a platform it was not written for (the accepted, `--skip real_mount`-handled
+    // case), this test mounts on an in-process background thread with no way to unmount it again
+    // on Windows at all: `crates/mountfs/src/windows/mod.rs` has no working in-process
+    // clean-shutdown call (see `windows_mount_spike_helper.rs`'s own doc comment - Windows-specific
+    // real-mount tests use a separate child process, killed via `Child::kill`, specifically
+    // because of this). Confirmed on real Windows/WinFSP: running this test there leaves its mount
+    // thread permanently blocked inside `mountfs::mount()` (never reaching `unmount_and_join`
+    // either way, since the test panics at `wait_for_settled` first) - which then leaves WinFSP
+    // itself in a state bad enough that even a *subsequent, unrelated* mount attempt starts
+    // failing with "mount point in use". Gated the same way its sibling test above already is, and
+    // for the same underlying reason (see that test's own comment) - this is a structural
+    // Linux-only dependency, not a timing or backpressure-formula bug worth chasing further on
+    // Windows as currently written.
+    #[cfg(target_os = "linux")]
     #[test]
     fn real_mount_write_backpressure_delay_grows_then_drains_with_the_persist_queue() {
         let (mut fs, verify_repo, _store, _dir) = setup(true);
