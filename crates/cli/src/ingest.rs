@@ -801,12 +801,12 @@ mod tests {
     }
 
     /// Sets a path's modification time without adding a new dependency - `std::fs::File::
-    /// set_modified` covers both files and directories on every platform this project targets.
+    /// set_modified` covers both files and directories on every platform this project targets,
+    /// given a handle opened the right way for each (see `directory_handle` for why a directory
+    /// needs its own platform-specific open).
     fn filetime_set(path: &Path, time: SystemTime) {
         if path.is_dir() {
-            // There is no directory-mtime setter in `std`; open it (read-only is enough on Unix)
-            // and use the same `set_modified` call a file uses.
-            fs::File::open(path).unwrap().set_modified(time).unwrap();
+            directory_handle(path).set_modified(time).unwrap();
         } else {
             fs::File::options()
                 .write(true)
@@ -815,6 +815,29 @@ mod tests {
                 .set_modified(time)
                 .unwrap();
         }
+    }
+
+    /// Opens a directory for `set_modified`. Unix accepts a plain read-only handle for this
+    /// (`futimens` on an `O_RDONLY` fd succeeds), but Windows' `SetFileTime` needs a write-access
+    /// handle, and `CreateFileW` (what `File::open`/`OpenOptions` call into) refuses to open a
+    /// directory with write access at all unless `FILE_FLAG_BACKUP_SEMANTICS` is also requested -
+    /// Microsoft's documented way to "obtain a handle to a directory"
+    /// (<https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory>),
+    /// the same approach the widely-used `filetime` crate takes for this exact case.
+    #[cfg(windows)]
+    fn directory_handle(path: &Path) -> fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap()
+    }
+
+    #[cfg(not(windows))]
+    fn directory_handle(path: &Path) -> fs::File {
+        fs::File::open(path).unwrap()
     }
 
     /// Every test below uses this - large enough that an ordinary target size (20 bits, per

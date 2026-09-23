@@ -780,6 +780,13 @@ mod tests {
         );
     }
 
+    // `open_o_sync` below uses `std::os::unix::fs::OpenOptionsExt`/`libc::O_SYNC` directly, with
+    // no cross-platform equivalent reached for yet - unlike `real_mount_` tests elsewhere that
+    // only *fail at runtime* on a platform they were not written for (already an accepted,
+    // `--skip real_mount`-handled case), this one does not even compile on Windows without this
+    // gate, breaking `cargo test` for the whole crate there. Found and fixed while verifying an
+    // unrelated Windows-specific fix in `crates/cli/src/ingest.rs` on real Windows.
+    #[cfg(target_os = "linux")]
     #[test]
     fn real_mount_concurrent_handles_converge_toward_the_per_handle_halving_formula() {
         // `write_cache.rs` only spills a write that does not fit a handle's current share, never
