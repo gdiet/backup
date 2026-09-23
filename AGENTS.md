@@ -314,6 +314,25 @@ Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N
 metadata`/`cargo tree` for locating crate sources; otherwise scope `find`/`grep` to a known
 directory.
 
+## A Known Editor/Git Staging Race
+
+Observed twice in one session (2026-09-23, an agent moving `agent-todos/` files to `done/` with a
+just-added closing section): editing a file, then immediately running `git mv <old> <new>` and/or
+`git add` for that same path in a separate shell call, staged and committed the file's *pre-edit*
+content - even though reading the file from disk moments later, still in the same turn, already
+showed the correct, edited content. Not narrowed down to a specific cause (a race between the
+editing tool's write and the shell call reading the same path, or something else) or confirmed to
+be specific to any one machine/environment - flagged here, in a committed file, precisely because
+it might not be. Mitigation that reliably fixed it both times it was hit: after any edit
+immediately followed by a `git mv`/`git add` of that same path, explicitly re-run `git add <path>`
+right before the actual `commit` (even though `git mv` should already have staged it) rather than
+trusting that first staging - cheap, and worth doing as a habit for exactly this file-move-right-
+after-editing shape, most likely to come up when moving an `agent-todos/`/`developer-todos/` item
+to `done/` right after writing its closing section. If this turns out to have a real root cause
+worth naming, or to only ever recur on one specific environment, update this section (or move the
+detail to that environment's own `.local/agent-environment.md`) accordingly - left general here for
+now, deliberately, given the uncertainty.
+
 ## Code Quality
 
 Rust-specific conventions (idioms, the `.unwrap()` policy, doc-comment scope, and the code-comment
