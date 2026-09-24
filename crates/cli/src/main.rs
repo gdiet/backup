@@ -99,8 +99,6 @@ enum Commands {
         path: Option<PathBuf>,
         #[command(flatten)]
         chunking: ChunkingArgs,
-        #[command(flatten)]
-        ram_budget: RamBudgetArgs,
     },
     // REQ-MOUNT-001.
     /// Mounts a repository as a real filesystem.
@@ -407,19 +405,10 @@ fn main() {
     let time_millis = now_millis();
 
     match cli.command {
-        Commands::CreateRepo {
-            path,
-            chunking,
-            ram_budget,
-        } => {
+        Commands::CreateRepo { path, chunking } => {
             let cdc_target_size_bits = resolve_cdc_target_size_bits(chunking.cdc_target_size_bits);
             let (path, default_path_used) = resolve_repo_path(path);
-            create_repo::run(
-                &path,
-                cdc_target_size_bits,
-                ram_budget.ram_budget_mb,
-                default_path_used,
-            );
+            create_repo::run(&path, cdc_target_size_bits, default_path_used);
             // Only reached once create_repo::run has actually succeeded (it exits the process on
             // failure) - meta/ does not exist yet beforehand, unlike every other command below.
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);

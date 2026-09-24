@@ -33,9 +33,12 @@ fixed budget turns out to be a genuine practical limitation; not attempted here.
 
 A repository whose own configured chunking granularity (REQ-STORAGE-003 in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)) cannot
-possibly fit within the resulting budget is refused at startup (REQ-OPERABILITY-006), rather than
-exceeding it once running - see "Why 23 bits is the chunking-granularity ceiling" below for the
-concrete bound this check is against.
+possibly fit within the resulting budget is refused at startup (REQ-OPERABILITY-006) by whichever
+command actually computes and uses this budget - `mount`/`ingest`, each against its own real,
+currently-configured budget - rather than exceeding it once running. See "Why 23 bits is the
+chunking-granularity ceiling" below for the concrete bound this check is against, and "`create-repo`
+does not validate against an operator-chosen RAM budget" for why the command that fixes a
+repository's chunking granularity in the first place is deliberately not one of them.
 
 ### Why 23 bits is the chunking-granularity ceiling
 
@@ -49,9 +52,28 @@ available) - `cdc` is a crate with standalone value, held to a narrow-but-genera
 reason to constrain a hypothetical caller with a different memory budget of its own. `create-repo`'s
 own validation (REQ-CLI-005 in
 [`../../requirements/functional/cli-commands.md`](../../requirements/functional/cli-commands.md))
-enforces the narrower bound instead, since the requirement it exists to satisfy - fitting inside this
-application's own RAM budget - is this application's concern, not the general-purpose chunking
-library's.
+enforces this narrower, fixed bound instead of `cdc`'s general one - see below for why it goes no
+further than that fixed bound.
+
+### `create-repo` does not validate against an operator-chosen RAM budget
+
+`create-repo` never runs a caching/buffering budget of its own - it neither mounts a write path nor
+runs the ingest pipeline - so there is no real, currently-configured budget to validate a new
+repository's chunking granularity against at creation time. Only the fixed 23-bit ceiling above is
+checked, unconditionally, regardless of whatever RAM budget an operator might later choose for an
+actual `mount`/`ingest` run.
+
+Rejected: giving `create-repo` its own `--ram-budget-mb` argument and re-running
+`ram_budget::check_fits_max_chunk_size` against it at creation time too, on top of the fixed 23-bit
+ceiling - this repository once did exactly that. Removed as unwarranted complexity (YAGNI): it
+duplicated a check `mount`/`ingest` already perform correctly, against their own real budget, at the
+moment a mismatch actually matters - a repository created this way is never at risk of silently
+exceeding its budget once running, since that check still runs there, just later. The only
+difference an operator could ever observe is a slightly earlier error for a narrow misconfiguration
+(an unusually small chosen RAM budget together with an unusually large target chunk size) - not
+worth the extra flag and code path a case this rare would need. Revisit only if a concrete need for
+that earlier signal is actually raised (e.g. a scripted create-and-mount pipeline wanting to fail
+fast at creation, before touching the filesystem at all).
 
 ### Platform-specific dispatch-pool reserve
 
