@@ -591,20 +591,39 @@ session-local identity would have) was not something REQ-TREE-006 actually requi
 about a *write's content* becoming visible to a different process only once complete, not about
 whether the empty file's mere existence is visible immediately.
 
-### Known limitation: a lagging settle job can resurrect a file's name after a racing `unlink`
+### Fixed: a lagging settle job could resurrect a file's name after a racing `unlink`
 
-If a client releases a written generation (queuing its DESIGN-MOUNT-006 settle job), then unlinks
-the file before that job finishes, the job's own `settle_file` call - not knowing the name was
-removed in the meantime - finds nothing live at that name anymore and inserts a fresh entry there
-regardless, effectively resurrecting the name with the settled content. This is not new to this
-decision (the same race exists for an ordinary overwrite's settle job racing a concurrent `unlink`,
-independent of how a new file's first content came to be); it is called out here because
-`create()`-then-quickly-`unlink()` is the shape most likely to surface it in practice, e.g. a client
-that creates a temporary file and removes it again while a slow settle job is still catching up.
-Closing this gap needs the settle job to notice a name was removed out from under it before
-committing - not built yet; left as a known limitation of this first version rather than blocking it,
-the same way DESIGN-MOUNT-009's failure handling and DESIGN-MOUNT-010's Windows sparse-file behavior
-are each their own explicitly tracked gap rather than a silent one.
+If a client released a written generation (queuing its DESIGN-MOUNT-006 settle job), then unlinked
+the file before that job finished, the job's own `settle_file` call - not knowing the name was
+removed in the meantime - found nothing live at that name any more and inserted a fresh entry there
+regardless, effectively resurrecting the name with the settled content. Not specific to
+`create()`-then-quickly-`unlink()` (the shape most likely to surface it in practice, e.g. a client
+that creates a temporary file and removes it again while a slow settle job is still catching up):
+the same race applied to an ordinary overwrite's settle job racing a concurrent `unlink`,
+independent of how a new file's first content came to be.
+
+Fixed by re-verifying liveness *by id* at commit time, inside the same transaction as the
+replacement, rather than trusting a `(parent_id, name)` snapshot taken back when the job was
+submitted (`db::tree::settle_pending_write`, `crates/cli/src/settle_pool.rs::run_job`). A settle
+job's generation carries the id of the row it started from (`GenerationSlot::base_row_id`,
+`crates/cli/src/pending_files.rs`) - `tree_entries.id` is `AUTOINCREMENT`, so that id, still live,
+already proves it is still the same row, unmodified. Still live: the new content replaces it at its
+*current* `(parent_id, name)`, correct even if the file was renamed since the write began, not only
+if it stayed put. No longer live (a real `unlink` won the race): nothing is written - the
+generation is marked abandoned (`GenerationSlot::mark_abandoned`) rather than settled, and the
+content the job already wrote is reclaimed immediately (`db::tree::SettleOutcome::Abandoned`,
+reusing the same reclaim cascade `purge_deleted_entry` already performs for its own orphaned
+content) rather than left to leak.
+
+Narrower gap this leaves open: the fix only covers a file's *first* generation this session
+(`base_row_id` is only ever `Some` there) - a chained second-or-later generation
+(DESIGN-MOUNT-013) still commits the pre-existing, unverified way, against a `(parent_id, name)`
+snapshot taken at its own release time. Closing that too needs a chained generation to know its own
+*immediate* predecessor's resulting row id, which is not yet tracked (the predecessor's id is only
+known once it has itself already settled, and a second generation can be released well before
+that); left as a narrower, still explicitly tracked gap rather than a silent one, the same way
+DESIGN-MOUNT-009's failure handling and DESIGN-MOUNT-010's Windows sparse-file behavior are each
+their own explicitly tracked gap.
 
 ### Alternative considered and rejected: DESIGN-MOUNT-014's synthetic, session-local identity plus a path index
 

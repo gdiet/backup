@@ -33,9 +33,11 @@ libfuse3, Windows via WinFSP, behind a single trait - see
 - **A crash or forced kill can leave a repository locked**: run `dfs unlock PATH` to check for and
   clear a stale write lock left behind by a process that did not exit cleanly - it reports who
   held it, and never touches a lock that is genuinely still held.
-- **Deleting a file right after writing it can occasionally undo the delete**: a short background
-  step finishes committing the write after the file is closed; deleting the file in that narrow
-  window can let it reappear once that step completes. See DESIGN-MOUNT-015's "Known limitation" in
+- **Deleting a file right after its second (or later) write within the same session can occasionally
+  undo the delete**: a short background step finishes committing each write after the file is
+  closed; deleting the file while a *second* write to it is still waiting on that step can let it
+  reappear once that step completes. A single write followed by a delete is not affected. See
+  DESIGN-MOUNT-015's "Fixed" section in
   [`docs/design/mount-write-path.md`](docs/design/mount-write-path.md) for the details.
 
 ## System Requirements

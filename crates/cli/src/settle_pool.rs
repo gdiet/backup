@@ -25,6 +25,12 @@ pub struct SettleJob {
     pub name: String,
     pub time_millis: i64,
     pub generation: Arc<GenerationSlot>,
+    /// [`GenerationSlot::base_row_id`] - `Some` routes the commit through
+    /// [`db::Repository::settle_pending_write`], which re-verifies it live right now instead of
+    /// trusting `parent_id`/`name` (DESIGN-MOUNT-015's fix); `parent_id`/`name` still ride along
+    /// on every job either way, but for a `Some` job they are only ever consulted for a failure-log
+    /// message, never for the commit itself.
+    pub base_row_id: Option<i64>,
 }
 
 /// Why a [`SettleJob`] did not end in [`GenerationSlot::mark_settled`].
@@ -249,25 +255,43 @@ fn run_job(context: &Context, job: SettleJob, bytes_in_persist_queue: &AtomicU64
         read,
         on_chunk_settled,
     ) {
-        Ok(content_id) => {
-            // DESIGN-MOUNT-016: a still-untouched create()-only empty placeholder is hard-deleted
-            // instead of historized - re-verified live by id inside the same transaction as the
-            // replacement, not trusted from whenever this generation was created.
-            let commit = match job.generation.collapsible_placeholder_id() {
-                Some(placeholder_id) => repo.settle_file_collapsing_placeholder(
-                    job.parent_id,
-                    &job.name,
-                    job.time_millis,
-                    content_id,
-                    placeholder_id,
-                ),
-                None => repo.settle_file(job.parent_id, &job.name, job.time_millis, content_id),
-            };
-            match commit {
-                Ok(_) => job.generation.mark_settled(content_id, size),
+        Ok(content_id) => match job.base_row_id {
+            // DESIGN-MOUNT-015's fix: re-verifies base_row_id live right now, inside the same
+            // transaction as the replacement, rather than trusting the parent_id/name snapshot
+            // this job was submitted with - closes the race a real unlink could otherwise win
+            // against this job. Subsumes DESIGN-MOUNT-016's own placeholder-collapsing re-check
+            // (settle_pending_write performs the exact same by-id re-verification either way).
+            Some(base_row_id) => match repo.settle_pending_write(
+                base_row_id,
+                job.time_millis,
+                content_id,
+                job.generation.collapsible_placeholder_id(),
+            ) {
+                Ok(db::SettleOutcome::Committed(_)) => {
+                    job.generation.mark_settled(content_id, size)
+                }
+                Ok(db::SettleOutcome::Abandoned { .. }) => job.generation.mark_abandoned(),
                 Err(err) => (context.on_failure)(&job, JobError::Commit(err)),
+            },
+            // A chained (second-or-later) generation - not yet covered by the same
+            // re-verification (see settle_pending_write's own doc comment for why).
+            None => {
+                let commit = match job.generation.collapsible_placeholder_id() {
+                    Some(placeholder_id) => repo.settle_file_collapsing_placeholder(
+                        job.parent_id,
+                        &job.name,
+                        job.time_millis,
+                        content_id,
+                        placeholder_id,
+                    ),
+                    None => repo.settle_file(job.parent_id, &job.name, job.time_millis, content_id),
+                };
+                match commit {
+                    Ok(_) => job.generation.mark_settled(content_id, size),
+                    Err(err) => (context.on_failure)(&job, JobError::Commit(err)),
+                }
             }
-        }
+        },
         Err(err) => (context.on_failure)(&job, JobError::Settle(err)),
     }
 }
@@ -359,10 +383,19 @@ mod tests {
     #[test]
     fn a_submitted_job_settles_and_commits_a_tree_entry() {
         let (repo, _rd, store, _sd) = repo_and_store();
+        // An ordinary pre-existing file's first write this session - base_row_id is its own id,
+        // the same as any real overwrite through the mount (DESIGN-MOUNT-015's fix's default path).
+        let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let base_id = repo
+            .settle_file(0, "hello.txt", 1_700_000_000_000, old_content)
+            .unwrap();
+
         let registry = PendingFiles::new();
         let budget = Arc::new(MemoryBudget::new(1000));
         let temp_dir = tempfile::tempdir().unwrap();
-        let generation = write_and_release(&registry, 1, b"hello world", &budget, temp_dir.path());
+        let generation =
+            write_and_release(&registry, base_id, b"hello world", &budget, temp_dir.path());
+        assert_eq!(generation.base_row_id(), Some(base_id));
 
         let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let failures_for_hook = Arc::clone(&failures);
@@ -376,14 +409,65 @@ mod tests {
         pool.submit(SettleJob {
             parent_id: 0,
             name: "hello.txt".to_string(),
-            time_millis: 1_700_000_000_000,
+            time_millis: 1_700_000_000_100,
             generation,
+            base_row_id: Some(base_id),
         });
         drop(pool); // Drop joins every worker, so the job has finished once this returns.
 
         assert!(failures.lock().unwrap().is_empty());
         let entry = repo.resolve_path("/hello.txt").unwrap().unwrap();
+        assert_ne!(
+            entry.id, base_id,
+            "an overwrite is a new history entry, not an in-place update"
+        );
         assert_eq!(entry.size, 11);
+    }
+
+    #[test]
+    fn a_job_whose_target_was_deleted_before_it_ran_does_not_resurrect_it() {
+        let (repo, _rd, store, _sd) = repo_and_store();
+        let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let base_id = repo
+            .settle_file(0, "a.txt", 1_700_000_000_000, old_content)
+            .unwrap();
+
+        let registry = PendingFiles::new();
+        let budget = Arc::new(MemoryBudget::new(1000));
+        let temp_dir = tempfile::tempdir().unwrap();
+        let generation =
+            write_and_release(&registry, base_id, b"hello world", &budget, temp_dir.path());
+
+        // The exact race DESIGN-MOUNT-015's own "Known limitation" describes: a client deletes
+        // the file while its own just-finished write is still waiting to be committed.
+        repo.unlink_file(base_id, 1_700_000_000_050).unwrap();
+
+        let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let failures_for_hook = Arc::clone(&failures);
+        let pool = JobPool::new(
+            1,
+            Arc::clone(&repo),
+            Arc::clone(&store),
+            12,
+            move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
+        );
+        pool.submit(SettleJob {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 1_700_000_000_100,
+            generation,
+            base_row_id: Some(base_id),
+        });
+        drop(pool);
+
+        assert!(
+            failures.lock().unwrap().is_empty(),
+            "an abandoned write is an expected outcome of the race, not a failure"
+        );
+        assert!(
+            repo.resolve_path("/a.txt").unwrap().is_none(),
+            "the file must not resurrect under its old name"
+        );
     }
 
     #[test]
@@ -432,6 +516,7 @@ mod tests {
             name: "a.txt".to_string(),
             time_millis: 1_700_000_000_001,
             generation,
+            base_row_id: Some(placeholder_id),
         });
         drop(pool);
 
@@ -463,6 +548,7 @@ mod tests {
             name: "x.txt".to_string(),
             time_millis: 1_700_000_000_000,
             generation: Arc::clone(&generation),
+            base_row_id: None,
         });
         drop(pool);
 
@@ -492,6 +578,7 @@ mod tests {
             name: "x.txt".to_string(),
             time_millis: 1_700_000_000_000,
             generation: Arc::clone(&generation),
+            base_row_id: None,
         });
         drop(pool);
 

@@ -25,18 +25,30 @@ enum Base {
     Chain(Arc<GenerationSlot>),
 }
 
-/// Either still being written/settled in memory (or spilled to disk), or already durably
-/// committed under a `content_id` - DESIGN-MOUNT-013's per-generation state, transitioning from
-/// `Cache` to `Settled` exactly once, when the background job (DESIGN-MOUNT-006) finishes.
+/// Either still being written/settled in memory (or spilled to disk), already durably committed
+/// under a `content_id`, or abandoned - DESIGN-MOUNT-013's per-generation state, transitioning out
+/// of `Cache` exactly once, when the background job (DESIGN-MOUNT-006) finishes one way or the
+/// other.
 enum SlotState {
     Cache(WriteCache),
-    Settled { content_id: i64, size: u64 },
+    Settled {
+        content_id: i64,
+        size: u64,
+    },
+    /// This generation's content was found, at settle-commit time, to no longer be wanted - the
+    /// file it belongs to was deleted out from under it (DESIGN-MOUNT-015's fix for its own
+    /// "Known limitation": a real `unlink` won a race against this generation's own settle job).
+    /// Its own [`WriteCache`] is dropped, same as a `Settled` transition; a read still falls
+    /// through to whatever this generation was itself based on ([`GenerationSlot::base`]), as if
+    /// it had never written anything at all - correct for a still-open, later generation chained
+    /// on top of it (DESIGN-MOUNT-013), which never itself asked to be deleted.
+    Abandoned,
 }
 
 /// One generation in a file's write-cache chain (DESIGN-MOUNT-013). Shared via [`Arc`]: a newer
 /// generation's [`Base::Chain`] keeps an older, still-settling generation alive only for as long
-/// as something still needs it; once settled, `state` drops the [`WriteCache`] and keeps only the
-/// resulting `content_id`/`size`.
+/// as something still needs it; once settled or abandoned, `state` drops the [`WriteCache`] and
+/// keeps only what a later generation's own fallback still needs.
 pub struct GenerationSlot {
     state: Mutex<SlotState>,
     base: Base,
@@ -47,20 +59,38 @@ pub struct GenerationSlot {
     /// `tree_entries.id` is `AUTOINCREMENT`, so no later row can ever reuse it, meaning "still
     /// live" already proves "still holds its original content, untouched".
     collapsible_placeholder_id: Option<i64>,
+    /// `Some(file_id)` whenever this is a file's very first generation this session
+    /// (`Base::Content`, whether or not it is also `collapsible_placeholder_id`) - the id a settle
+    /// job must re-verify still live before committing against it at all (DESIGN-MOUNT-015's fix).
+    /// `None` for a chained (second-or-later) generation, which still commits the pre-existing way.
+    /// See `db::tree::settle_pending_write`'s own doc comment for why that case is not yet covered
+    /// by this same re-verification.
+    base_row_id: Option<i64>,
 }
 
 impl GenerationSlot {
-    fn new(cache: WriteCache, base: Base, collapsible_placeholder_id: Option<i64>) -> Arc<Self> {
+    fn new(
+        cache: WriteCache,
+        base: Base,
+        collapsible_placeholder_id: Option<i64>,
+        base_row_id: Option<i64>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(SlotState::Cache(cache)),
             base,
             collapsible_placeholder_id,
+            base_row_id,
         })
     }
 
     /// See the field doc comment - DESIGN-MOUNT-016.
     pub fn collapsible_placeholder_id(&self) -> Option<i64> {
         self.collapsible_placeholder_id
+    }
+
+    /// See the field doc comment - DESIGN-MOUNT-015.
+    pub fn base_row_id(&self) -> Option<i64> {
+        self.base_row_id
     }
 
     /// Marks this generation settled, dropping its [`WriteCache`] (and whatever memory/spill file
@@ -73,24 +103,32 @@ impl GenerationSlot {
         *self.state.lock().expect("not poisoned") = SlotState::Settled { content_id, size };
     }
 
+    /// Marks this generation abandoned - see [`SlotState::Abandoned`]'s own doc comment. The
+    /// background job pool calls this instead of [`Self::mark_settled`] when the file this
+    /// generation belongs to turned out to have been deleted before it could be committed.
+    pub fn mark_abandoned(&self) {
+        *self.state.lock().expect("not poisoned") = SlotState::Abandoned;
+    }
+
     /// This generation's logical size - what a settle job (DESIGN-MOUNT-006) needs to know how
-    /// many bytes [`Self::read`] can cover.
+    /// many bytes [`Self::read`] can cover. `0` once abandoned - nothing left to settle.
     pub fn size(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.size(),
             SlotState::Settled { size, .. } => *size,
+            SlotState::Abandoned => 0,
         }
     }
 
-    /// The bytes currently spilled to disk for this generation specifically - `0` once settled,
-    /// since a settled generation no longer holds a [`WriteCache`] at all. Test-only: production
-    /// code tracks DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal at the
-    /// `JobPool`/`Settler` level instead (`crate::settle_pool`), not per generation.
+    /// The bytes currently spilled to disk for this generation specifically - `0` once settled or
+    /// abandoned, since neither still holds a [`WriteCache`] at all. Test-only: production code
+    /// tracks DESIGN-MOUNT-006's `bytesInPersistQueue` backpressure signal at the `JobPool`/
+    /// `Settler` level instead (`crate::settle_pool`), not per generation.
     #[cfg(test)]
     pub fn spilled_bytes(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.spilled_bytes(),
-            SlotState::Settled { .. } => 0,
+            SlotState::Settled { .. } | SlotState::Abandoned => 0,
         }
     }
 
@@ -124,6 +162,10 @@ fn read_chain(
             resolve_base(&slot.base, p, l, resolve_content)
         }),
         SlotState::Settled { content_id, .. } => resolve_content(*content_id, position, len),
+        // Nothing this generation itself wrote ever landed anywhere - falls through to whatever
+        // it was based on, exactly as if it had never existed (see SlotState::Abandoned's own doc
+        // comment).
+        SlotState::Abandoned => resolve_base(&slot.base, position, len, resolve_content),
     }
 }
 
@@ -180,10 +222,12 @@ pub struct NewGeneration<'a> {
     pub base_size: u64,
 }
 
-fn is_settled(slot: &GenerationSlot) -> bool {
+/// Whether `slot` has reached a terminal state (settled or abandoned) - either way, nothing still
+/// needs it kept alive in the registry once no handle references it any more.
+fn is_terminal(slot: &GenerationSlot) -> bool {
     matches!(
         &*slot.state.lock().expect("not poisoned"),
-        SlotState::Settled { .. }
+        SlotState::Settled { .. } | SlotState::Abandoned
     )
 }
 
@@ -242,7 +286,7 @@ impl PendingFiles {
             None
         };
         if entry.handle_count == 0 {
-            if entry.latest.as_ref().is_some_and(|s| is_settled(s)) {
+            if entry.latest.as_ref().is_some_and(|s| is_terminal(s)) {
                 entry.latest = None;
             }
             if entry.writable.is_none() && entry.latest.is_none() {
@@ -254,13 +298,18 @@ impl PendingFiles {
 
     /// The current logical size of `file_id`'s pending write-cache chain, if it has one - `None`
     /// when nothing is pending, meaning the caller should use the durably committed size instead
-    /// (DESIGN-MOUNT-007/013's same-session visibility, extended to `getattr`).
+    /// (DESIGN-MOUNT-007/013's same-session visibility, extended to `getattr`). Also `None` for an
+    /// abandoned generation ([`SlotState::Abandoned`]) - it never had a logical size of its own
+    /// worth reporting, and the durably committed size (whatever the file held before the
+    /// abandoned write) is the correct answer instead.
     pub fn current_size(&self, file_id: i64) -> Option<u64> {
         let inner = self.inner.lock().expect("not poisoned");
-        inner
-            .get(&file_id)
-            .and_then(|entry| entry.latest.as_ref())
-            .map(|slot| slot.size())
+        let slot = inner.get(&file_id)?.latest.as_ref()?;
+        match &*slot.state.lock().expect("not poisoned") {
+            SlotState::Abandoned => None,
+            SlotState::Cache(cache) => Some(cache.size()),
+            SlotState::Settled { size, .. } => Some(*size),
+        }
     }
 
     /// The bytes currently spilled to disk for `file_id`'s still-writable generation - `0` if it
@@ -303,7 +352,7 @@ impl PendingFiles {
         let mut state = slot.state.lock().expect("not poisoned");
         match &mut *state {
             SlotState::Cache(cache) => cache.write(position, data),
-            SlotState::Settled { .. } => {
+            SlotState::Settled { .. } | SlotState::Abandoned => {
                 unreachable!("a writable generation is always Cache until it is released")
             }
         }
@@ -316,7 +365,7 @@ impl PendingFiles {
         let mut state = slot.state.lock().expect("not poisoned");
         match &mut *state {
             SlotState::Cache(cache) => cache.truncate(new_size),
-            SlotState::Settled { .. } => {
+            SlotState::Settled { .. } | SlotState::Abandoned => {
                 unreachable!("a writable generation is always Cache until it is released")
             }
         }
@@ -337,12 +386,18 @@ impl PendingFiles {
         if let Some(writable) = &entry.writable {
             return Arc::clone(writable);
         }
-        let (base, size, collapsible_placeholder_id) = match &entry.latest {
-            Some(previous) => (Base::Chain(Arc::clone(previous)), previous.size(), None),
+        let (base, size, collapsible_placeholder_id, base_row_id) = match &entry.latest {
+            Some(previous) => (
+                Base::Chain(Arc::clone(previous)),
+                previous.size(),
+                None,
+                None,
+            ),
             None => (
                 Base::Content(new_generation.base_content_id),
                 new_generation.base_size,
                 entry.created_this_session_placeholder.then_some(file_id),
+                Some(file_id),
             ),
         };
         let cache = WriteCache::new(
@@ -350,7 +405,7 @@ impl PendingFiles {
             Arc::clone(new_generation.budget),
             size,
         );
-        let slot = GenerationSlot::new(cache, base, collapsible_placeholder_id);
+        let slot = GenerationSlot::new(cache, base, collapsible_placeholder_id, base_row_id);
         entry.latest = Some(Arc::clone(&slot));
         entry.writable = Some(Arc::clone(&slot));
         slot
@@ -478,6 +533,27 @@ mod tests {
     }
 
     #[test]
+    fn an_abandoned_generation_is_forgotten_the_same_way_a_settled_one_is() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"hi", params(&budget, dir.path(), 0))
+            .unwrap();
+        let abandoned = registry.release(1).unwrap();
+        abandoned.mark_abandoned();
+
+        registry.open(1);
+        registry.release(1);
+        assert_eq!(
+            registry.len(),
+            0,
+            "an abandoned generation must not linger in the registry forever - otherwise a later \
+             open of the same (now soft-deleted) id could see its stale, never-committed content"
+        );
+    }
+
+    #[test]
     fn open_freshly_created_marks_the_first_generation_as_collapsible() {
         let (budget, dir) = budget_and_dir();
         let registry = PendingFiles::new();
@@ -520,6 +596,134 @@ mod tests {
             .unwrap();
         let second = registry.release(1).unwrap();
         assert_eq!(second.collapsible_placeholder_id(), None);
+    }
+
+    #[test]
+    fn base_row_id_is_the_file_id_for_a_first_generation_whether_or_not_it_was_freshly_created() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"a", params(&budget, dir.path(), 0))
+            .unwrap();
+        let ordinary_open = registry.release(1).unwrap();
+        assert_eq!(ordinary_open.base_row_id(), Some(1));
+
+        registry.open_freshly_created(2);
+        registry
+            .write(2, 0, b"b", params(&budget, dir.path(), 0))
+            .unwrap();
+        let freshly_created = registry.release(2).unwrap();
+        assert_eq!(freshly_created.base_row_id(), Some(2));
+    }
+
+    #[test]
+    fn base_row_id_is_none_for_a_chained_generation() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        registry.release(1).unwrap();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+        assert_eq!(second.base_row_id(), None);
+    }
+
+    #[test]
+    fn an_abandoned_generation_reports_no_pending_size_and_falls_through_to_its_base_on_read() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(
+                1,
+                0,
+                b"hello",
+                NewGeneration {
+                    budget: &budget,
+                    temp_dir: dir.path(),
+                    base_content_id: Some(42),
+                    base_size: 3,
+                },
+            )
+            .unwrap();
+        let generation = registry.release(1).unwrap();
+        assert_eq!(registry.current_size(1), Some(5));
+
+        generation.mark_abandoned();
+
+        assert_eq!(
+            registry.current_size(1),
+            None,
+            "an abandoned generation must not report a stale in-memory size - callers should fall \
+             back to whatever the file actually still holds"
+        );
+        let resolve_original_content = |content_id: i64, _pos: u64, len: u32| {
+            assert_eq!(
+                content_id, 42,
+                "must fall through to this generation's own base"
+            );
+            Ok(vec![b'X'; len as usize])
+        };
+        let data = registry
+            .read(1, 0, 3, &resolve_original_content)
+            .unwrap()
+            .unwrap();
+        assert_eq!(data, b"XXX");
+    }
+
+    #[test]
+    fn a_later_generation_chained_to_an_abandoned_one_still_reads_through_its_own_base() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(
+                1,
+                0,
+                b"0123456789",
+                NewGeneration {
+                    budget: &budget,
+                    temp_dir: dir.path(),
+                    base_content_id: Some(42),
+                    base_size: 10,
+                },
+            )
+            .unwrap();
+        let first = registry.release(1).unwrap();
+
+        // Chains to `first` - still not settled, so this write does not know yet that `first` is
+        // about to be abandoned.
+        registry.open(1);
+        registry
+            .write(1, 2, b"XX", params(&budget, dir.path(), 10))
+            .unwrap();
+
+        first.mark_abandoned();
+
+        // Bytes the second generation never itself touched fall through past the abandoned first
+        // generation to what it was based on - not to its (discarded) written content.
+        let resolve_original_content = |content_id: i64, pos: u64, len: u32| {
+            assert_eq!(content_id, 42);
+            Ok((pos..pos + u64::from(len))
+                .map(|p| b'A' + p as u8)
+                .collect())
+        };
+        let data = registry
+            .read(1, 0, 10, &resolve_original_content)
+            .unwrap()
+            .unwrap();
+        let mut expected: Vec<u8> = vec![b'A', b'A' + 1];
+        expected.extend(b"XX");
+        expected.extend((4u8..10).map(|p| b'A' + p));
+        assert_eq!(data, expected);
     }
 
     #[test]

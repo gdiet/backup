@@ -440,17 +440,43 @@ impl DedupFs {
         let Some(generation) = self.pending.release(file_id) else {
             return;
         };
-        // The entry may have been renamed (settles under its current location) or unlinked
-        // (nothing to settle under anymore - see DESIGN-MOUNT-015's "Known limitation" for the
-        // narrower race that remains once a job is already queued or running) since this
-        // generation was created.
-        if let Ok(Some((parent_id, name))) = self.repo.parent_and_name(file_id) {
-            self.pool.submit(SettleJob {
-                parent_id,
-                name,
-                time_millis: now_millis(),
-                generation,
-            });
+        let time_millis = now_millis();
+        match generation.base_row_id() {
+            // First generation - DESIGN-MOUNT-015's fix: the commit step (settle_pending_write)
+            // re-verifies base_row_id live right now, so submission does not need to gate on
+            // whether it still resolves at this moment the way the chained case below still does.
+            // parent_id/name are a best-effort snapshot, only ever used for a failure-log message -
+            // never for the commit itself, which resolves its actual target fresh.
+            Some(base_row_id) => {
+                let (parent_id, name) = self
+                    .repo
+                    .parent_and_name(file_id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                self.pool.submit(SettleJob {
+                    parent_id,
+                    name,
+                    time_millis,
+                    generation,
+                    base_row_id: Some(base_row_id),
+                });
+            }
+            // A chained (second-or-later) generation - the entry may have been renamed (settles
+            // under its current location) or unlinked (nothing to settle under anymore - not yet
+            // covered by the same re-verification, see settle_pending_write's own doc comment for
+            // why) since this generation was created; only submitted at all if still resolvable.
+            None => {
+                if let Ok(Some((parent_id, name))) = self.repo.parent_and_name(file_id) {
+                    self.pool.submit(SettleJob {
+                        parent_id,
+                        name,
+                        time_millis,
+                        generation,
+                        base_row_id: None,
+                    });
+                }
+            }
         }
     }
 

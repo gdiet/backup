@@ -504,6 +504,95 @@ fn settle_file_impl(
     Ok(id)
 }
 
+/// `settle_pending_write`'s outcome - either it landed, or its target was gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettleOutcome {
+    /// The base row was still live; carries the new row's own id.
+    Committed(i64),
+    /// The base row was no longer live - a background settle job's own content lost a race
+    /// against a concurrent delete of the file it belongs to (see `settle_pending_write`'s own
+    /// doc comment). Nothing was written to the tree; `reclaimed_bytes` is what became eligible
+    /// for reuse by reclaiming the now-unreferenced `content_id` immediately, the same cascade
+    /// `purge_deleted_entry` already performs for its own orphaned content.
+    Abandoned { reclaimed_bytes: u64 },
+}
+
+/// Commits a background settle job's finished content (DESIGN-MOUNT-006) against `base_row_id`,
+/// the row live at the moment this generation's write began (DESIGN-MOUNT-013's per-file identity).
+/// Its liveness is re-verified right now, inside this same transaction, rather than trusted from
+/// whenever the job was submitted. Closes DESIGN-MOUNT-015's "Known limitation": a settle job that
+/// used to commit blindly against a `(parent_id, name)` snapshot taken at release time could
+/// resurrect a name a racing `unlink` had already removed, since nothing at that name any longer
+/// meant nothing to replace, not nothing to write.
+///
+/// - Still live: `base_row_id`'s row is replaced (soft-deleted, or hard-deleted instead if
+///   `collapsible_placeholder_id == Some(base_row_id)` - DESIGN-MOUNT-016) and the new content
+///   lands at its *current* `(parent_id, name)` - correct even if the file was renamed since the
+///   write began, not only if it stayed put.
+/// - No longer live (a real `unlink`/`rmdir` raced this job and won): nothing is written -
+///   [`SettleOutcome::Abandoned`], with `content_id`'s now-orphaned storage reclaimed immediately
+///   rather than left to leak (REQ-STORAGE-004's reclaim sweep only ever walks soft-deleted
+///   `tree_entries` rows, so content that never gained one is not something it would ever find).
+///
+/// Scope: only ever called for a file's *first* generation this session (DESIGN-MOUNT-013's chain) -
+/// `base_row_id` is exactly the id [`crate::Repository::entry_by_id`] returned when that first
+/// write began, which is still meaningful to re-verify by construction (`tree_entries.id` is
+/// `AUTOINCREMENT`, so no later row can ever reuse it). A second-or-later generation in the same
+/// chain still commits the pre-existing way (`settle_file`/`settle_file_collapsing_placeholder`,
+/// against a `(parent_id, name)` snapshot) - extending this same re-verification to a chained
+/// generation needs it to know its own *immediate* predecessor's resulting row id, not the
+/// chain's original one, which is not yet tracked; left as a narrower, still-open gap (see
+/// DESIGN-MOUNT-015's own "Known limitation" for the tracking note).
+pub(crate) fn settle_pending_write(
+    conn: &Connection,
+    cache: &mut NameCache,
+    base_row_id: i64,
+    time_millis: i64,
+    content_id: i64,
+    collapsible_placeholder_id: Option<i64>,
+) -> Result<SettleOutcome, Error> {
+    let row: Option<(i64, String, Option<i64>)> = conn
+        .query_row(
+            "SELECT parent_id, name, deleted_at FROM tree_entries WHERE id = ?1",
+            params![base_row_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let live = match row {
+        Some((parent_id, name, None)) => Some((parent_id, name)),
+        _ => None,
+    };
+    let Some((parent_id, name)) = live else {
+        let reclaimed_bytes = crate::content::reclaim_content(conn, content_id)?;
+        return Ok(SettleOutcome::Abandoned { reclaimed_bytes });
+    };
+
+    if collapsible_placeholder_id == Some(base_row_id) {
+        // See settle_file_impl's own identical branch: base_row_id still being live already
+        // proves it is still exactly the row the caller inserted, holding its original content
+        // unmodified (tree_entries.id is AUTOINCREMENT).
+        conn.execute(
+            "DELETE FROM tree_entries WHERE id = ?1",
+            params![base_row_id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            params![time_millis, base_row_id],
+        )?;
+    }
+    cache.invalidate(parent_id);
+
+    conn.execute(
+        "INSERT INTO tree_entries (parent_id, name, time, content_id, kind) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![parent_id, name, time_millis, content_id, KIND_FILE],
+    )?;
+    let id = conn.last_insert_rowid();
+    note_child_inserted(cache, parent_id, id, &name);
+    Ok(SettleOutcome::Committed(id))
+}
+
 pub(crate) fn rmdir(
     conn: &Connection,
     cache: &mut NameCache,
@@ -805,7 +894,7 @@ pub(crate) fn rename(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Error, RepositorySettings, init_repository, open_repository};
+    use crate::{Error, RepositorySettings, SettleOutcome, init_repository, open_repository};
 
     // Returns the TempDir alongside the Repository - it must outlive every use of the
     // Repository (dropping it deletes the directory the open connection points at).
@@ -1048,6 +1137,148 @@ mod tests {
         let content_id = insert_content(&repo, 1, 0xAA);
         let err = repo.settle_file(999, "a.txt", 100, content_id).unwrap_err();
         assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn settle_pending_write_commits_when_the_base_row_is_still_live() {
+        let (repo, _dir) = repo();
+        let old_content = insert_content(&repo, 1, 0xAA);
+        let new_content = insert_content(&repo, 2, 0xBB);
+        let base_id = repo.settle_file(0, "a.txt", 100, old_content).unwrap();
+        let root_time_before = repo.resolve_path("/").unwrap().unwrap().time_millis;
+
+        let outcome = repo
+            .settle_pending_write(base_id, 200, new_content, None)
+            .unwrap();
+
+        let SettleOutcome::Committed(new_id) = outcome else {
+            panic!("expected Committed, got {outcome:?}");
+        };
+        assert_ne!(new_id, base_id);
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(live.id, new_id);
+        assert_eq!(live.content_id, Some(new_content));
+        let old_deleted_at: Option<i64> = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                    [base_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            old_deleted_at,
+            Some(200),
+            "the old row must become its own history entry, not vanish"
+        );
+        assert_eq!(
+            repo.resolve_path("/").unwrap().unwrap().time_millis,
+            root_time_before,
+            "replacing an already-live file's content is not a structural change"
+        );
+    }
+
+    #[test]
+    fn settle_pending_write_commits_at_the_current_location_after_a_rename() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "moved-to", 100).unwrap();
+        let old_content = insert_content(&repo, 1, 0xAA);
+        let new_content = insert_content(&repo, 2, 0xBB);
+        let base_id = repo.settle_file(0, "a.txt", 100, old_content).unwrap();
+
+        // The file is renamed away while this write's settle job is still in flight - the commit
+        // below must land at the new location, not the stale one the write started against.
+        repo.rename(0, "a.txt", dir_id, "b.txt", false, 150)
+            .unwrap();
+
+        let outcome = repo
+            .settle_pending_write(base_id, 200, new_content, None)
+            .unwrap();
+
+        assert!(matches!(outcome, SettleOutcome::Committed(_)));
+        assert!(repo.resolve_path("/a.txt").unwrap().is_none());
+        let live = repo.resolve_path("/moved-to/b.txt").unwrap().unwrap();
+        assert_eq!(live.content_id, Some(new_content));
+    }
+
+    #[test]
+    fn settle_pending_write_collapses_the_placeholder_when_requested() {
+        let (repo, _dir) = repo();
+        let empty_content = insert_content(&repo, 0, 0xEE);
+        let real_content = insert_content(&repo, 5, 0xAA);
+        let placeholder_id = repo.settle_file(0, "a.txt", 100, empty_content).unwrap();
+
+        let outcome = repo
+            .settle_pending_write(placeholder_id, 200, real_content, Some(placeholder_id))
+            .unwrap();
+
+        let SettleOutcome::Committed(new_id) = outcome else {
+            panic!("expected Committed, got {outcome:?}");
+        };
+        assert_ne!(new_id, placeholder_id);
+        assert_eq!(
+            row_count(&repo, placeholder_id),
+            0,
+            "the placeholder row must be gone entirely, not merely soft-deleted"
+        );
+    }
+
+    #[test]
+    fn settle_pending_write_abandons_and_reclaims_when_the_base_row_was_unlinked() {
+        let (repo, _dir) = repo();
+        let old_content = insert_content(&repo, 1, 0xCC);
+        let base_id = repo.settle_file(0, "a.txt", 100, old_content).unwrap();
+        let (chunk_id, _ranges) = repo.reserve_and_insert_chunk(10, &[0xAA; 20]).unwrap();
+        let new_content = repo
+            .find_or_create_content(10, &[0xBB; 20], &[chunk_id])
+            .unwrap();
+
+        // The exact race DESIGN-MOUNT-015's own "Known limitation" describes: a client deletes the
+        // file while its own just-finished write is still waiting to be committed by the
+        // background settle job.
+        repo.unlink_file(base_id, 150).unwrap();
+
+        let outcome = repo
+            .settle_pending_write(base_id, 200, new_content, None)
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            SettleOutcome::Abandoned {
+                reclaimed_bytes: 10
+            },
+            "the sole reference's own chunk_extents range must be counted as reclaimed"
+        );
+        assert!(
+            repo.resolve_path("/a.txt").unwrap().is_none(),
+            "the file must not resurrect under its old name"
+        );
+        let chunk_left: i64 = repo
+            .with_connection(|conn, _cache| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM chunks WHERE id = ?1",
+                    [chunk_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            chunk_left, 0,
+            "abandoning a write must not leak the content it already wrote to the store"
+        );
+    }
+
+    #[test]
+    fn settle_pending_write_abandons_when_the_base_row_id_never_existed() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+
+        let outcome = repo
+            .settle_pending_write(999, 200, content_id, None)
+            .unwrap();
+
+        assert_eq!(outcome, SettleOutcome::Abandoned { reclaimed_bytes: 0 });
     }
 
     #[test]

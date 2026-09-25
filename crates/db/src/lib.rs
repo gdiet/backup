@@ -29,7 +29,7 @@ pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
 pub use stats::Stats;
-pub use tree::{DeletedEntry, Entry, EntryKind, PurgeResult};
+pub use tree::{DeletedEntry, Entry, EntryKind, PurgeResult, SettleOutcome};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
 // docs/design/repository-layout.md.
@@ -555,6 +555,29 @@ impl Repository {
                 cache,
                 parent_id,
                 name,
+                time_millis,
+                content_id,
+                collapsible_placeholder_id,
+            )
+        })
+    }
+
+    /// Commits a background settle job's finished content against `base_row_id`, re-verified live
+    /// right now rather than trusted from whenever the job was submitted - DESIGN-MOUNT-015's fix
+    /// for its own "Known limitation". See `tree::settle_pending_write`'s own doc comment for the
+    /// exact re-verification/scope rules.
+    pub fn settle_pending_write(
+        &self,
+        base_row_id: i64,
+        time_millis: i64,
+        content_id: i64,
+        collapsible_placeholder_id: Option<i64>,
+    ) -> Result<SettleOutcome, Error> {
+        self.with_transaction(|conn, cache| {
+            tree::settle_pending_write(
+                conn,
+                cache,
+                base_row_id,
                 time_millis,
                 content_id,
                 collapsible_placeholder_id,
