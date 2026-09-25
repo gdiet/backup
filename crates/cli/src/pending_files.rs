@@ -34,6 +34,10 @@ enum SlotState {
     Settled {
         content_id: i64,
         size: u64,
+        /// The `tree_entries.id` this content actually landed under - what a generation chained
+        /// on top of this one must itself re-verify still live before replacing it in turn
+        /// (DESIGN-MOUNT-015's fix, [`GenerationSlot::resolve_or_defer`]).
+        row_id: i64,
     },
     /// This generation's content was found, at settle-commit time, to no longer be wanted - the
     /// file it belongs to was deleted out from under it (DESIGN-MOUNT-015's fix for its own
@@ -45,12 +49,43 @@ enum SlotState {
     Abandoned,
 }
 
+/// What committing a generation's own content should target, resolved from its immediate
+/// predecessor in the chain (DESIGN-MOUNT-013) - [`GenerationSlot::resolve_or_defer`]'s own
+/// result, delivered to a [`Continuation`] either immediately or once that predecessor reaches a
+/// terminal state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainTarget {
+    /// The id to re-verify live and replace - either a first generation's own base row, or (for a
+    /// chained one) whatever row its immediate predecessor's own settling actually produced.
+    /// Re-verified again regardless of which: it may have been renamed, or even deleted, in the
+    /// time since.
+    RowId(i64),
+    /// The predecessor was itself abandoned (transitively, all the way down the chain, however
+    /// deep) - there is nothing this generation's own content could ever replace either.
+    Abandoned,
+}
+
+/// Runs once a generation's [`ChainTarget`] becomes known - see
+/// [`GenerationSlot::resolve_or_defer`]. `Send` because it may run on a different thread than the
+/// one that registered it (whichever settle job happens to drive the predecessor to a terminal
+/// state); never blocks the thread that registers it, so a chain of any depth can never deadlock a
+/// job pool with only a few worker threads.
+type Continuation = Box<dyn FnOnce(ChainTarget) + Send>;
+
+/// [`GenerationSlot`]'s mutex-guarded state. `waiters` lives alongside `state`, under the same
+/// lock, so registering one (while still `Cache`) and transitioning out of `Cache` can never race
+/// each other into a lost wakeup - both always happen atomically together.
+struct Inner {
+    state: SlotState,
+    waiters: Vec<Continuation>,
+}
+
 /// One generation in a file's write-cache chain (DESIGN-MOUNT-013). Shared via [`Arc`]: a newer
 /// generation's [`Base::Chain`] keeps an older, still-settling generation alive only for as long
 /// as something still needs it; once settled or abandoned, `state` drops the [`WriteCache`] and
 /// keeps only what a later generation's own fallback still needs.
 pub struct GenerationSlot {
-    state: Mutex<SlotState>,
+    inner: Mutex<Inner>,
     base: Base,
     /// `Some(file_id)` when this is the very first generation for a file this session's own
     /// `create()` call inserted with the canonical empty content, still untouched - DESIGN-MOUNT-016's
@@ -60,11 +95,10 @@ pub struct GenerationSlot {
     /// live" already proves "still holds its original content, untouched".
     collapsible_placeholder_id: Option<i64>,
     /// `Some(file_id)` whenever this is a file's very first generation this session
-    /// (`Base::Content`, whether or not it is also `collapsible_placeholder_id`) - the id a settle
-    /// job must re-verify still live before committing against it at all (DESIGN-MOUNT-015's fix).
-    /// `None` for a chained (second-or-later) generation, which still commits the pre-existing way.
-    /// See `db::tree::settle_pending_write`'s own doc comment for why that case is not yet covered
-    /// by this same re-verification.
+    /// (`Base::Content`, whether or not it is also `collapsible_placeholder_id`) - the id
+    /// [`Self::resolve_or_defer`] resolves to immediately, with nothing to wait on. `None` for a
+    /// chained (second-or-later) generation, whose own target is only known once its immediate
+    /// predecessor resolves its own.
     base_row_id: Option<i64>,
 }
 
@@ -76,7 +110,10 @@ impl GenerationSlot {
         base_row_id: Option<i64>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            state: Mutex::new(SlotState::Cache(cache)),
+            inner: Mutex::new(Inner {
+                state: SlotState::Cache(cache),
+                waiters: Vec::new(),
+            }),
             base,
             collapsible_placeholder_id,
             base_row_id,
@@ -88,32 +125,94 @@ impl GenerationSlot {
         self.collapsible_placeholder_id
     }
 
-    /// See the field doc comment - DESIGN-MOUNT-015.
-    pub fn base_row_id(&self) -> Option<i64> {
-        self.base_row_id
+    /// Resolves what committing this generation's own content should target, or arranges for
+    /// `continuation` to run later with that target once it becomes known - DESIGN-MOUNT-015's
+    /// fix, generalized to a chain of any depth rather than only a file's first generation.
+    ///
+    /// Runs `continuation` immediately, inline, in two cases: a first generation (`Base::Content`)
+    /// always resolves to its own `base_row_id` right away, with nothing to wait on; a chained
+    /// generation resolves immediately too, if its immediate predecessor has already reached a
+    /// terminal state by the time this is called. Otherwise (a chained generation whose
+    /// predecessor is still being written or settled) queues `continuation` to run later,
+    /// synchronously, from whichever thread eventually drives that predecessor to a terminal state
+    /// ([`Self::mark_settled`]/[`Self::mark_abandoned`]) - never by blocking the calling thread, so
+    /// one generation's settle job waiting on another's can never deadlock a pool backed by only a
+    /// few worker threads.
+    pub fn resolve_or_defer(&self, continuation: Continuation) {
+        match &self.base {
+            Base::Content(_) => {
+                let base_row_id = self
+                    .base_row_id
+                    .expect("Base::Content always carries a base_row_id");
+                continuation(ChainTarget::RowId(base_row_id));
+            }
+            Base::Chain(previous) => previous.on_terminal(continuation),
+        }
     }
 
-    /// Marks this generation settled, dropping its [`WriteCache`] (and whatever memory/spill file
-    /// it was still holding) and switching subsequent reads over to `content_id` instead - the
-    /// hook DESIGN-MOUNT-006's background job pool calls once it has durably committed this
-    /// generation's content. `size` is the settled content's logical size, needed so a newer
-    /// generation still chained to this one can resolve its own base size without this module
-    /// depending on `crates/db`.
-    pub fn mark_settled(&self, content_id: i64, size: u64) {
-        *self.state.lock().expect("not poisoned") = SlotState::Settled { content_id, size };
+    /// Runs `continuation` with this generation's own resulting [`ChainTarget`] once it reaches a
+    /// terminal state - immediately, inline, if it already has by the time this is called; queued
+    /// otherwise, to run later from [`Self::mark_settled`]/[`Self::mark_abandoned`]. Private: only
+    /// ever reached through a *successor's* [`Self::resolve_or_defer`] call, on `previous`.
+    fn on_terminal(&self, continuation: Continuation) {
+        let mut inner = self.inner.lock().expect("not poisoned");
+        match &inner.state {
+            SlotState::Settled { row_id, .. } => {
+                let target = ChainTarget::RowId(*row_id);
+                drop(inner);
+                continuation(target);
+            }
+            SlotState::Abandoned => {
+                drop(inner);
+                continuation(ChainTarget::Abandoned);
+            }
+            SlotState::Cache(_) => inner.waiters.push(continuation),
+        }
+    }
+
+    /// Marks this generation settled under `row_id` - the actual `tree_entries.id` its content
+    /// landed under - dropping its [`WriteCache`] (and whatever memory/spill file it was still
+    /// holding) and switching subsequent reads over to `content_id` instead. `size` is the
+    /// settled content's logical size, needed so a newer generation still chained to this one can
+    /// resolve its own base size without this module depending on `crates/db`. Runs every
+    /// [`Continuation`] a chained successor may already have registered via
+    /// [`Self::resolve_or_defer`], now that `row_id` is known - synchronously, on this same call.
+    pub fn mark_settled(&self, content_id: i64, size: u64, row_id: i64) {
+        let waiters = {
+            let mut inner = self.inner.lock().expect("not poisoned");
+            inner.state = SlotState::Settled {
+                content_id,
+                size,
+                row_id,
+            };
+            std::mem::take(&mut inner.waiters)
+        };
+        for waiter in waiters {
+            waiter(ChainTarget::RowId(row_id));
+        }
     }
 
     /// Marks this generation abandoned - see [`SlotState::Abandoned`]'s own doc comment. The
     /// background job pool calls this instead of [`Self::mark_settled`] when the file this
-    /// generation belongs to turned out to have been deleted before it could be committed.
+    /// generation belongs to turned out to have been deleted before it could be committed. Runs
+    /// every [`Continuation`] a chained successor may already have registered via
+    /// [`Self::resolve_or_defer`], propagating the same abandonment down the chain, synchronously,
+    /// on this same call.
     pub fn mark_abandoned(&self) {
-        *self.state.lock().expect("not poisoned") = SlotState::Abandoned;
+        let waiters = {
+            let mut inner = self.inner.lock().expect("not poisoned");
+            inner.state = SlotState::Abandoned;
+            std::mem::take(&mut inner.waiters)
+        };
+        for waiter in waiters {
+            waiter(ChainTarget::Abandoned);
+        }
     }
 
     /// This generation's logical size - what a settle job (DESIGN-MOUNT-006) needs to know how
     /// many bytes [`Self::read`] can cover. `0` once abandoned - nothing left to settle.
     pub fn size(&self) -> u64 {
-        match &*self.state.lock().expect("not poisoned") {
+        match &self.inner.lock().expect("not poisoned").state {
             SlotState::Cache(cache) => cache.size(),
             SlotState::Settled { size, .. } => *size,
             SlotState::Abandoned => 0,
@@ -126,7 +225,7 @@ impl GenerationSlot {
     /// `Settler` level instead (`crate::settle_pool`), not per generation.
     #[cfg(test)]
     pub fn spilled_bytes(&self) -> u64 {
-        match &*self.state.lock().expect("not poisoned") {
+        match &self.inner.lock().expect("not poisoned").state {
             SlotState::Cache(cache) => cache.spilled_bytes(),
             SlotState::Settled { .. } | SlotState::Abandoned => 0,
         }
@@ -156,8 +255,8 @@ fn read_chain(
     len: u32,
     resolve_content: &impl Fn(i64, u64, u32) -> io::Result<Vec<u8>>,
 ) -> io::Result<Vec<u8>> {
-    let mut state = slot.state.lock().expect("not poisoned");
-    match &mut *state {
+    let mut inner = slot.inner.lock().expect("not poisoned");
+    match &mut inner.state {
         SlotState::Cache(cache) => cache.read(position, len, |p, l| {
             resolve_base(&slot.base, p, l, resolve_content)
         }),
@@ -226,7 +325,7 @@ pub struct NewGeneration<'a> {
 /// needs it kept alive in the registry once no handle references it any more.
 fn is_terminal(slot: &GenerationSlot) -> bool {
     matches!(
-        &*slot.state.lock().expect("not poisoned"),
+        slot.inner.lock().expect("not poisoned").state,
         SlotState::Settled { .. } | SlotState::Abandoned
     )
 }
@@ -305,7 +404,7 @@ impl PendingFiles {
     pub fn current_size(&self, file_id: i64) -> Option<u64> {
         let inner = self.inner.lock().expect("not poisoned");
         let slot = inner.get(&file_id)?.latest.as_ref()?;
-        match &*slot.state.lock().expect("not poisoned") {
+        match &slot.inner.lock().expect("not poisoned").state {
             SlotState::Abandoned => None,
             SlotState::Cache(cache) => Some(cache.size()),
             SlotState::Settled { size, .. } => Some(*size),
@@ -349,8 +448,8 @@ impl PendingFiles {
         new_generation: NewGeneration<'_>,
     ) -> io::Result<()> {
         let slot = self.writable_generation(file_id, new_generation);
-        let mut state = slot.state.lock().expect("not poisoned");
-        match &mut *state {
+        let mut inner = slot.inner.lock().expect("not poisoned");
+        match &mut inner.state {
             SlotState::Cache(cache) => cache.write(position, data),
             SlotState::Settled { .. } | SlotState::Abandoned => {
                 unreachable!("a writable generation is always Cache until it is released")
@@ -362,8 +461,8 @@ impl PendingFiles {
     /// yet - see [`Self::write`].
     pub fn truncate(&self, file_id: i64, new_size: u64, new_generation: NewGeneration<'_>) {
         let slot = self.writable_generation(file_id, new_generation);
-        let mut state = slot.state.lock().expect("not poisoned");
-        match &mut *state {
+        let mut inner = slot.inner.lock().expect("not poisoned");
+        match &mut inner.state {
             SlotState::Cache(cache) => cache.truncate(new_size),
             SlotState::Settled { .. } | SlotState::Abandoned => {
                 unreachable!("a writable generation is always Cache until it is released")
@@ -442,6 +541,7 @@ impl PendingFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
 
     fn no_content(_content_id: i64, _pos: u64, _len: u32) -> io::Result<Vec<u8>> {
         panic!("resolve_content must not be called when nothing is durably committed yet")
@@ -468,6 +568,15 @@ mod tests {
             base_content_id: None,
             base_size,
         }
+    }
+
+    /// Registers `continuation` via `resolve_or_defer` and returns a channel receiver yielding
+    /// its `ChainTarget` once run - lets a test observe whether/when it actually ran without
+    /// hand-rolling a `Mutex<Option<_>>` each time.
+    fn capture_target(slot: &GenerationSlot) -> mpsc::Receiver<ChainTarget> {
+        let (tx, rx) = mpsc::channel();
+        slot.resolve_or_defer(Box::new(move |target| tx.send(target).unwrap()));
+        rx
     }
 
     #[test]
@@ -519,7 +628,7 @@ mod tests {
             "kept while the generation is still settling"
         );
 
-        settling.mark_settled(7, 2);
+        settling.mark_settled(7, 2, 99);
         // Cleanup happens lazily, on the registry's next touch for this file - here, a read-only
         // open/release cycle that creates no new generation of its own - not the instant
         // `mark_settled` runs, which does not go through the registry at all.
@@ -596,44 +705,6 @@ mod tests {
             .unwrap();
         let second = registry.release(1).unwrap();
         assert_eq!(second.collapsible_placeholder_id(), None);
-    }
-
-    #[test]
-    fn base_row_id_is_the_file_id_for_a_first_generation_whether_or_not_it_was_freshly_created() {
-        let (budget, dir) = budget_and_dir();
-        let registry = PendingFiles::new();
-
-        registry.open(1);
-        registry
-            .write(1, 0, b"a", params(&budget, dir.path(), 0))
-            .unwrap();
-        let ordinary_open = registry.release(1).unwrap();
-        assert_eq!(ordinary_open.base_row_id(), Some(1));
-
-        registry.open_freshly_created(2);
-        registry
-            .write(2, 0, b"b", params(&budget, dir.path(), 0))
-            .unwrap();
-        let freshly_created = registry.release(2).unwrap();
-        assert_eq!(freshly_created.base_row_id(), Some(2));
-    }
-
-    #[test]
-    fn base_row_id_is_none_for_a_chained_generation() {
-        let (budget, dir) = budget_and_dir();
-        let registry = PendingFiles::new();
-        registry.open(1);
-        registry
-            .write(1, 0, b"one", params(&budget, dir.path(), 0))
-            .unwrap();
-        registry.release(1).unwrap();
-
-        registry.open(1);
-        registry
-            .write(1, 0, b"two", params(&budget, dir.path(), 3))
-            .unwrap();
-        let second = registry.release(1).unwrap();
-        assert_eq!(second.base_row_id(), None);
     }
 
     #[test]
@@ -763,7 +834,7 @@ mod tests {
         // Released - still readable/sized (DESIGN-MOUNT-007), but no longer writable.
         assert_eq!(registry.current_size(1), Some(5));
         assert!(!registry.has_writable(1));
-        settling.mark_settled(1, 5);
+        settling.mark_settled(1, 5, 99);
     }
 
     #[test]
@@ -791,7 +862,7 @@ mod tests {
 
         // Once the old generation settles, the same read now resolves via the durably committed
         // content instead - proving the fallback is live, not a snapshot taken at creation time.
-        settling.mark_settled(99, 10);
+        settling.mark_settled(99, 10, 999);
         let resolve_from_content = |content_id: i64, pos: u64, len: u32| {
             assert_eq!(content_id, 99);
             Ok((pos..pos + u64::from(len))
@@ -835,8 +906,8 @@ mod tests {
 
         // Settling oldest-first, as a real background pool would - gen2 remains reachable for
         // the third (still open) generation's own fallback.
-        gen1.mark_settled(1, 10);
-        gen2.mark_settled(2, 10);
+        gen1.mark_settled(1, 10, 101);
+        gen2.mark_settled(2, 10, 102);
         let resolve_settled = |content_id: i64, _pos: u64, len: u32| match content_id {
             2 => Ok(vec![b'2'; len as usize]),
             other => panic!("only gen2 (content_id 2) should ever be asked here: got {other}"),
@@ -845,5 +916,148 @@ mod tests {
         // gen1's content in) - so gen1 (content_id 1) is never consulted for this read at all.
         let data = registry.read(1, 0, 10, &resolve_settled).unwrap().unwrap();
         assert_eq!(data, b"2222BB2222");
+    }
+
+    #[test]
+    fn resolve_or_defer_resolves_a_first_generation_immediately() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(5);
+        registry
+            .write(5, 0, b"x", params(&budget, dir.path(), 0))
+            .unwrap();
+        let generation = registry.release(5).unwrap();
+
+        let rx = capture_target(&generation);
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            ChainTarget::RowId(5),
+            "a first generation's own base_row_id, with nothing to wait on"
+        );
+    }
+
+    #[test]
+    fn resolve_or_defer_resolves_immediately_once_the_predecessor_is_already_terminal() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        let first = registry.release(1).unwrap();
+        first.mark_settled(10, 3, 100);
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+
+        let rx = capture_target(&second);
+        assert_eq!(rx.try_recv().unwrap(), ChainTarget::RowId(100));
+    }
+
+    #[test]
+    fn resolve_or_defer_defers_until_the_predecessor_settles_then_runs_synchronously() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        let first = registry.release(1).unwrap();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+
+        let rx = capture_target(&second);
+        assert!(
+            rx.try_recv().is_err(),
+            "must not resolve before the predecessor does - nothing to target yet"
+        );
+
+        first.mark_settled(10, 3, 100);
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            ChainTarget::RowId(100),
+            "resolves synchronously, as part of the predecessor's own mark_settled call"
+        );
+    }
+
+    #[test]
+    fn resolve_or_defer_defers_until_the_predecessor_is_abandoned_then_propagates_that() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        let first = registry.release(1).unwrap();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+
+        let rx = capture_target(&second);
+        first.mark_abandoned();
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            ChainTarget::Abandoned,
+            "the whole chain has nothing left to target once its own base is gone"
+        );
+    }
+
+    #[test]
+    fn resolve_or_defer_propagates_abandonment_two_levels_down_a_chain() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        let first = registry.release(1).unwrap();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"three", params(&budget, dir.path(), 3))
+            .unwrap();
+        let third = registry.release(1).unwrap();
+
+        // `third`'s own settle job registers against `second` up front, the same way a real one
+        // would as soon as its own content finishes settling - well before `second` or `first`
+        // has resolved anything.
+        let rx = capture_target(&third);
+
+        // `second`'s own settle job resolves its own target too, registering against `first` in
+        // turn since `first` is not yet terminal either. Mirrors what `crate::settle_pool::commit`
+        // really does once a target resolves: marks `second` abandoned itself, in response - which
+        // is what actually drains and notifies `third`'s own waiter, registered above.
+        let second_for_continuation = Arc::clone(&second);
+        second.resolve_or_defer(Box::new(move |target| {
+            assert_eq!(target, ChainTarget::Abandoned);
+            second_for_continuation.mark_abandoned();
+        }));
+        assert!(
+            rx.try_recv().is_err(),
+            "nothing resolves before first, the chain's own root, does"
+        );
+
+        first.mark_abandoned();
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            ChainTarget::Abandoned,
+            "first abandoning cascades through second's own continuation to third's"
+        );
     }
 }

@@ -15,22 +15,18 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::pending_files::GenerationSlot;
+use crate::pending_files::{ChainTarget, GenerationSlot};
 
-/// One generation ready to be durably committed - DESIGN-MOUNT-013's hand-off from `release()`,
-/// carrying the tree location its settled `content_id` needs to land at
-/// ([`db::Repository::settle_file`], DESIGN-MOUNT-011).
+/// One generation ready to be durably committed - DESIGN-MOUNT-013's hand-off from `release()`.
+/// `parent_id`/`name` are a best-effort snapshot from whenever this job was submitted, never
+/// consulted for the commit itself (which re-resolves its actual target fresh, by id -
+/// DESIGN-MOUNT-015's fix, `GenerationSlot::resolve_or_defer`) - only for a failure-log message,
+/// where slightly-stale-or-absent information is an acceptable, purely cosmetic cost.
 pub struct SettleJob {
     pub parent_id: i64,
     pub name: String,
     pub time_millis: i64,
     pub generation: Arc<GenerationSlot>,
-    /// [`GenerationSlot::base_row_id`] - `Some` routes the commit through
-    /// [`db::Repository::settle_pending_write`], which re-verifies it live right now instead of
-    /// trusting `parent_id`/`name` (DESIGN-MOUNT-015's fix); `parent_id`/`name` still ride along
-    /// on every job either way, but for a `Some` job they are only ever consulted for a failure-log
-    /// message, never for the commit itself.
-    pub base_row_id: Option<i64>,
 }
 
 /// Why a [`SettleJob`] did not end in [`GenerationSlot::mark_settled`].
@@ -39,9 +35,9 @@ pub enum JobError {
     /// Failed while chunking/hashing/writing the content itself.
     Settle(crate::settle::SettleError),
     /// The content settled successfully, but committing it into the tree
-    /// ([`db::Repository::settle_file`]) failed - the generation is left as-is, still readable
-    /// this session (DESIGN-MOUNT-007) but never marked settled, since nothing durably committed
-    /// under its own tree entry.
+    /// ([`db::Repository::settle_pending_write`]) failed - the generation is left as-is, still
+    /// readable this session (DESIGN-MOUNT-007) but never marked settled, since nothing durably
+    /// committed under its own tree entry.
     Commit(db::Error),
 }
 
@@ -122,7 +118,9 @@ pub(crate) fn is_systemic_db_error(err: &db::Error) -> bool {
 /// See [`JobPool::new`]'s `on_failure` parameter.
 type FailureHook = Box<dyn Fn(&SettleJob, JobError) + Send + Sync>;
 
-/// Shared, read-only state every worker thread needs.
+/// Shared, read-only state every worker thread needs - `Arc`-shared (not just borrowed) so a
+/// deferred commit ([`GenerationSlot::resolve_or_defer`]'s queued case) can carry it along to
+/// wherever it actually runs, possibly a different worker thread than the one that first tried.
 struct Context {
     repo: Arc<db::Repository>,
     store: Arc<store::ByteStore>,
@@ -215,7 +213,7 @@ impl Drop for JobPool {
 
 fn worker_loop(
     receiver: &Mutex<mpsc::Receiver<SettleJob>>,
-    context: &Context,
+    context: &Arc<Context>,
     bytes_in_persist_queue: &AtomicU64,
 ) {
     loop {
@@ -230,7 +228,10 @@ fn worker_loop(
     }
 }
 
-fn run_job(context: &Context, job: SettleJob, bytes_in_persist_queue: &AtomicU64) {
+/// Chunks, hashes, and writes `job`'s generation's content, then resolves what committing it
+/// should target and either commits it right away or defers that to whichever thread eventually
+/// resolves it ([`GenerationSlot::resolve_or_defer`], DESIGN-MOUNT-015's fix).
+fn run_job(context: &Arc<Context>, job: SettleJob, bytes_in_persist_queue: &AtomicU64) {
     let repo = context.repo.as_ref();
     let store = context.store.as_ref();
     let size = job.generation.size();
@@ -255,44 +256,78 @@ fn run_job(context: &Context, job: SettleJob, bytes_in_persist_queue: &AtomicU64
         read,
         on_chunk_settled,
     ) {
-        Ok(content_id) => match job.base_row_id {
-            // DESIGN-MOUNT-015's fix: re-verifies base_row_id live right now, inside the same
-            // transaction as the replacement, rather than trusting the parent_id/name snapshot
-            // this job was submitted with - closes the race a real unlink could otherwise win
-            // against this job. Subsumes DESIGN-MOUNT-016's own placeholder-collapsing re-check
-            // (settle_pending_write performs the exact same by-id re-verification either way).
-            Some(base_row_id) => match repo.settle_pending_write(
-                base_row_id,
-                job.time_millis,
-                content_id,
-                job.generation.collapsible_placeholder_id(),
-            ) {
-                Ok(db::SettleOutcome::Committed(_)) => {
-                    job.generation.mark_settled(content_id, size)
-                }
-                Ok(db::SettleOutcome::Abandoned { .. }) => job.generation.mark_abandoned(),
-                Err(err) => (context.on_failure)(&job, JobError::Commit(err)),
-            },
-            // A chained (second-or-later) generation - not yet covered by the same
-            // re-verification (see settle_pending_write's own doc comment for why).
-            None => {
-                let commit = match job.generation.collapsible_placeholder_id() {
-                    Some(placeholder_id) => repo.settle_file_collapsing_placeholder(
-                        job.parent_id,
-                        &job.name,
-                        job.time_millis,
-                        content_id,
-                        placeholder_id,
-                    ),
-                    None => repo.settle_file(job.parent_id, &job.name, job.time_millis, content_id),
-                };
-                match commit {
-                    Ok(_) => job.generation.mark_settled(content_id, size),
-                    Err(err) => (context.on_failure)(&job, JobError::Commit(err)),
-                }
-            }
-        },
+        Ok(content_id) => {
+            let SettleJob {
+                parent_id,
+                name,
+                time_millis,
+                generation,
+            } = job;
+            let collapsible_placeholder_id = generation.collapsible_placeholder_id();
+            let commit_context = Arc::clone(context);
+            let commit_generation = Arc::clone(&generation);
+            generation.resolve_or_defer(Box::new(move |target| {
+                commit(
+                    &commit_context,
+                    &commit_generation,
+                    content_id,
+                    size,
+                    time_millis,
+                    collapsible_placeholder_id,
+                    parent_id,
+                    &name,
+                    target,
+                );
+            }));
+        }
         Err(err) => (context.on_failure)(&job, JobError::Settle(err)),
+    }
+}
+
+/// Actually commits (or abandons) a generation's already-settled content, once `target` is known -
+/// the part of a settle job [`GenerationSlot::resolve_or_defer`] may defer, so it never needs to
+/// redo the possibly-expensive chunking/hashing/writing step above it just to retry.
+#[allow(clippy::too_many_arguments)]
+fn commit(
+    context: &Context,
+    generation: &Arc<GenerationSlot>,
+    content_id: i64,
+    size: u64,
+    time_millis: i64,
+    collapsible_placeholder_id: Option<i64>,
+    parent_id: i64,
+    name: &str,
+    target: ChainTarget,
+) {
+    let base_row_id = match target {
+        ChainTarget::RowId(id) => id,
+        // The chain this generation is built on top of has nothing left to replace either -
+        // propagates the same abandonment DESIGN-MOUNT-015's fix already gives a first generation
+        // whose own base row was deleted out from under it.
+        ChainTarget::Abandoned => {
+            generation.mark_abandoned();
+            return;
+        }
+    };
+    match context.repo.settle_pending_write(
+        base_row_id,
+        time_millis,
+        content_id,
+        collapsible_placeholder_id,
+    ) {
+        Ok(db::SettleOutcome::Committed(row_id)) => {
+            generation.mark_settled(content_id, size, row_id)
+        }
+        Ok(db::SettleOutcome::Abandoned { .. }) => generation.mark_abandoned(),
+        Err(err) => {
+            let job = SettleJob {
+                parent_id,
+                name: name.to_string(),
+                time_millis,
+                generation: Arc::clone(generation),
+            };
+            (context.on_failure)(&job, JobError::Commit(err));
+        }
     }
 }
 
@@ -383,8 +418,7 @@ mod tests {
     #[test]
     fn a_submitted_job_settles_and_commits_a_tree_entry() {
         let (repo, _rd, store, _sd) = repo_and_store();
-        // An ordinary pre-existing file's first write this session - base_row_id is its own id,
-        // the same as any real overwrite through the mount (DESIGN-MOUNT-015's fix's default path).
+        // An ordinary pre-existing file's first write this session.
         let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
         let base_id = repo
             .settle_file(0, "hello.txt", 1_700_000_000_000, old_content)
@@ -395,7 +429,6 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let generation =
             write_and_release(&registry, base_id, b"hello world", &budget, temp_dir.path());
-        assert_eq!(generation.base_row_id(), Some(base_id));
 
         let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let failures_for_hook = Arc::clone(&failures);
@@ -411,7 +444,6 @@ mod tests {
             name: "hello.txt".to_string(),
             time_millis: 1_700_000_000_100,
             generation,
-            base_row_id: Some(base_id),
         });
         drop(pool); // Drop joins every worker, so the job has finished once this returns.
 
@@ -438,8 +470,8 @@ mod tests {
         let generation =
             write_and_release(&registry, base_id, b"hello world", &budget, temp_dir.path());
 
-        // The exact race DESIGN-MOUNT-015's own "Known limitation" describes: a client deletes
-        // the file while its own just-finished write is still waiting to be committed.
+        // The exact race DESIGN-MOUNT-015's own "Fixed" section describes: a client deletes the
+        // file while its own just-finished write is still waiting to be committed.
         repo.unlink_file(base_id, 1_700_000_000_050).unwrap();
 
         let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -456,7 +488,6 @@ mod tests {
             name: "a.txt".to_string(),
             time_millis: 1_700_000_000_100,
             generation,
-            base_row_id: Some(base_id),
         });
         drop(pool);
 
@@ -467,6 +498,88 @@ mod tests {
         assert!(
             repo.resolve_path("/a.txt").unwrap().is_none(),
             "the file must not resurrect under its old name"
+        );
+    }
+
+    #[test]
+    fn a_chained_generations_job_is_also_abandoned_once_its_predecessor_is() {
+        let (repo, _rd, store, _sd) = repo_and_store();
+        let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let base_id = repo
+            .settle_file(0, "a.txt", 1_700_000_000_000, old_content)
+            .unwrap();
+
+        let registry = PendingFiles::new();
+        let budget = Arc::new(MemoryBudget::new(1000));
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Two generations for the same file, both still in flight - the second chained on top of
+        // the first (DESIGN-MOUNT-013), neither settled yet.
+        registry.open(base_id);
+        registry
+            .write(
+                base_id,
+                0,
+                b"one",
+                NewGeneration {
+                    budget: &budget,
+                    temp_dir: temp_dir.path(),
+                    base_content_id: Some(old_content),
+                    base_size: 0,
+                },
+            )
+            .unwrap();
+        let first = registry.release(base_id).unwrap();
+
+        registry.open(base_id);
+        registry
+            .write(
+                base_id,
+                0,
+                b"two",
+                NewGeneration {
+                    budget: &budget,
+                    temp_dir: temp_dir.path(),
+                    base_content_id: None,
+                    base_size: 3,
+                },
+            )
+            .unwrap();
+        let second = registry.release(base_id).unwrap();
+
+        // The file is deleted while both are still in flight.
+        repo.unlink_file(base_id, 1_700_000_000_050).unwrap();
+
+        let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let failures_for_hook = Arc::clone(&failures);
+        let pool = JobPool::new(
+            1,
+            Arc::clone(&repo),
+            Arc::clone(&store),
+            12,
+            move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
+        );
+        pool.submit(SettleJob {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 1_700_000_000_100,
+            generation: first,
+        });
+        pool.submit(SettleJob {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 1_700_000_000_200,
+            generation: second,
+        });
+        drop(pool);
+
+        assert!(
+            failures.lock().unwrap().is_empty(),
+            "an abandoned write is an expected outcome of the race, not a failure"
+        );
+        assert!(
+            repo.resolve_path("/a.txt").unwrap().is_none(),
+            "the file must not resurrect under its old name, however many generations deep"
         );
     }
 
@@ -516,7 +629,6 @@ mod tests {
             name: "a.txt".to_string(),
             time_millis: 1_700_000_000_001,
             generation,
-            base_row_id: Some(placeholder_id),
         });
         drop(pool);
 
@@ -529,28 +641,41 @@ mod tests {
     #[test]
     fn a_commit_failure_is_reported_and_leaves_the_generation_unsettled() {
         let (repo, _rd, store, _sd) = repo_and_store();
+        let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let base_id = repo
+            .settle_file(0, "x.txt", 1_700_000_000_000, old_content)
+            .unwrap();
+
         let registry = PendingFiles::new();
         let budget = Arc::new(MemoryBudget::new(1000));
         let temp_dir = tempfile::tempdir().unwrap();
-        let generation = write_and_release(&registry, 1, b"x", &budget, temp_dir.path());
+        let generation = write_and_release(&registry, base_id, b"x", &budget, temp_dir.path());
 
         let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let failures_for_hook = Arc::clone(&failures);
-        let pool = JobPool::new(
+        let context = Context {
+            repo: Arc::clone(&repo),
+            store: Arc::clone(&store),
+            cdc_target_size_bits: 12,
+            on_failure: Box::new(move |_job: &SettleJob, err: JobError| {
+                failures_for_hook.lock().unwrap().push(err.to_string());
+            }),
+        };
+
+        // A content_id that was never actually created - violates tree_entries' own foreign key
+        // on contents(id) (open_repository turns foreign_keys on), forcing a genuine commit-stage
+        // failure to test against, distinct from an ordinary abandonment.
+        commit(
+            &context,
+            &generation,
+            999_999,
             1,
-            Arc::clone(&repo),
-            Arc::clone(&store),
-            12,
-            move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
+            1_700_000_000_100,
+            None,
+            0,
+            "x.txt",
+            ChainTarget::RowId(base_id),
         );
-        pool.submit(SettleJob {
-            parent_id: 999_999, // does not exist
-            name: "x.txt".to_string(),
-            time_millis: 1_700_000_000_000,
-            generation: Arc::clone(&generation),
-            base_row_id: None,
-        });
-        drop(pool);
 
         assert_eq!(failures.lock().unwrap().len(), 1);
         // Never durably committed - still readable this session (DESIGN-MOUNT-007), not settled.
@@ -565,20 +690,24 @@ mod tests {
     #[test]
     fn a_settled_generation_is_no_longer_spilled() {
         let (repo, _rd, store, _sd) = repo_and_store();
+        let old_content = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let base_id = repo
+            .settle_file(0, "x.txt", 1_700_000_000_000, old_content)
+            .unwrap();
+
         let registry = PendingFiles::new();
         // A zero budget forces an immediate spill to disk on the very first write.
         let budget = Arc::new(MemoryBudget::new(0));
         let temp_dir = tempfile::tempdir().unwrap();
-        let generation = write_and_release(&registry, 1, b"x", &budget, temp_dir.path());
+        let generation = write_and_release(&registry, base_id, b"x", &budget, temp_dir.path());
         assert_eq!(generation.spilled_bytes(), 1);
 
         let pool = JobPool::new(1, Arc::clone(&repo), Arc::clone(&store), 12, |_, _| {});
         pool.submit(SettleJob {
             parent_id: 0,
             name: "x.txt".to_string(),
-            time_millis: 1_700_000_000_000,
+            time_millis: 1_700_000_000_100,
             generation: Arc::clone(&generation),
-            base_row_id: None,
         });
         drop(pool);
 

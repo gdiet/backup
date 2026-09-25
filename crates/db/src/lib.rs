@@ -537,35 +537,9 @@ impl Repository {
         })
     }
 
-    /// Like [`Self::settle_file`], except a live entry that is still exactly id
-    /// `collapsible_placeholder_id` is hard-deleted instead of soft-deleted (DESIGN-MOUNT-016) -
-    /// a `create()`-only empty placeholder still untouched at its own file's first real settle,
-    /// never independently meaningful. Any other live entry there is soft-deleted as usual.
-    pub fn settle_file_collapsing_placeholder(
-        &self,
-        parent_id: i64,
-        name: &str,
-        time_millis: i64,
-        content_id: i64,
-        collapsible_placeholder_id: i64,
-    ) -> Result<i64, Error> {
-        self.with_transaction(|conn, cache| {
-            tree::settle_file_collapsing_placeholder(
-                conn,
-                cache,
-                parent_id,
-                name,
-                time_millis,
-                content_id,
-                collapsible_placeholder_id,
-            )
-        })
-    }
-
     /// Commits a background settle job's finished content against `base_row_id`, re-verified live
-    /// right now rather than trusted from whenever the job was submitted - DESIGN-MOUNT-015's fix
-    /// for its own "Known limitation". See `tree::settle_pending_write`'s own doc comment for the
-    /// exact re-verification/scope rules.
+    /// right now rather than trusted from whenever the job was submitted - DESIGN-MOUNT-015's fix.
+    /// See `tree::settle_pending_write`'s own doc comment for the exact re-verification rules.
     pub fn settle_pending_write(
         &self,
         base_row_id: i64,

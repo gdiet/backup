@@ -440,44 +440,23 @@ impl DedupFs {
         let Some(generation) = self.pending.release(file_id) else {
             return;
         };
-        let time_millis = now_millis();
-        match generation.base_row_id() {
-            // First generation - DESIGN-MOUNT-015's fix: the commit step (settle_pending_write)
-            // re-verifies base_row_id live right now, so submission does not need to gate on
-            // whether it still resolves at this moment the way the chained case below still does.
-            // parent_id/name are a best-effort snapshot, only ever used for a failure-log message -
-            // never for the commit itself, which resolves its actual target fresh.
-            Some(base_row_id) => {
-                let (parent_id, name) = self
-                    .repo
-                    .parent_and_name(file_id)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
-                self.pool.submit(SettleJob {
-                    parent_id,
-                    name,
-                    time_millis,
-                    generation,
-                    base_row_id: Some(base_row_id),
-                });
-            }
-            // A chained (second-or-later) generation - the entry may have been renamed (settles
-            // under its current location) or unlinked (nothing to settle under anymore - not yet
-            // covered by the same re-verification, see settle_pending_write's own doc comment for
-            // why) since this generation was created; only submitted at all if still resolvable.
-            None => {
-                if let Ok(Some((parent_id, name))) = self.repo.parent_and_name(file_id) {
-                    self.pool.submit(SettleJob {
-                        parent_id,
-                        name,
-                        time_millis,
-                        generation,
-                        base_row_id: None,
-                    });
-                }
-            }
-        }
+        // parent_id/name are a best-effort snapshot, only ever used for a failure-log message -
+        // the commit itself (crate::settle_pool::commit, via GenerationSlot::resolve_or_defer)
+        // always resolves its actual target fresh, by id, regardless of whether this snapshot is
+        // still accurate by the time it runs (DESIGN-MOUNT-015's fix, covering a chain of any
+        // depth) - so every generation is submitted unconditionally, with nothing to gate on here.
+        let (parent_id, name) = self
+            .repo
+            .parent_and_name(file_id)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        self.pool.submit(SettleJob {
+            parent_id,
+            name,
+            time_millis: now_millis(),
+            generation,
+        });
     }
 
     /// Appends REQ-TREE-009's `[deleted]` marker entry to `result` if `parent_id` has any

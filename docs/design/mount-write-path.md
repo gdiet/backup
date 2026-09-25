@@ -600,30 +600,37 @@ regardless, effectively resurrecting the name with the settled content. Not spec
 `create()`-then-quickly-`unlink()` (the shape most likely to surface it in practice, e.g. a client
 that creates a temporary file and removes it again while a slow settle job is still catching up):
 the same race applied to an ordinary overwrite's settle job racing a concurrent `unlink`,
-independent of how a new file's first content came to be.
+independent of how a new file's first content came to be, and, for a file with more than one
+generation queued at once (DESIGN-MOUNT-013), independent of how many generations deep the settling
+one's chain runs.
 
 Fixed by re-verifying liveness *by id* at commit time, inside the same transaction as the
 replacement, rather than trusting a `(parent_id, name)` snapshot taken back when the job was
-submitted (`db::tree::settle_pending_write`, `crates/cli/src/settle_pool.rs::run_job`). A settle
-job's generation carries the id of the row it started from (`GenerationSlot::base_row_id`,
-`crates/cli/src/pending_files.rs`) - `tree_entries.id` is `AUTOINCREMENT`, so that id, still live,
-already proves it is still the same row, unmodified. Still live: the new content replaces it at its
+submitted (`db::tree::settle_pending_write`, `crates/cli/src/settle_pool.rs::commit`). Every
+generation, however deep its chain, resolves what its commit should target through
+`GenerationSlot::resolve_or_defer` (`crates/cli/src/pending_files.rs`): a file's first generation
+this session resolves immediately to its own row id; a chained generation resolves to its immediate
+predecessor's own resulting `ChainTarget` instead, deferred - via a non-blocking registered
+continuation, never a blocking wait - until that predecessor itself reaches a terminal state
+(`GenerationSlot::mark_settled`/`mark_abandoned`), however many generations that takes. Whatever id
+a generation resolves to, `tree_entries.id` is `AUTOINCREMENT`, so that id, still live, already
+proves it is still the same row, unmodified. Still live: the new content replaces it at its
 *current* `(parent_id, name)`, correct even if the file was renamed since the write began, not only
-if it stayed put. No longer live (a real `unlink` won the race): nothing is written - the
-generation is marked abandoned (`GenerationSlot::mark_abandoned`) rather than settled, and the
-content the job already wrote is reclaimed immediately (`db::tree::SettleOutcome::Abandoned`,
-reusing the same reclaim cascade `purge_deleted_entry` already performs for its own orphaned
-content) rather than left to leak.
+if it stayed put. No longer live (a real `unlink` won the race, or the chain's own predecessor was
+itself already abandoned): nothing is written - the generation is marked abandoned
+(`GenerationSlot::mark_abandoned`) rather than settled, and any content the job already wrote is
+reclaimed immediately (`db::tree::SettleOutcome::Abandoned`, reusing the same reclaim cascade
+`purge_deleted_entry` already performs for its own orphaned content) rather than left to leak.
+Abandonment itself propagates the same way down a chain of any depth: a generation whose
+predecessor resolves to `ChainTarget::Abandoned` marks itself abandoned in turn, which is what
+notifies whatever waits on it next.
 
-Narrower gap this leaves open: the fix only covers a file's *first* generation this session
-(`base_row_id` is only ever `Some` there) - a chained second-or-later generation
-(DESIGN-MOUNT-013) still commits the pre-existing, unverified way, against a `(parent_id, name)`
-snapshot taken at its own release time. Closing that too needs a chained generation to know its own
-*immediate* predecessor's resulting row id, which is not yet tracked (the predecessor's id is only
-known once it has itself already settled, and a second generation can be released well before
-that); left as a narrower, still explicitly tracked gap rather than a silent one, the same way
-DESIGN-MOUNT-009's failure handling and DESIGN-MOUNT-010's Windows sparse-file behavior are each
-their own explicitly tracked gap.
+The non-blocking continuation is deliberate: a generation's settle job runs on
+DESIGN-MOUNT-006's small, fixed worker pool, so a worker blocking on another generation's own job -
+possibly still sitting unconsumed in the same shared queue - would risk deadlocking the pool once
+enough same-file generation pairs queue up across different files at once. Registering a
+continuation to run later, from whichever thread actually drives the predecessor to a terminal
+state, avoids that: no worker thread ever waits on another job to progress.
 
 ### Alternative considered and rejected: DESIGN-MOUNT-014's synthetic, session-local identity plus a path index
 
@@ -695,10 +702,10 @@ Since a settling job can run an arbitrary amount of time after it was queued (DE
 non-blocking `release()`), what was eligible when queued is re-verified live at the moment of the
 actual replacement, not trusted from when the generation was created: the row `create()` inserted
 must still be exactly what is live at that `(parent_id, name)` right now. Skipping this check would
-let a job that has become stale hard-delete whatever now actually occupies that name - not merely a
-missing history entry (the acceptable cost `create()`-then-quick-`unlink()` already risks, per
-DESIGN-MOUNT-015's own "Known limitation") but active loss of an unrelated, possibly
-already-real-content entry: a second generation already chained and settled ahead of this one leaves
+let a job that has become stale hard-delete whatever now actually occupies that name - not merely
+the write simply never landing (the correct outcome once a racing `unlink` marks that generation
+abandoned, per DESIGN-MOUNT-015's own "Fixed" section above) but active loss of an unrelated,
+possibly already-real-content entry: a second generation already chained and settled ahead of this one leaves
 a real-content row at that id or name; an `unlink()` followed by a fresh, unrelated `create()` at the
 same name leaves a different file's id there entirely.
 
