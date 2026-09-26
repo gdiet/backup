@@ -54,11 +54,11 @@ fn resolve_cdc_target_size_bits(explicit_bits: Option<u32>) -> u32 {
 
 #[derive(Args)]
 struct RamBudgetArgs {
-    /// The gross, operator-configurable RAM budget for caching/buffering not-yet-durable content
-    /// (REQ-OPERABILITY-006), in megabytes. The SQLite connection's own `cache_size` and a
-    /// per-thread stack reserve are subtracted from this to get the actual caching budget
-    /// (DESIGN-MEMORY-001) - a repository whose own chunking configuration cannot fit within what
-    /// remains is refused rather than exceeding this bound once running.
+    /// The gross, operator-configurable RAM budget for caching/buffering not-yet-durable content,
+    /// in megabytes. The SQLite connection's own `cache_size` and a per-thread stack reserve are
+    /// subtracted from this to get the actual caching budget - a repository whose own chunking
+    /// configuration cannot fit within what remains is refused rather than exceeding this bound
+    /// once running.
     #[arg(long, default_value_t = ram_budget::DEFAULT_GROSS_BUDGET_BYTES / (1024 * 1024))]
     ram_budget_mb: u64,
 }
@@ -66,25 +66,24 @@ struct RamBudgetArgs {
 #[derive(Args)]
 struct ReadOnlyMediumArgs {
     /// Asserts that the repository's storage cannot be modified by anything else for as long as
-    /// this command runs (e.g. genuine read-only media) - DESIGN-METADATA-013 in
-    /// docs/design/metadata-storage.md. Lets a read-only open succeed even against a pristine
-    /// repository (no prior read-write session) on a directory this process itself cannot write
-    /// to, which otherwise fails outright. Only pass this when the assertion is actually true:
-    /// violating it is undefined behavior at the SQLite level (possibly incorrect results or
-    /// corruption, not merely stale reads) if anything does modify the repository while this
-    /// command has it open.
+    /// this command runs (e.g. genuine read-only media). Lets a read-only open succeed even
+    /// against a pristine repository (no prior read-write session) on a directory this process
+    /// itself cannot write to, which otherwise fails outright. Only pass this when the assertion
+    /// is actually true: violating it is undefined behavior at the SQLite level (possibly
+    /// incorrect results or corruption, not merely stale reads) if anything does modify the
+    /// repository while this command has it open.
     #[arg(long)]
     assume_read_only_medium: bool,
 }
 
 #[derive(Args)]
 struct BackpressureArgs {
-    /// DESIGN-MOUNT-006's write() backpressure delay: below this much bytesInPersistQueue
-    /// backlog, no delay is added at all.
+    /// The write() backpressure delay: below this much not-yet-persisted write backlog (in
+    /// bytes), no delay is added at all.
     #[arg(long, default_value_t = crate::backpressure::DEFAULT_FREE_ZONE_BYTES)]
     backpressure_free_zone_bytes: u64,
-    /// DESIGN-MOUNT-006's write() backpressure delay: the slope past `--backpressure-free-zone-bytes`
-    /// - a smaller value makes the delay grow faster for the same backlog.
+    /// The write() backpressure delay's slope past `--backpressure-free-zone-bytes` - a smaller
+    /// value makes the delay grow faster for the same backlog.
     #[arg(long, default_value_t = crate::backpressure::DEFAULT_SLOPE_DIVISOR)]
     backpressure_slope_divisor: u128,
 }
@@ -95,7 +94,7 @@ enum Commands {
     /// Creates a new, empty repository.
     CreateRepo {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         path: Option<PathBuf>,
         #[command(flatten)]
         chunking: ChunkingArgs,
@@ -104,7 +103,7 @@ enum Commands {
     /// Mounts a repository as a real filesystem.
     Mount {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         // A flag, not a positional like create-repo's `path`: clap does not allow an optional
         // positional ahead of a required one, and MOUNTPOINT below must stay required.
         #[arg(long)]
@@ -120,31 +119,30 @@ enum Commands {
         read_write: bool,
         // DESIGN-MOUNT-018.
         /// Directory the write cache spills not-yet-persisted content to once its shared memory
-        /// budget is exhausted (DESIGN-MOUNT-010). Defaults to the OS temp directory, which is
-        /// not always local disk - e.g. a repository whose own path lives on a slow or
-        /// space-constrained network drive still spills into whatever `%TEMP%`/`$TMPDIR` happens
-        /// to resolve to unless overridden here. Must already exist.
+        /// budget is exhausted. Defaults to the OS temp directory, which is not always local
+        /// disk - e.g. a repository whose own path lives on a slow or space-constrained network
+        /// drive still spills into whatever `%TEMP%`/`$TMPDIR` happens to resolve to unless
+        /// overridden here. Must already exist.
         #[arg(long)]
         spill_directory: Option<PathBuf>,
         #[command(flatten)]
         ram_budget: RamBudgetArgs,
         /// Overrides the database connection's SQLite `cache_size`, in SQLite's own pragma units
-        /// (positive: a page count; negative: an approximate byte budget in KiB) - DESIGN-MEMORY-001.
-        /// Without this, SQLite's own built-in default is left untouched.
+        /// (positive: a page count; negative: an approximate byte budget in KiB). Without this,
+        /// SQLite's own built-in default is left untouched.
         #[arg(long)]
         cache_size: Option<i64>,
         #[command(flatten)]
         backpressure: BackpressureArgs,
         // REQ-MOUNT-004/007.
-        /// Reveal and make browsable REQ-TREE-009's `[deleted]` view (and REQ-MOUNT-008's own
-        /// `[time]` presentation of it) through the mount, at the same locations `dfs list
-        /// --show-deleted` reveals them. Off by default, so an ordinary recursive tool walking
-        /// the mount never descends into deletion history without asking for it. Available on a
-        /// read-only mount too - recovery via moving an entry out of the view needs
-        /// `--read-write` as well, but browsing does not.
+        /// Reveal and make browsable the `[deleted]` view (and its `[time]` presentation) through
+        /// the mount, at the same locations `dfs list --show-deleted` reveals them. Off by
+        /// default, so an ordinary recursive tool walking the mount never descends into deletion
+        /// history without asking for it. Available on a read-only mount too - recovery via
+        /// moving an entry out of the view needs `--read-write` as well, but browsing does not.
         #[arg(long)]
         show_deleted: bool,
-        /// REQ-MOUNT-007's second, escalating opt-in: additionally allows permanently purging an
+        /// A second, escalating opt-in: additionally allows permanently purging an
         /// entry from inside the `[deleted]` view (deleting it there, rather than only recovering
         /// it by moving it out). Meaningless without `--show-deleted`, and without `--read-write`
         /// - nothing mutating is ever allowed on a read-only mount regardless of this flag.
@@ -161,14 +159,14 @@ enum Commands {
     /// it if so. Never removes an actively held lock.
     Unlock {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         path: Option<PathBuf>,
     },
     // REQ-MAINTENANCE-001.
     /// Backs up a repository's metadata to a fresh, timestamped, self-contained file.
     DbBackup {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// Directory to write the timestamped backup file into (which must already exist).
@@ -181,7 +179,7 @@ enum Commands {
     /// live metadata store.
     DbRestore {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// The backup file to restore from (produced by `dfs db-backup`).
@@ -191,7 +189,7 @@ enum Commands {
     /// Compacts a repository's metadata store, reclaiming space freed by past deletions.
     DbCompact {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
     },
@@ -200,7 +198,7 @@ enum Commands {
     /// caller-chosen minimum age, reclaiming the storage each purge frees along the way.
     Reclaim {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// Only purge an entry that has stayed soft-deleted for at least this many days.
@@ -212,7 +210,7 @@ enum Commands {
     /// Deletes a tree entry directly against the repository, without mounting.
     Del {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// When the target is a live directory that still has live children, delete them too
@@ -220,8 +218,8 @@ enum Commands {
         /// resolves to a soft-deleted entry, where it would have no effect.
         #[arg(long)]
         recursive: bool,
-        /// When the target is a specific soft-deleted entry (reached through REQ-TREE-009's
-        /// `[deleted]` segment - see `dfs list --show-deleted`), permanently remove it instead of
+        /// When the target is a specific soft-deleted entry (reached through the `[deleted]`
+        /// segment - see `dfs list --show-deleted`), permanently remove it instead of
         /// refusing. Without this, such a target is left untouched: an irreversible removal never
         /// happens just because the given path happened to resolve under `[deleted]`. Refused as
         /// an error if the target instead resolves to a live path, where it would have no effect.
@@ -234,10 +232,10 @@ enum Commands {
     /// Lists a directory's live, direct contents, without mounting.
     List {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// Reveal REQ-TREE-009's `[deleted]` marker in the listing wherever the target directory
+        /// Reveal the `[deleted]` marker in the listing wherever the target directory
         /// has soft-deleted children - off by default, so a script parsing plain `dfs list`
         /// output is never surprised by an extra entry. A path that already names `[deleted]`
         /// explicitly works regardless of this flag.
@@ -253,7 +251,7 @@ enum Commands {
     /// Searches live entries anywhere in the repository by name, without mounting.
     Find {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// Name pattern to search for - case-insensitive, `*` matches any run of characters and
@@ -267,7 +265,7 @@ enum Commands {
     /// subtree, without mounting.
     Stats {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
         /// Repository path to report on. Repository age is only reported for the default, `/`.
@@ -280,21 +278,20 @@ enum Commands {
     /// Restores one or more repository paths to a real directory on disk, without mounting.
     Restore {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// Overwrite a file that already exists at the destination. Off by default
-        /// (REQ-RESTORE-004): restoring never overwrites a file that is already there unless
-        /// told to.
+        /// Overwrite a file that already exists at the destination. Off by default: restoring
+        /// never overwrites a file that is already there unless told to.
         #[arg(long)]
         overwrite: bool,
-        /// Check each restored file's content against its recorded hash. Off by default
-        /// (REQ-RESTORE-003): a mismatch is never even detected unless this is given.
+        /// Check each restored file's content against its recorded hash. Off by default: a
+        /// mismatch is never even detected unless this is given.
         #[arg(long)]
         verify: bool,
         /// Restore what can be restored instead of failing an item outright: zero-fill missing
         /// or incomplete stored data, and keep content that fails --verify anyway. Off by
-        /// default (REQ-RESTORE-003).
+        /// default.
         #[arg(long)]
         best_effort: bool,
         /// One or more repository paths to restore, followed by the target directory on disk
@@ -305,28 +302,28 @@ enum Commands {
         read_only_medium: ReadOnlyMediumArgs,
     },
     // REQ-INGEST-001/002/003/004/005/006.
-    /// Imports one or more real filesystem paths into the repository, deduplicating their
+    /// Imports one or more directories or files into the repository, deduplicating their
     /// content along the way.
     Ingest {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
-        /// executable when omitted.
+        /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// An earlier ingest's target repository path to accelerate this run against
-        /// (REQ-INGEST-003): a source file matching a same-named, same-size, same-modified-time
+        /// An earlier ingest's target repository path to accelerate this run against:
+        /// a source file matching a same-named, same-size, same-modified-time
         /// file under it is linked to that existing content without being read again.
         #[arg(long)]
         reference: Option<String>,
-        /// Skip REQ-INGEST-006's check that --reference actually corresponds to the sources being
+        /// Skip the likeness check that --reference actually corresponds to the sources being
         /// ingested, and use it regardless.
         #[arg(long, requires = "reference")]
         force_reference: bool,
-        /// One or more real filesystem paths to import, followed by the target repository path.
-        /// Each `/`-separated segment must already exist by default (REQ-INGEST-007); prefix a
-        /// segment with `+` to create it on demand and reuse it otherwise, or `!` to require it be
-        /// freshly created (marking one segment either way makes every segment below it default to
-        /// `+`). A segment may also contain `[...]` date/time placeholders (`yyyy`/`MM`/`dd`/`HH`/
-        /// `mm`/`ss`, e.g. `[yyyy-MM-dd]`), resolved once against this run's own start time.
+        /// One or more directories or files to import, followed by the target repository path.
+        /// Each `/`-separated segment must already exist by default; prefix a
+        /// segment with `+` to create it on demand, or with `!` to require it be
+        /// freshly created. Marking a segment either way makes every segment below it default to
+        /// `+`. A segment may also contain date/time placeholders in square brackets (`yyyy`/`MM`/`dd`/`HH`/
+        /// `mm`/`ss`, e.g. `[yyyy-MM-dd]`), which will be resolved against this run's start time.
         #[arg(required = true, num_args = 2.., value_name = "PATH")]
         paths: Vec<String>,
         #[command(flatten)]
