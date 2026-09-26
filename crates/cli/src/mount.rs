@@ -17,9 +17,10 @@ use crate::dedup_fs::{DedupFs, Tuning};
 pub struct RepoOpenOptions {
     /// Overrides the database connection's SQLite `cache_size` (`--cache-size`) - DESIGN-MEMORY-001.
     pub cache_size: Option<i64>,
-    /// DESIGN-METADATA-013's opt-in (`--assume-read-only-medium`) - meaningless (ignored) with a
+    /// DESIGN-METADATA-013's opt-in (`--assume-read-only-medium`) - meaningless together with a
     /// read-write mount, which already holds the repository-wide write lock, ruling out a
     /// concurrent writer for the same reason this assertion would otherwise exist to guarantee.
+    /// `try_run` refuses that combination outright rather than silently ignoring it.
     pub assume_read_only_medium: bool,
 }
 
@@ -37,6 +38,20 @@ fn try_run(
     open_options: RepoOpenOptions,
     tuning: Tuning,
 ) -> Result<(), String> {
+    // DESIGN-METADATA-013's assertion only exists to let a read-only open succeed on storage no
+    // writer could reach anyway - a read-write mount already holds the repository-wide write lock
+    // (REQ-MAINTENANCE-004), which rules out a concurrent writer for that same reason. Refused
+    // outright, rather than silently ignored, so passing both together does not read as "this
+    // combination is supported" when it is not.
+    if read_write && open_options.assume_read_only_medium {
+        return Err(
+            "error: --assume-read-only-medium has no effect together with --read-write - a \
+             read-write mount already rules out a concurrent writer on its own. Drop one of the \
+             two flags."
+                .to_string(),
+        );
+    }
+
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
     // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
     // migration, and it keeps working on a filesystem where a write-mode open is unreliable
@@ -158,6 +173,38 @@ mod tests {
             show_deleted: false,
             allow_purge: false,
         }
+    }
+
+    #[test]
+    fn try_run_refuses_read_write_together_with_assume_read_only_medium() {
+        // No filesystem setup needed: this check fires before try_run ever touches the repository
+        // or mountpoint paths.
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-read-write-and-assume-ro-repo");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-read-write-and-assume-ro-mnt");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            true,
+            false,
+            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: true,
+            },
+            default_tuning(),
+        )
+        .expect_err(
+            "must fail - --read-write and --assume-read-only-medium together make no sense",
+        );
+        assert!(
+            message.contains("--assume-read-only-medium"),
+            "expected an actionable message naming the flag, got: {message}"
+        );
+        assert!(
+            message.contains("--read-write"),
+            "expected an actionable message naming the other flag, got: {message}"
+        );
     }
 
     #[test]
