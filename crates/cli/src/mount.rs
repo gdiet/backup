@@ -97,8 +97,8 @@ fn try_run(
         && !dir.is_dir()
     {
         return Err(format!(
-            "error: --spill-dir {} does not exist or is not a directory. Create it first, or \
-             omit --spill-dir to use the OS temp directory instead.",
+            "error: --spill-directory {} does not exist or is not a directory. Create it first, \
+             or omit --spill-directory to use the OS temp directory instead.",
             dir.display()
         ));
     }
@@ -256,8 +256,8 @@ mod tests {
         )
         .expect_err("must fail - spill_dir does not exist");
         assert!(
-            message.contains("--spill-dir"),
-            "expected the actionable spill-dir message, got: {message}"
+            message.contains("--spill-directory"),
+            "expected the actionable spill-directory message, got: {message}"
         );
         assert!(
             message.contains("does not exist"),

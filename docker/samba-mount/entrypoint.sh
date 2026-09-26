@@ -11,7 +11,7 @@ REPO=${REPO:-/repo}
 MOUNTPOINT=/mnt/dedup
 SMB_USER=${SMB_USER:-dedup}
 SMB_PASSWORD=${SMB_PASSWORD:-dedup}
-# Every `dfs mount` flag (--read-write, --spill-dir, --ram-budget-mb,
+# Every `dfs mount` flag (--read-write, --spill-directory, --ram-budget-mb,
 # --cache-size, --backpressure-free-zone-bytes,
 # --backpressure-slope-divisor, --show-deleted, --purge, and any added
 # later) is reachable through this single passthrough rather than one env
@@ -19,14 +19,14 @@ SMB_PASSWORD=${SMB_PASSWORD:-dedup}
 # Deliberately word-split unquoted below (shellcheck SC2086), the standard
 # way to turn one env var into several argv entries in POSIX sh (no
 # arrays, unlike bash) - this means a value containing its own spaces
-# (e.g. a --spill-dir path) can't be expressed here; not a real limitation
-# for the values these flags normally take.
+# (e.g. a --spill-directory path) can't be expressed here; not a real
+# limitation for the values these flags normally take.
 MOUNT_ARGS=${MOUNT_ARGS:-}
 
 mkdir -p "$MOUNTPOINT"
 
 # shellcheck disable=SC2086
-dfs mount --repo "$REPO" $MOUNT_ARGS "$MOUNTPOINT" &
+dfs mount --repository "$REPO" $MOUNT_ARGS "$MOUNTPOINT" &
 MOUNT_PID=$!
 
 # Whether $MOUNT_PID is still running - not just `kill -0`, which reports

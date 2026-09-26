@@ -56,7 +56,7 @@ if (Test-Path $mountPath) {
 }
 
 $mountProc = Start-Process -FilePath $dfsExe `
-    -ArgumentList @("mount", "--repo", $repoRoot, $mountPath, "--read-write") `
+    -ArgumentList @("mount", "--repository", $repoRoot, $mountPath, "--read-write") `
     -PassThru -WindowStyle Hidden
 
 try {

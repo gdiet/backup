@@ -47,7 +47,7 @@ dedup`.
 
 ## Mount options (`MOUNT_ARGS`)
 
-`entrypoint.sh` runs `dfs mount --repo $REPO $MOUNT_ARGS $MOUNTPOINT` - `MOUNT_ARGS` is passed
+`entrypoint.sh` runs `dfs mount --repository $REPO $MOUNT_ARGS $MOUNTPOINT` - `MOUNT_ARGS` is passed
 through as-is, so every flag `dfs mount --help` lists works here exactly as on the command line,
 with no per-flag wiring to keep in sync. It's word-split on whitespace (no shell quoting inside
 the value), which covers every flag below without issue - a value containing its own spaces
@@ -82,14 +82,14 @@ docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
 ```
 
 Read-write with the write cache's spillover directory pointed at a dedicated, bind-mounted disk
-instead of the container's own (ephemeral, usually small) filesystem - `--spill-dir`'s target must
+instead of the container's own (ephemeral, usually small) filesystem - `--spill-directory`'s target must
 exist and be writable *inside the container*, so it needs its own `-v`, distinct from `/repo`:
 
 ```bash
 docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
     -v /path/to/repository:/repo \
     -v /fast/local/disk:/spill \
-    -e MOUNT_ARGS="--read-write --spill-dir /spill" \
+    -e MOUNT_ARGS="--read-write --spill-directory /spill" \
     -p 445:445 dedup-samba-mount
 ```
 

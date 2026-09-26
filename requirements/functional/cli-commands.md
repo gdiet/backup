@@ -98,7 +98,7 @@ Where a command needs a repository path and none is given explicitly, it default
 the executable, not the current working directory the command happens to be invoked from. If the
 resolved default is unusable (unwritable for REQ-CLI-005's `create-repo`; does not actually hold a
 repository for any other command), the command fails with a clear, actionable message asking for an
-explicit `--repo`/path argument (REQ-OPERABILITY-004 in
+explicit `--repository`/path argument (REQ-OPERABILITY-004 in
 [`../non-functional/operability.md`](../non-functional/operability.md)), never a raw filesystem
 error standing in as the only explanation.
 

@@ -108,7 +108,7 @@ enum Commands {
         // A flag, not a positional like create-repo's `path`: clap does not allow an optional
         // positional ahead of a required one, and MOUNTPOINT below must stay required.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Directory to mount at. On Linux, this directory must already exist - fuse3 refuses to
         /// mount onto a path that does not. On Windows, it does not need to already exist - WinFSP
         /// creates it itself and removes it again on unmount.
@@ -125,7 +125,7 @@ enum Commands {
         /// space-constrained network drive still spills into whatever `%TEMP%`/`$TMPDIR` happens
         /// to resolve to unless overridden here. Must already exist.
         #[arg(long)]
-        spill_dir: Option<PathBuf>,
+        spill_directory: Option<PathBuf>,
         #[command(flatten)]
         ram_budget: RamBudgetArgs,
         /// Overrides the database connection's SQLite `cache_size`, in SQLite's own pragma units
@@ -170,7 +170,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Directory to write the timestamped backup file into (which must already exist).
         target: PathBuf,
         #[command(flatten)]
@@ -183,7 +183,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// The backup file to restore from (produced by `dfs db-backup`).
         backup: PathBuf,
     },
@@ -193,7 +193,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
     },
     // REQ-STORAGE-004.
     /// Bulk-purges every soft-deleted entry that has stayed soft-deleted for at least a
@@ -202,7 +202,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Only purge an entry that has stayed soft-deleted for at least this many days.
         /// Defaults to 0 (purged the next time this command runs at all).
         #[arg(long, default_value_t = 0)]
@@ -214,7 +214,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// When the target is a live directory that still has live children, delete them too
         /// (deepest first) instead of refusing. Refused as an error if the target instead
         /// resolves to a soft-deleted entry, where it would have no effect.
@@ -236,7 +236,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Reveal REQ-TREE-009's `[deleted]` marker in the listing wherever the target directory
         /// has soft-deleted children - off by default, so a script parsing plain `dfs list`
         /// output is never surprised by an extra entry. A path that already names `[deleted]`
@@ -255,7 +255,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Name pattern to search for - case-insensitive, `*` matches any run of characters and
         /// `?` matches exactly one.
         pattern: String,
@@ -269,7 +269,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Repository path to report on. Repository age is only reported for the default, `/`.
         #[arg(default_value = "/")]
         path: String,
@@ -282,7 +282,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// Overwrite a file that already exists at the destination. Off by default
         /// (REQ-RESTORE-004): restoring never overwrites a file that is already there unless
         /// told to.
@@ -311,7 +311,7 @@ enum Commands {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable when omitted.
         #[arg(long)]
-        repo: Option<PathBuf>,
+        repository: Option<PathBuf>,
         /// An earlier ingest's target repository path to accelerate this run against
         /// (REQ-INGEST-003): a source file matching a same-named, same-size, same-modified-time
         /// file under it is linked to that existing content without being read again.
@@ -414,10 +414,10 @@ fn main() {
             usage_log::log_invocation(&db::meta_dir(&path), &top, &matches, time_millis);
         }
         Commands::Mount {
-            repo,
+            repository,
             mountpoint,
             read_write,
-            spill_dir,
+            spill_directory,
             ram_budget,
             cache_size,
             backpressure,
@@ -425,14 +425,14 @@ fn main() {
             purge,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             mount::run(
-                &repo,
+                &repository,
                 &mountpoint,
                 read_write,
                 default_path_used,
-                spill_dir.as_deref(),
+                spill_directory.as_deref(),
                 mount::RepoOpenOptions {
                     cache_size,
                     assume_read_only_medium: read_only_medium.assume_read_only_medium,
@@ -452,55 +452,58 @@ fn main() {
             unlock::run(&path, default_path_used);
         }
         Commands::DbBackup {
-            repo,
+            repository,
             target,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             db_backup::run(
-                &repo,
+                &repository,
                 default_path_used,
                 &target,
                 time_millis,
                 read_only_medium.assume_read_only_medium,
             );
         }
-        Commands::DbRestore { repo, backup } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            db_restore::run(&repo, default_path_used, &backup);
+        Commands::DbRestore { repository, backup } => {
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
+            db_restore::run(&repository, default_path_used, &backup);
         }
-        Commands::DbCompact { repo } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            db_compact::run(&repo, default_path_used);
+        Commands::DbCompact { repository } => {
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
+            db_compact::run(&repository, default_path_used);
         }
-        Commands::Reclaim { repo, min_age_days } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            reclaim::run(&repo, default_path_used, min_age_days, time_millis);
+        Commands::Reclaim {
+            repository,
+            min_age_days,
+        } => {
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
+            reclaim::run(&repository, default_path_used, min_age_days, time_millis);
         }
         Commands::Del {
-            repo,
+            repository,
             recursive,
             purge,
             path,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
-            del::run(&repo, default_path_used, &path, recursive, purge);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
+            del::run(&repository, default_path_used, &path, recursive, purge);
         }
         Commands::List {
-            repo,
+            repository,
             show_deleted,
             path,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             list::run(
-                &repo,
+                &repository,
                 default_path_used,
                 &path,
                 show_deleted,
@@ -508,46 +511,46 @@ fn main() {
             );
         }
         Commands::Find {
-            repo,
+            repository,
             pattern,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             find::run(
-                &repo,
+                &repository,
                 default_path_used,
                 &pattern,
                 read_only_medium.assume_read_only_medium,
             );
         }
         Commands::Stats {
-            repo,
+            repository,
             path,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             stats::run(
-                &repo,
+                &repository,
                 default_path_used,
                 &path,
                 read_only_medium.assume_read_only_medium,
             );
         }
         Commands::Restore {
-            repo,
+            repository,
             overwrite,
             verify,
             best_effort,
             paths,
             read_only_medium,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             let (sources, target) = paths.split_at(paths.len() - 1);
             restore::run(
-                &repo,
+                &repository,
                 default_path_used,
                 sources,
                 Path::new(&target[0]),
@@ -560,17 +563,17 @@ fn main() {
             );
         }
         Commands::Ingest {
-            repo,
+            repository,
             reference,
             force_reference,
             paths,
             ram_budget,
         } => {
-            let (repo, default_path_used) = resolve_repo_path(repo);
-            usage_log::log_invocation(&db::meta_dir(&repo), &top, &matches, time_millis);
+            let (repository, default_path_used) = resolve_repo_path(repository);
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             let (sources, target) = paths.split_at(paths.len() - 1);
             ingest::run(
-                &repo,
+                &repository,
                 default_path_used,
                 sources,
                 &target[0],

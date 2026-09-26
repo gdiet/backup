@@ -60,7 +60,7 @@ rm -rf "$mount_path"
 # that does not already exist ("bad mount point: No such file or directory").
 mkdir "$mount_path"
 
-"$dfs_exe" mount --repo "$repo_root" "$mount_path" --read-write &
+"$dfs_exe" mount --repository "$repo_root" "$mount_path" --read-write &
 mount_pid=$!
 
 cleanup() {

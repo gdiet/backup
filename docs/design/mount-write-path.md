@@ -290,7 +290,7 @@ which is the property actually wanted.
 ## DESIGN-MOUNT-018: The write cache's spillover directory is configurable, defaulting to the OS temp directory
 Status: implemented (crates/cli/src/main.rs, crates/cli/src/mount.rs, crates/cli/src/dedup_fs.rs)
 
-`dfs mount --spill-dir <PATH>` overrides where DESIGN-MOUNT-010's write cache spills
+`dfs mount --spill-directory <PATH>` overrides where DESIGN-MOUNT-010's write cache spills
 not-yet-persisted content once its shared memory budget is exhausted. Without it, the spillover
 directory is the OS temp directory (`std::env::temp_dir()`), the same behavior as before this
 option existed.
@@ -300,10 +300,10 @@ space-constrained network mount does not, by itself, say anything about where `%
 happens to resolve on that machine - ordinarily still a local disk, but not guaranteed, and even
 when it is, an operator mounting a network-hosted repository specifically to keep the repository
 itself off local storage has a concrete reason to also want spillover kept on local storage
-deliberately, not just by accident of the ambient environment. `--spill-dir` makes that an explicit
-choice instead of an implicit one.
+deliberately, not just by accident of the ambient environment. `--spill-directory` makes that an
+explicit choice instead of an implicit one.
 
-A given `--spill-dir` is validated once, eagerly, before the (blocking) mount call starts
+A given `--spill-directory` is validated once, eagerly, before the (blocking) mount call starts
 (`crate::mount::try_run`) - it must already exist and be a directory, refused with an actionable
 message otherwise (REQ-OPERABILITY-004), the same fail-fast treatment already given to a missing
 Linux mountpoint. Catching this upfront avoids surfacing a raw I/O error only the first time some

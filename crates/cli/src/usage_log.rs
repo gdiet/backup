@@ -92,7 +92,7 @@ mod tests {
     enum TestCommands {
         Restore {
             #[arg(long)]
-            repo: Option<String>,
+            repository: Option<String>,
             #[arg(long)]
             overwrite: bool,
             #[arg(long)]
@@ -148,7 +148,7 @@ mod tests {
             "dfs",
             "restore",
             "--overwrite",
-            "--repo",
+            "--repository",
             "/some/secret/path",
             "a-path",
         ]);
@@ -157,7 +157,7 @@ mod tests {
 
         let contents = std::fs::read_to_string(dir.path().join(FILE_NAME)).unwrap();
         assert!(contents.contains("overwrite"));
-        assert!(contents.contains("repo"));
+        assert!(contents.contains("repository"));
         assert!(
             !contents.contains("/some/secret/path"),
             "an option's value must never be logged, only that it was passed"
