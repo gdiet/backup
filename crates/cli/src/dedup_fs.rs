@@ -103,12 +103,19 @@ impl DedupFs {
             worker_count as u64,
             DispatchPool::Fuse,
         );
-        let max_chunk_size = cdc::ChunkerConfig::new(Some(cdc_target_size_bits))
-            .expect("cdc_target_size_bits was already validated when the repository was created")
-            .max_chunk_size()
-            .expect("Some(bits) always yields a bounded max_chunk_size");
-        ram_budget::check_fits_max_chunk_size(caching_budget_bytes, max_chunk_size)
-            .map_err(io::Error::other)?;
+        // Meaningless (and never checked) for a read-only mount: nothing is ever written, so the
+        // write-cache budget this checks against is never actually needed - a read-only mount
+        // must not be refused over a RAM budget it will never use.
+        if read_write {
+            let max_chunk_size = cdc::ChunkerConfig::new(Some(cdc_target_size_bits))
+                .expect(
+                    "cdc_target_size_bits was already validated when the repository was created",
+                )
+                .max_chunk_size()
+                .expect("Some(bits) always yields a bounded max_chunk_size");
+            ram_budget::check_fits_max_chunk_size(caching_budget_bytes, max_chunk_size)
+                .map_err(io::Error::other)?;
+        }
         let repo = Arc::new(repo);
         let store = Arc::new(store);
         let failure_log = if read_write {
@@ -948,6 +955,55 @@ mod tests {
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), !read_write);
         let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root, None, tuning).unwrap();
         (fs, verify_repo, verify_store, repo_dir)
+    }
+
+    #[test]
+    fn new_refuses_a_read_write_open_with_a_ram_budget_too_small_for_the_configured_chunk_size() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo_root = repo_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            db::RepositorySettings::new(12, 1_700_000_000_000),
+        )
+        .unwrap();
+        let repo = db::open_repository(&repo_root).unwrap();
+        let store = store::ByteStore::new(db::data_dir(&repo_root), false);
+        let tuning = Tuning {
+            ram_budget_gross_bytes: 1,
+            ..default_tuning()
+        };
+
+        let result = DedupFs::new(repo, store, true, &repo_root, None, tuning);
+        let Err(err) = result else {
+            panic!("expected a RAM-budget-too-small error, got Ok");
+        };
+        assert!(
+            err.to_string().contains("RAM budget too small"),
+            "expected the RAM-budget-too-small message, got: {err}"
+        );
+    }
+
+    #[test]
+    fn new_does_not_check_the_ram_budget_at_all_for_a_read_only_open() {
+        // Nothing is ever written through a read-only mount, so the write-cache budget this check
+        // guards has no bearing on it - an absurdly small ram_budget_gross_bytes must not refuse
+        // the open.
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo_root = repo_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            db::RepositorySettings::new(12, 1_700_000_000_000),
+        )
+        .unwrap();
+        let repo = db::open_repository_read_only(&repo_root).unwrap();
+        let store = store::ByteStore::new(db::data_dir(&repo_root), true);
+        let tuning = Tuning {
+            ram_budget_gross_bytes: 1,
+            ..default_tuning()
+        };
+
+        DedupFs::new(repo, store, false, &repo_root, None, tuning)
+            .expect("a read-only open must succeed regardless of how small the RAM budget is");
     }
 
     /// Polls (bounded) until `verify_repo` sees a live entry at `path` sized `expected_size` -

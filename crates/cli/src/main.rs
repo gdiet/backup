@@ -31,7 +31,7 @@ mod write_cache;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, parser::ValueSource};
 
 /// REQ-CLI-005's default when `--cdc-target-size-bits` is not given - content-defined chunking
 /// with an average chunk size a little above 1 MiB.
@@ -373,6 +373,13 @@ fn resolve_repo_path(path: Option<PathBuf>) -> (PathBuf, bool) {
     }
 }
 
+/// Whether `id` was actually typed on the command line within `matches`, as opposed to a
+/// `default_value_t` that is present either way - REQ-OPERABILITY-007's distinction for `mount`'s
+/// read-write-only tuning flags (see [`mount::RepoOpenOptions`]'s `_given` fields).
+fn explicitly_given(matches: &clap::ArgMatches, id: &str) -> bool {
+    matches.value_source(id) == Some(ValueSource::CommandLine)
+}
+
 /// Unix epoch milliseconds for right now - used only for [`usage_log::log_invocation`]'s own
 /// timestamp column, one per process invocation, so a fresh call per command (rather than a
 /// shared helper) is not worth factoring out.
@@ -438,6 +445,9 @@ fn main() {
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
+            let mount_matches = matches
+                .subcommand_matches("mount")
+                .expect("cli.command matched Commands::Mount, so its own matches must exist");
             mount::run(
                 &repository,
                 &mountpoint,
@@ -447,6 +457,15 @@ fn main() {
                 mount::RepoOpenOptions {
                     cache_size,
                     assume_read_only_medium: read_only_medium.assume_read_only_medium,
+                    ram_budget_mb_given: explicitly_given(mount_matches, "ram_budget_mb"),
+                    backpressure_free_zone_bytes_given: explicitly_given(
+                        mount_matches,
+                        "backpressure_free_zone_bytes",
+                    ),
+                    backpressure_slope_divisor_given: explicitly_given(
+                        mount_matches,
+                        "backpressure_slope_divisor",
+                    ),
                 },
                 dedup_fs::Tuning {
                     ram_budget_gross_bytes: ram_budget.ram_budget_mb * 1024 * 1024,

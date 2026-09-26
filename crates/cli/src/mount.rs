@@ -22,6 +22,16 @@ pub struct RepoOpenOptions {
     /// concurrent writer for the same reason this assertion would otherwise exist to guarantee.
     /// `try_run` refuses that combination outright rather than silently ignoring it.
     pub assume_read_only_medium: bool,
+    /// Whether `--ram-budget-mb`/`--backpressure-free-zone-bytes`/`--backpressure-slope-divisor`
+    /// were actually typed on the command line - distinct from their own resolved values
+    /// (`Tuning`'s fields), which are always present (`default_value_t`) regardless of whether the
+    /// operator gave them explicitly. Needed for REQ-OPERABILITY-007: these flags only matter for
+    /// a read-write mount's write cache, so an explicit one given without `--read-write` is
+    /// refused rather than silently ignored - but a value that is merely the untouched default
+    /// must not trigger that refusal just because it happens to be present in `Tuning` either way.
+    pub ram_budget_mb_given: bool,
+    pub backpressure_free_zone_bytes_given: bool,
+    pub backpressure_slope_divisor_given: bool,
 }
 
 /// `mount`'s core logic, separated from `main`'s process-exit/eprintln side effects so the error
@@ -50,6 +60,40 @@ fn try_run(
              two flags."
                 .to_string(),
         );
+    }
+
+    // REQ-OPERABILITY-007: these flags only ever affect a read-write mount's write cache - given
+    // without --read-write, they would otherwise be silently accepted and do nothing at all.
+    // --show-deleted is deliberately not in this list: REQ-MOUNT-004/007 make it meaningful on a
+    // read-only mount too (browsing works without --read-write, only recovery needs it).
+    if !read_write {
+        let mut superfluous = Vec::new();
+        if tuning.allow_purge {
+            superfluous.push("--purge");
+        }
+        if spill_dir.is_some() {
+            superfluous.push("--spill-directory");
+        }
+        if open_options.cache_size.is_some() {
+            superfluous.push("--cache-size");
+        }
+        if open_options.ram_budget_mb_given {
+            superfluous.push("--ram-budget-mb");
+        }
+        if open_options.backpressure_free_zone_bytes_given {
+            superfluous.push("--backpressure-free-zone-bytes");
+        }
+        if open_options.backpressure_slope_divisor_given {
+            superfluous.push("--backpressure-slope-divisor");
+        }
+        if !superfluous.is_empty() {
+            let flags = superfluous.join(", ");
+            let pronoun = if superfluous.len() == 1 { "it" } else { "them" };
+            return Err(format!(
+                "error: {flags} only matter together with --read-write - add --read-write, or \
+                 drop {pronoun}."
+            ));
+        }
     }
 
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
@@ -198,6 +242,9 @@ mod tests {
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: true,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )
@@ -211,6 +258,85 @@ mod tests {
         assert!(
             message.contains("--read-write"),
             "expected an actionable message naming the other flag, got: {message}"
+        );
+    }
+
+    #[test]
+    fn try_run_refuses_read_write_only_flags_given_without_read_write() {
+        // No filesystem setup needed: this check fires before try_run ever touches the repository
+        // or mountpoint paths.
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-rw-only-flags-repo");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-rw-only-flags-mnt");
+        let spill_dir = std::env::temp_dir().join("dfs-mount-test-rw-only-flags-spill");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            Some(&spill_dir),
+            RepoOpenOptions {
+                cache_size: Some(-2000),
+                assume_read_only_medium: false,
+                ram_budget_mb_given: true,
+                backpressure_free_zone_bytes_given: true,
+                backpressure_slope_divisor_given: false,
+            },
+            Tuning {
+                allow_purge: true,
+                ..default_tuning()
+            },
+        )
+        .expect_err("must fail - several read-write-only flags given without --read-write");
+        for flag in [
+            "--purge",
+            "--spill-directory",
+            "--cache-size",
+            "--ram-budget-mb",
+            "--backpressure-free-zone-bytes",
+        ] {
+            assert!(
+                message.contains(flag),
+                "expected the message to name {flag}, got: {message}"
+            );
+        }
+        assert!(
+            !message.contains("--backpressure-slope-divisor"),
+            "must not name a flag that was not actually given, got: {message}"
+        );
+    }
+
+    #[test]
+    fn try_run_does_not_refuse_show_deleted_without_read_write() {
+        // --show-deleted is deliberately meaningful on a read-only mount (browsing works without
+        // --read-write, only recovery needs it) - unlike the flags the test above covers, it must
+        // never be refused here. Fails for the usual "no repository here" reason instead, proving
+        // this got past the read-write-only-flags check without being refused for show_deleted.
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-show-deleted-repo-here");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-show-deleted-mnt");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            None,
+            RepoOpenOptions {
+                cache_size: None,
+                assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
+            },
+            Tuning {
+                show_deleted: true,
+                ..default_tuning()
+            },
+        )
+        .expect_err("must fail - repo_path holds no repository");
+        assert!(
+            message.contains("no repository"),
+            "expected the no-repository message (not a show-deleted refusal), got: {message}"
         );
     }
 
@@ -231,6 +357,9 @@ mod tests {
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )
@@ -267,6 +396,9 @@ mod tests {
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )
@@ -296,15 +428,21 @@ mod tests {
         let spill_dir = std::env::temp_dir().join("dfs-mount-test-spill-dir-that-does-not-exist");
         let _ = std::fs::remove_dir_all(&spill_dir);
 
+        // read_write: true - a superfluous-flags refusal (REQ-OPERABILITY-007) would otherwise
+        // pre-empt this test's own target (the spill-dir-existence check) for a read-only mount,
+        // since --spill-directory only matters together with --read-write.
         let message = try_run(
             &repo_path,
             &mountpoint,
-            false,
+            true,
             false,
             Some(&spill_dir),
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )
@@ -336,6 +474,9 @@ mod tests {
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )
@@ -372,6 +513,9 @@ mod tests {
             RepoOpenOptions {
                 cache_size: None,
                 assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
             },
             default_tuning(),
         )

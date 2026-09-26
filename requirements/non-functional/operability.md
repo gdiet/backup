@@ -78,7 +78,9 @@ use — minus what the application's own database connection and runtime overhea
 need. A repository whose own configured chunking granularity (REQ-STORAGE-003 in
 [`../functional/storage.md`](../functional/storage.md)) cannot possibly fit within this budget is
 refused at startup with an actionable error (REQ-OPERABILITY-004), rather than silently exceeding
-the stated bound once running.
+the stated bound once running. This only applies to a session that actually maintains such a
+cache — a read-only session never buffers not-yet-durable content in the first place, so it has no
+occasion to be refused over this budget at all.
 
 Rationale: REQ-OPERABILITY-001's bounded-footprint guarantee needs a concrete mechanism to actually
 hold, not just an aspiration — an explicit budget an operator can see, size for their own hardware,
@@ -88,3 +90,25 @@ Refusing to start rather than exceeding the bound keeps the guarantee unconditio
 who configured storage parameters exceeding their own memory budget finds out immediately, at a
 moment they can still act on, rather than discovering it as a failure mid-run or a silently-broken
 guarantee.
+
+### REQ-OPERABILITY-007: Options meaningless in context are refused, not silently accepted
+Status: agreed
+Importance: should
+
+When a command is explicitly given an option whose entire purpose does not apply in the mode (or
+combination of other arguments) it was actually invoked with — a flag documented as only mattering
+in a mode the command was not actually invoked in, for instance — it refuses to run with an
+actionable error, rather than silently accepting and ignoring the option. This is about whether the
+option applies at all in this context, never about which particular value it was given: an option
+set to a value that happens to equal its own default was still explicitly given, and is refused the
+same as any other value — an option left at its default by simply not being mentioned is the only
+case this does not apply to.
+
+Rationale: an operator who explicitly passes an option almost always expects it to do something;
+silently accepting it anyway leaves them believing it took effect when it did not, a wrong belief
+nothing else will ever correct. That expectation does not depend on which value they chose - an
+option set to its own default was still deliberately given. The right question is therefore "was
+this option given at all", not "does its value differ from the default". This is a different
+concern from REQ-OPERABILITY-004, which is about explaining a genuine failure clearly
+once one occurs — this is about recognizing that a semantically inert combination of inputs should
+be treated as a failure in the first place, rather than never surfacing at all.
