@@ -12,7 +12,7 @@ MOUNTPOINT=/mnt/dedup
 SMB_USER=${SMB_USER:-dedup}
 SMB_PASSWORD=${SMB_PASSWORD:-dedup}
 # Every `dfs mount` flag (--read-write, --spill-directory, --ram-budget-mb,
-# --cache-size, --backpressure-free-zone-bytes,
+# --db-cache-size, --backpressure-free-zone-bytes,
 # --backpressure-slope-divisor, --show-deleted, --purge, and any added
 # later) is reachable through this single passthrough rather than one env
 # var per flag - see README.md in this directory for examples.

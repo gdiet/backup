@@ -159,7 +159,7 @@ enum Commands {
         /// (positive: a page count; negative: an approximate byte budget in KiB). Without this,
         /// SQLite's own built-in default is left untouched.
         #[arg(long)]
-        cache_size: Option<i64>,
+        db_cache_size: Option<i64>,
         // DESIGN-MOUNT-018.
         /// Directory the write cache spills not-yet-persisted content to once its shared memory
         /// budget is exhausted. Defaults to the OS temp directory, which is not always local
@@ -439,7 +439,7 @@ fn main() {
             show_deleted,
             purge,
             ram_budget,
-            cache_size,
+            db_cache_size,
             spill_directory,
             backpressure,
         } => {
@@ -455,7 +455,7 @@ fn main() {
                 default_path_used,
                 spill_directory.as_deref(),
                 mount::RepoOpenOptions {
-                    cache_size,
+                    db_cache_size,
                     assume_read_only_medium: read_only_medium.assume_read_only_medium,
                     ram_budget_mb_given: explicitly_given(mount_matches, "ram_budget_mb"),
                     backpressure_free_zone_bytes_given: explicitly_given(

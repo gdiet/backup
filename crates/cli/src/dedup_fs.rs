@@ -78,7 +78,7 @@ impl DedupFs {
     /// for validating a given `spill_dir` actually exists (`crate::mount`'s eager check) - this
     /// constructor does not fail just because a `Some` value happens not to.
     /// `tuning.ram_budget_gross_bytes` is DESIGN-MEMORY-001's operator-configurable total
-    /// (`--ram-budget-mb`) - any `--cache-size` override must already have been applied to
+    /// (`--ram-budget-mb`) - any `--db-cache-size` override must already have been applied to
     /// `repo`'s connection before this call, so it is reflected in the `cache_size` reserve read
     /// back below.
     pub fn new(
