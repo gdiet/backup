@@ -299,7 +299,7 @@ enum Commands {
         best_effort: bool,
         /// One or more repository paths to restore, followed by the target directory on disk
         /// (which must already exist).
-        #[arg(required = true, num_args = 2..)]
+        #[arg(required = true, num_args = 2.., value_name = "PATH")]
         paths: Vec<String>,
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
@@ -327,7 +327,7 @@ enum Commands {
         /// freshly created (marking one segment either way makes every segment below it default to
         /// `+`). A segment may also contain `[...]` date/time placeholders (`yyyy`/`MM`/`dd`/`HH`/
         /// `mm`/`ss`, e.g. `[yyyy-MM-dd]`), resolved once against this run's own start time.
-        #[arg(required = true, num_args = 2..)]
+        #[arg(required = true, num_args = 2.., value_name = "PATH")]
         paths: Vec<String>,
         #[command(flatten)]
         ram_budget: RamBudgetArgs,
