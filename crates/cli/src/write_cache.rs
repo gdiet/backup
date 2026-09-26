@@ -65,9 +65,19 @@ impl Default for MemoryBudget {
 
 static SPILL_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-fn unique_spill_path(temp_dir: &Path) -> PathBuf {
+/// The one subdirectory every spill file lives under, directly inside `--spill-directory` (or the
+/// OS temp directory, its default) - grouped there instead of sitting loose among everything else
+/// already in that directory, so an operator looking at either one sees a single, recognizable
+/// entry rather than a scatter of individually-named files. Left behind once empty (removing it
+/// would race a concurrent mount session's own spill files) - harmless, the same way the OS temp
+/// directory itself accumulates other applications' own leftover directories.
+const SPILL_SUBDIR: &str = "dfs-write-cache";
+
+fn unique_spill_path(temp_dir: &Path) -> io::Result<PathBuf> {
+    let subdir = temp_dir.join(SPILL_SUBDIR);
+    std::fs::create_dir_all(&subdir)?;
     let n = SPILL_COUNTER.fetch_add(1, Ordering::Relaxed);
-    temp_dir.join(format!("dfs-write-cache-{}-{n}", std::process::id()))
+    Ok(subdir.join(format!("{}-{n}", std::process::id())))
 }
 
 /// Marks `file` as sparse so writes at scattered positions do not consume real disk space for the
@@ -122,7 +132,7 @@ struct SpillFile {
 
 impl SpillFile {
     fn create(temp_dir: &Path) -> io::Result<Self> {
-        let path = unique_spill_path(temp_dir);
+        let path = unique_spill_path(temp_dir)?;
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -631,6 +641,36 @@ mod tests {
         assert_eq!(cache.mem_bytes, 10);
         let data = cache.read(0, 14, no_original).unwrap();
         assert_eq!(data, b"0123456789more");
+    }
+
+    #[test]
+    fn a_spilled_write_lands_under_a_dedicated_subdirectory_not_loose_in_temp_dir() {
+        let (mut cache, dir) = cache(0, 0);
+        cache
+            .write(0, b"spills immediately, no budget at all")
+            .unwrap();
+        assert!(cache.spilled_bytes() > 0, "test setup must actually spill");
+
+        let subdir = dir.path().join(SPILL_SUBDIR);
+        assert!(
+            subdir.is_dir(),
+            "expected a {SPILL_SUBDIR} subdirectory under the given temp_dir"
+        );
+        let top_level_files: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(
+            top_level_files,
+            vec![subdir.clone()],
+            "the only entry directly under temp_dir must be the {SPILL_SUBDIR} subdirectory - \
+             no loose spill file beside it"
+        );
+        assert_eq!(
+            std::fs::read_dir(&subdir).unwrap().count(),
+            1,
+            "expected exactly one spill file inside {SPILL_SUBDIR}"
+        );
     }
 
     #[test]
