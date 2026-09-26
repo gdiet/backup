@@ -145,8 +145,7 @@ enum Commands {
         /// Reveal and make browsable the `[deleted]` view (and its `[time]` presentation) through
         /// the mount, at the same locations `dfs list --show-deleted` reveals them. Off by
         /// default, so an ordinary recursive tool walking the mount never descends into deletion
-        /// history without asking for it. Available on a read-only mount too - recovery via
-        /// moving an entry out of the view needs `--read-write` as well, but browsing does not.
+        /// history without asking for it. Available on a read-only mount too.
         #[arg(long)]
         show_deleted: bool,
         /// A second, escalating opt-in: additionally allows permanently purging an
