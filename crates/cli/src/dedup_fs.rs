@@ -181,6 +181,7 @@ fn to_errno(err: db::Error) -> Errno {
         | db::Error::TargetNotEmpty(_)
         | db::Error::NoRepositoryHere(_)
         | db::Error::SchemaNeedsMigration(_)
+        | db::Error::AssumedReadOnlyMediumWasUnnecessary(_)
         | db::Error::Poisoned
         | db::Error::WalUnavailable(_)
         // Never actually reaches here: `mount::try_run` opens the repository (read-only or

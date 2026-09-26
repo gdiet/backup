@@ -700,8 +700,9 @@ cache and needs to revisit that cache's own access pattern alongside the split, 
 
 ## DESIGN-METADATA-013: An opt-in `immutable=1` read-only open for genuinely read-only media
 
-Status: implemented (`crates/db/src/lib.rs`'s `open_repository_read_only_immutable`,
-`--assume-read-only-medium` on every command that opens read-only)
+Status: implemented (`crates/db/src/lib.rs`'s `open_repository_read_only_immutable` and
+`open_repository_read_only_with_medium_assertion`, `--assume-read-only-medium` on every command
+that opens read-only)
 
 `open_repository_read_only` (DESIGN-METADATA-012's "A lighter configuration for a genuinely
 read-only connection") fails against a repository with no `-shm`/`-wal` file alongside
@@ -722,10 +723,11 @@ exactly this.
 
 `open_repository_read_only_immutable` opens via SQLite's `immutable=1` URI parameter instead,
 which skips the WAL/`-shm` machinery entirely rather than needing to create it, succeeding on
-unwritable media even when no `-shm`/`-wal` currently exists. Every command that offers a read-only open
-(`list`/`find`/`stats`/`restore`/`db-backup`, and `mount` without `--read-write`) also takes
-`--assume-read-only-medium`, which switches to this function - off (the existing, unconditionally
-safe `open_repository_read_only`) by default.
+unwritable media even when no `-shm`/`-wal` currently exists. Every command that offers a read-only
+open (`list`/`find`/`stats`/`restore`/`db-backup`, and `mount` without `--read-write`) also takes
+`--assume-read-only-medium`, wired through `open_repository_read_only_with_medium_assertion`
+(off, i.e. a plain `open_repository_read_only`, by default) - see "Validating the assertion instead
+of trusting it blindly" below for what that function actually does with it.
 
 An unconditional switch to `immutable=1` was rejected: `immutable=1` asserts that nothing else can
 modify the file for as long as the connection stays open, and this crate's write path holds no
@@ -752,6 +754,33 @@ ConnectionUnreliable`'s WSL<->Windows 9p bridge case - see DESIGN-METADATA-012's
 and `README.md`'s "Known Limitations"), and `open_repository`'s automatic migration
 (DESIGN-METADATA-005) would then run as a silent side effect of a command that looks read-only,
 rather than the actionable `Error::SchemaNeedsMigration` a read-only open already gives today.
+
+### Validating the assertion instead of trusting it blindly
+
+An operator passing `--assume-read-only-medium` could simply be wrong - pointing it at the wrong
+path, or at a medium that turns out not to actually be read-only. Blindly switching to
+`immutable=1` whenever the flag is given would accept that risk unconditionally, even in cases
+where nothing about the actual filesystem state calls for it.
+
+`open_repository_read_only_with_medium_assertion` checks the assertion against what actually
+happens instead of trusting it:
+
+- Not asserted: identical to a plain `open_repository_read_only` - whatever it returns.
+- Asserted, and the plain read-only open succeeds anyway: the assertion was unnecessary - the one
+  case `open_repository_read_only_immutable` exists for (a directory this process genuinely
+  cannot write to) did not occur, so continuing under an unconfirmed assertion would only add risk
+  for no benefit. Refused as `Error::AssumedReadOnlyMediumWasUnnecessary`, with an actionable
+  message to drop the flag and retry, rather than silently proceeding on a plain connection the
+  caller did not actually ask for.
+- Asserted, and the plain read-only open fails: retried via `open_repository_read_only_immutable`
+  - the one case this assertion actually exists for.
+- Not asserted, and the plain read-only open fails: that failure is returned unchanged, exactly as
+  a bare `open_repository_read_only` call would (today's existing behavior for every command
+  without the flag).
+
+This also means `immutable=1`'s own risk (see above) is only ever taken when the plain open has
+already demonstrated that it is actually needed, not merely because the operator predicted it
+would be.
 
 ### Building the `file:` URI safely
 

@@ -56,14 +56,21 @@ fn try_run(
     // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
     // migration, and it keeps working on a filesystem where a write-mode open is unreliable
     // (Error::ConnectionUnreliable's case) even though the mount itself never writes.
-    let open = if read_write {
-        db::open_repository
-    } else if open_options.assume_read_only_medium {
-        db::open_repository_read_only_immutable
+    //
+    // DESIGN-METADATA-013: the read-only branch validates an explicit --assume-read-only-medium
+    // against what actually happens, rather than trusting it blindly - see
+    // open_repository_read_only_with_medium_assertion's own doc comment. The combination with
+    // read_write is already refused above, so assume_read_only_medium can only be true here when
+    // read_write is false.
+    let open_result = if read_write {
+        db::open_repository(repo_path)
     } else {
-        db::open_repository_read_only
+        db::open_repository_read_only_with_medium_assertion(
+            repo_path,
+            open_options.assume_read_only_medium,
+        )
     };
-    let repo = match open(repo_path) {
+    let repo = match open_result {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(

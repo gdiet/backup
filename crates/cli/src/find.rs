@@ -11,14 +11,12 @@ fn try_run(
     pattern: &str,
     assume_read_only_medium: bool,
 ) -> Result<String, String> {
-    // DESIGN-METADATA-013: an explicit --assume-read-only-medium opts into a read-only open that
-    // also succeeds against a pristine repository on a directory this process cannot write to.
-    let open = if assume_read_only_medium {
-        db::open_repository_read_only_immutable
-    } else {
-        db::open_repository_read_only
-    };
-    let repo = match open(repo_path) {
+    // DESIGN-METADATA-013: validates an explicit --assume-read-only-medium against what actually
+    // happens, rather than trusting it blindly - see the called function's own doc comment.
+    let repo = match db::open_repository_read_only_with_medium_assertion(
+        repo_path,
+        assume_read_only_medium,
+    ) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(

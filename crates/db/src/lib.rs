@@ -72,6 +72,11 @@ pub enum Error {
     /// permission), unlike [`open_repository`], which always migrates automatically
     /// (DESIGN-METADATA-005).
     SchemaNeedsMigration(PathBuf),
+    /// [`open_repository_read_only_with_medium_assertion`] was asked to assert
+    /// `--assume-read-only-medium`, but the plain, unasserted read-only open succeeded anyway -
+    /// the assertion was unnecessary here, and is refused rather than silently indulged
+    /// (DESIGN-METADATA-013 in `docs/design/metadata-storage.md`).
+    AssumedReadOnlyMediumWasUnnecessary(PathBuf),
     /// A [`Repository`] opened via [`open_repository_read_only`] was asked to perform a
     /// repository-mutating operation - refused before ever touching the read-only connection,
     /// rather than surfacing SQLite's own `SQLITE_READONLY` as a bare [`Error::Sqlite`].
@@ -168,6 +173,14 @@ impl std::fmt::Display for Error {
                     "the repository at {} needs a schema migration, which a read-only open cannot \
                      perform - open it once with a write-capable operation (e.g. `dfs mount \
                      --read-write`) first",
+                    path.display()
+                )
+            }
+            Error::AssumedReadOnlyMediumWasUnnecessary(path) => {
+                write!(
+                    f,
+                    "the repository at {} opened successfully without --assume-read-only-medium - \
+                     drop the flag and retry",
                     path.display()
                 )
             }
@@ -828,6 +841,32 @@ pub fn open_repository_read_only_immutable(repo_root: &Path) -> Result<Repositor
     finish_read_only_open(repo_root, conn)
 }
 
+/// Opens `repo_root` for reading, honoring an operator's `--assume-read-only-medium` assertion by
+/// validating it against what actually happens, rather than trusting it blindly (DESIGN-METADATA-013):
+///
+/// - Not asserted: identical to a plain [`open_repository_read_only`] - whatever it returns.
+/// - Asserted, and the plain read-only open succeeds anyway: the assertion was unnecessary - the
+///   one case [`open_repository_read_only_immutable`] exists for (a directory this process
+///   genuinely cannot write to) did not occur, so continuing under an unconfirmed assertion would
+///   only add risk for no benefit. Refused as [`Error::AssumedReadOnlyMediumWasUnnecessary`].
+/// - Asserted, and the plain read-only open fails: retried via
+///   [`open_repository_read_only_immutable`] - the one case this assertion actually exists for.
+/// - Not asserted, and the plain read-only open fails: that failure is returned unchanged, exactly
+///   as a bare [`open_repository_read_only`] call would.
+pub fn open_repository_read_only_with_medium_assertion(
+    repo_root: &Path,
+    assume_read_only_medium: bool,
+) -> Result<Repository, Error> {
+    match open_repository_read_only(repo_root) {
+        Ok(_repo) if assume_read_only_medium => Err(Error::AssumedReadOnlyMediumWasUnnecessary(
+            repo_root.to_path_buf(),
+        )),
+        Ok(repo) => Ok(repo),
+        Err(_) if assume_read_only_medium => open_repository_read_only_immutable(repo_root),
+        Err(err) => Err(err),
+    }
+}
+
 /// Shared tail of [`open_repository_read_only`]/[`open_repository_read_only_immutable`]: the two
 /// differ only in how `conn` itself was opened.
 fn finish_read_only_open(repo_root: &Path, conn: Connection) -> Result<Repository, Error> {
@@ -1232,6 +1271,60 @@ mod tests {
              test may no longer be exercising what it claims to"
         );
         let repo = immutable_result.expect("read-only immutable open must succeed");
+        assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn open_repository_read_only_with_medium_assertion_behaves_like_the_plain_open_when_not_asserted()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only_with_medium_assertion(&repo_root, false)
+            .expect("must succeed exactly like a plain read-only open would");
+        assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn open_repository_read_only_with_medium_assertion_refuses_an_unnecessary_assertion() {
+        // The plain read-only open succeeds here (nothing makes the directory unwritable), so
+        // asserting --assume-read-only-medium anyway must be refused, not silently indulged.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let err = open_repository_read_only_with_medium_assertion(&repo_root, true).unwrap_err();
+        assert!(
+            matches!(err, Error::AssumedReadOnlyMediumWasUnnecessary(_)),
+            "expected AssumedReadOnlyMediumWasUnnecessary, got: {err:?}"
+        );
+    }
+
+    // Mirrors open_repository_read_only_immutable_succeeds_on_a_pristine_repository_over_an_
+    // unwritable_directory above, through open_repository_read_only_with_medium_assertion instead -
+    // the actual entry point every CLI command now uses. Unix-only for the same reason as that test.
+    #[cfg(unix)]
+    #[test]
+    fn open_repository_read_only_with_medium_assertion_falls_back_to_immutable_when_the_plain_open_fails()
+     {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let meta_dir = repo_root.join(META_DIR);
+        assert!(
+            !meta_dir.join("repository.sqlite3-shm").exists(),
+            "test setup must be pristine (no -shm yet) for this to actually exercise the fix"
+        );
+
+        let original_permissions = fs::metadata(&meta_dir).unwrap().permissions();
+        fs::set_permissions(&meta_dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = open_repository_read_only_with_medium_assertion(&repo_root, true);
+        fs::set_permissions(&meta_dir, original_permissions).unwrap(); // before any assertion
+
+        let repo = result.expect("must fall back to the immutable open and succeed");
         assert_eq!(repo.settings(), settings());
     }
 
