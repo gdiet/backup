@@ -159,10 +159,8 @@ enum Commands {
         ram_budget: RamBudgetArgs,
         // DESIGN-MOUNT-018.
         /// Directory content gets cached to on disk when needed, instead of the OS temp
-        /// directory (the default). Useful when the OS temp directory is not local disk - e.g. a
-        /// repository whose own path lives on a slow or space-constrained network drive still
-        /// spills into whatever `%TEMP%`/`$TMPDIR` happens to resolve to unless overridden here.
-        /// Must already exist.
+        /// directory (the default). Useful e.g. when the temp directory is on a slow disk or
+        /// doesn't have enough free space. Must already exist.
         #[arg(long)]
         spill_directory: Option<PathBuf>,
         #[command(flatten)]
