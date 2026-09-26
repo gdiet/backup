@@ -780,10 +780,15 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
 /// and specifically for one that still needs to work even when the filesystem cannot reliably
 /// support a full write-mode connection open at all (observed over a WSL<->Windows 9p bridge; see
 /// `Error::ConnectionUnreliable` and README.md's "Known Limitations"). One case that still needs a
-/// writable directory despite never writing: a pristine repository (no `-shm`/`-wal` alongside
-/// `meta/repository.sqlite3` yet) on a directory this process genuinely cannot write to - opening
-/// a WAL-mode database at all requires creating a `-shm` file if one does not already exist, even
-/// for a read-only connection. See [`open_repository_read_only_immutable`] (DESIGN-METADATA-013 in
+/// writable directory despite never writing: a repository with no `-shm`/`-wal` alongside
+/// `meta/repository.sqlite3` right now, on a directory this process genuinely cannot write to.
+/// This is not a rare edge case - it is every repository's normal state whenever nothing currently
+/// has it open: SQLite's own graceful close already checkpoints and removes an ordinary
+/// `-wal`/`-shm` pair, and even `init_repository` itself only ever leaves a repository in this
+/// state (it opens its own write connection to set up the schema, then closes it before renaming
+/// the result into place - `init_repository_contents`). Opening a WAL-mode database at all requires
+/// creating a `-shm` file if one does not already exist, even for a read-only connection. See
+/// [`open_repository_read_only_immutable`] (DESIGN-METADATA-013 in
 /// `docs/design/metadata-storage.md`) for that case.
 pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> {
     ensure_repository_exists(repo_root)?;
@@ -801,9 +806,10 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
 /// Like [`open_repository_read_only`], but asserts to SQLite that `repo_root`'s storage cannot be
 /// modified by anything else for as long as the returned [`Repository`] stays open (SQLite's own
 /// `immutable=1` URI parameter - DESIGN-METADATA-013 in `docs/design/metadata-storage.md`). Unlike
-/// the plain read-only open, this succeeds even against a pristine repository (no `-shm`/`-wal`
-/// yet) on a directory this process cannot write to, since it skips the WAL shared-memory-index
-/// machinery entirely rather than needing to create it.
+/// the plain read-only open, this succeeds even when no `-shm`/`-wal` currently exists (see
+/// [`open_repository_read_only`]'s own doc comment above for why that is the normal case, not a
+/// rare one) on a directory this process cannot write to, since it skips the WAL
+/// shared-memory-index machinery entirely rather than needing to create it.
 ///
 /// Callers must only use this when the assertion is actually true - violating it is undefined
 /// behavior at the SQLite level (possibly incorrect query results or `SQLITE_CORRUPT`, not merely

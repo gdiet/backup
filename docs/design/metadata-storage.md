@@ -704,19 +704,25 @@ Status: implemented (`crates/db/src/lib.rs`'s `open_repository_read_only_immutab
 `--assume-read-only-medium` on every command that opens read-only)
 
 `open_repository_read_only` (DESIGN-METADATA-012's "A lighter configuration for a genuinely
-read-only connection") fails against a pristine repository - one no write-mode connection has ever
-opened, so no `-shm`/`-wal` file exists alongside `meta/repository.sqlite3` yet - when the
-containing directory is not writable by the current process. Opening a WAL-mode database at all
-requires creating a `-shm` (shared-memory index) file if one does not already exist, and creating a
-file needs a writable directory regardless of the connection's own read-only flag. This directly
-contradicts that function's own stated purpose: working "even when the filesystem cannot reliably
-support a full write-mode connection open at all." Found while porting `docker/samba-mount/` (a
-`dfs mount`-via-Samba developer utility) - a repository bind-mounted read-only into a container hit
+read-only connection") fails against a repository with no `-shm`/`-wal` file alongside
+`meta/repository.sqlite3` right now, when the containing directory is not writable by the current
+process. This is not a rare edge case - it is every repository's normal state whenever nothing
+currently has it open: SQLite's own graceful close already checkpoints and removes an ordinary
+`-wal`/`-shm` pair, and even `init_repository` itself only ever leaves a repository in this state
+(it opens its own write connection to set up the schema, then closes it before the repository is
+considered to exist at all). A leftover pair is only ever seen after an unclean shutdown (a crash,
+a kill), or while another session still has the repository open. Opening a WAL-mode database at
+all requires creating a
+`-shm` (shared-memory index) file if one does not already exist, and creating a file needs a
+writable directory regardless of the connection's own read-only flag. This directly contradicts
+that function's own stated purpose: working "even when the filesystem cannot reliably support a
+full write-mode connection open at all." Found while porting `docker/samba-mount/` (a `dfs
+mount`-via-Samba developer utility) - a repository bind-mounted read-only into a container hit
 exactly this.
 
 `open_repository_read_only_immutable` opens via SQLite's `immutable=1` URI parameter instead,
-which skips the WAL/`-shm` machinery entirely rather than needing to create it, succeeding against
-a pristine repository on unwritable media. Every command that offers a read-only open
+which skips the WAL/`-shm` machinery entirely rather than needing to create it, succeeding on
+unwritable media even when no `-shm`/`-wal` currently exists. Every command that offers a read-only open
 (`list`/`find`/`stats`/`restore`/`db-backup`, and `mount` without `--read-write`) also takes
 `--assume-read-only-medium`, which switches to this function - off (the existing, unconditionally
 safe `open_repository_read_only`) by default.
@@ -734,8 +740,8 @@ silently serving its original, now-stale snapshot with no error at all, even und
 concurrent writes - which is exactly why this needs to stay an explicit, caller-asserted opt-in
 rather than a default: the caller is the only one who can actually know the assertion holds (e.g.
 because the medium is genuinely read-only, so no writer is even possible), and a silent wrong
-answer is a worse failure mode than the pristine-repository open simply continuing to fail without
-the flag.
+answer is a worse failure mode than the plain read-only open simply continuing to fail without the
+flag.
 
 A different-shaped fix - making every read-only command default to a write-mode connection instead
 (reasoning: "it never issues a write statement, so it behaves like a reader"), gated by a flag for
