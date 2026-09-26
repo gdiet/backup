@@ -72,12 +72,14 @@ struct ReadOnlyMediumArgs {
 
 #[derive(Args)]
 struct BackpressureArgs {
-    /// The write() backpressure delay: below this much not-yet-persisted write backlog (in
-    /// bytes), no delay is added at all.
+    /// Slows writes down once too much data is still waiting to be durably saved, so a slow or
+    /// busy repository cannot build up an unbounded backlog of not-yet-saved content. Below this
+    /// much backlog, in bytes, writes are never slowed down at all.
     #[arg(long, default_value_t = crate::backpressure::DEFAULT_FREE_ZONE_BYTES)]
     backpressure_free_zone_bytes: u64,
-    /// The write() backpressure delay's slope past `--backpressure-free-zone-bytes` - a smaller
-    /// value makes the delay grow faster for the same backlog.
+    /// How quickly writes get slowed down further as the backlog grows past
+    /// `--backpressure-free-zone-bytes` - a smaller value slows writes down faster for the same
+    /// backlog.
     #[arg(long, default_value_t = crate::backpressure::DEFAULT_SLOPE_DIVISOR)]
     backpressure_slope_divisor: u128,
 }
