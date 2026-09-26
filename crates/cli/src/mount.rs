@@ -15,9 +15,6 @@ use crate::dedup_fs::{DedupFs, Tuning};
 /// struct purely to keep `try_run`/[`run`]'s own parameter counts under clippy's
 /// `too_many_arguments` threshold - not otherwise a meaningful grouping elsewhere.
 pub struct RepoOpenOptions {
-    /// Overrides the database connection's SQLite `cache_size` (`--db-cache-size`) -
-    /// DESIGN-MEMORY-001.
-    pub db_cache_size: Option<i64>,
     /// DESIGN-METADATA-013's opt-in (`--assume-read-only-medium`) - meaningless together with a
     /// read-write mount, which already holds the repository-wide write lock, ruling out a
     /// concurrent writer for the same reason this assertion would otherwise exist to guarantee.
@@ -75,9 +72,6 @@ fn try_run(
         if spill_dir.is_some() {
             superfluous.push("--spill-directory");
         }
-        if open_options.db_cache_size.is_some() {
-            superfluous.push("--db-cache-size");
-        }
         if open_options.ram_budget_mb_given {
             superfluous.push("--ram-budget-mb");
         }
@@ -126,12 +120,6 @@ fn try_run(
         }
         Err(err) => return Err(format!("error: {err}")),
     };
-    // DESIGN-MEMORY-001: applied before anything reads `cache_size` back for the RAM-budget
-    // computation (`DedupFs::new`), so an override actually takes effect for it.
-    if let Some(db_cache_size) = open_options.db_cache_size {
-        repo.set_cache_size(db_cache_size)
-            .map_err(|err| format!("error: --db-cache-size {db_cache_size}: {err}"))?;
-    }
 
     // Held for the rest of this function, across the blocking `mountfs::mount` call below, for
     // as long as this read-write mount session runs (DESIGN-MOUNT-008) - dropped, releasing the
@@ -241,7 +229,6 @@ mod tests {
             false,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: true,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -277,7 +264,6 @@ mod tests {
             false,
             Some(&spill_dir),
             RepoOpenOptions {
-                db_cache_size: Some(-2000),
                 assume_read_only_medium: false,
                 ram_budget_mb_given: true,
                 backpressure_free_zone_bytes_given: true,
@@ -292,7 +278,6 @@ mod tests {
         for flag in [
             "--purge",
             "--spill-directory",
-            "--db-cache-size",
             "--ram-budget-mb",
             "--backpressure-free-zone-bytes",
         ] {
@@ -323,7 +308,6 @@ mod tests {
             false,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -356,7 +340,6 @@ mod tests {
             true,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -395,7 +378,6 @@ mod tests {
             false,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -439,7 +421,6 @@ mod tests {
             false,
             Some(&spill_dir),
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -473,7 +454,6 @@ mod tests {
             false,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,
@@ -512,7 +492,6 @@ mod tests {
             false,
             None,
             RepoOpenOptions {
-                db_cache_size: None,
                 assume_read_only_medium: false,
                 ram_budget_mb_given: false,
                 backpressure_free_zone_bytes_given: false,

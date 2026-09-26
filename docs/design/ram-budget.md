@@ -17,8 +17,9 @@ two reserves before anything is available for caching:
 
 - **The database connection's own memory.** `db::Repository` holds exactly one SQLite connection for
   its whole lifetime, so this is a single, precisely readable number rather than an estimate:
-  `PRAGMA cache_size` read back once at startup (also CLI-configurable, defaulting to leaving
-  SQLite's own built-in default unchanged rather than overriding it).
+  `PRAGMA cache_size` read back once at startup, left at SQLite's own built-in default (not
+  operator-configurable - see "Alternative considered and deferred: an operator-facing `cache_size`
+  override" below).
 - **Runtime and thread-stack overhead.** A fixed 2 MiB reserved per thread the CDC/hash/persist pool
   is configured to run (`available_parallelism()`-sized, per DESIGN-MOUNT-006), plus a
   provisionally-documented reserve for the FUSE/WinFSP dispatch pool - see "Provisional
@@ -39,6 +40,19 @@ currently-configured budget - rather than exceeding it once running. See "Why 23
 chunking-granularity ceiling" below for the concrete bound this check is against, and "`create-repo`
 does not validate against an operator-chosen RAM budget" for why the command that fixes a
 repository's chunking granularity in the first place is deliberately not one of them.
+
+### Alternative considered and deferred: an operator-facing `cache_size` override
+
+`db::Repository::set_cache_size` (and a `--db-cache-size` CLI flag built on it) was implemented and
+then removed again: exposing it was only ever a side effect of already needing to *read* `cache_size`
+back for this budget's own accounting, not a response to an identified need to actually change it.
+No concrete use case, bug report, or performance measurement ever called for overriding SQLite's own
+default. Kept as a documented possibility rather than quietly forgotten: a very large repository -
+enough live entries that its own metadata b-tree meaningfully exceeds SQLite's default cache - could
+plausibly benefit from a bigger `cache_size` at the cost of some of this budget's own caching share,
+making this worth revisiting if that scenario actually comes up. The underlying
+`db::Repository::set_cache_size`/`connection::set_cache_size` primitive (and its own tests) stays in
+`db` either way, cheap to re-expose without rebuilding it from scratch.
 
 ### Why 23 bits is the chunking-granularity ceiling
 

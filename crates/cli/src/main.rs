@@ -157,17 +157,12 @@ enum Commands {
         purge: bool,
         #[command(flatten)]
         ram_budget: RamBudgetArgs,
-        /// Overrides the database connection's SQLite `cache_size`, in SQLite's own pragma units
-        /// (positive: a page count; negative: an approximate byte budget in KiB). Without this,
-        /// SQLite's own built-in default is left untouched.
-        #[arg(long)]
-        db_cache_size: Option<i64>,
         // DESIGN-MOUNT-018.
-        /// Directory the write cache spills not-yet-persisted content to once its shared memory
-        /// budget is exhausted. Defaults to the OS temp directory, which is not always local
-        /// disk - e.g. a repository whose own path lives on a slow or space-constrained network
-        /// drive still spills into whatever `%TEMP%`/`$TMPDIR` happens to resolve to unless
-        /// overridden here. Must already exist.
+        /// Directory content gets cached to on disk when needed, instead of the OS temp
+        /// directory (the default). Useful when the OS temp directory is not local disk - e.g. a
+        /// repository whose own path lives on a slow or space-constrained network drive still
+        /// spills into whatever `%TEMP%`/`$TMPDIR` happens to resolve to unless overridden here.
+        /// Must already exist.
         #[arg(long)]
         spill_directory: Option<PathBuf>,
         #[command(flatten)]
@@ -441,7 +436,6 @@ fn main() {
             show_deleted,
             purge,
             ram_budget,
-            db_cache_size,
             spill_directory,
             backpressure,
         } => {
@@ -457,7 +451,6 @@ fn main() {
                 default_path_used,
                 spill_directory.as_deref(),
                 mount::RepoOpenOptions {
-                    db_cache_size,
                     assume_read_only_medium: read_only_medium.assume_read_only_medium,
                     ram_budget_mb_given: explicitly_given(mount_matches, "ram_budget_mb"),
                     backpressure_free_zone_bytes_given: explicitly_given(

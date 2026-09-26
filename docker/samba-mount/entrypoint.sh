@@ -12,9 +12,8 @@ MOUNTPOINT=/mnt/dedup
 SMB_USER=${SMB_USER:-dedup}
 SMB_PASSWORD=${SMB_PASSWORD:-dedup}
 # Every `dfs mount` flag (--read-write, --spill-directory, --ram-budget-mb,
-# --db-cache-size, --backpressure-free-zone-bytes,
-# --backpressure-slope-divisor, --show-deleted, --purge, and any added
-# later) is reachable through this single passthrough rather than one env
+# --backpressure-free-zone-bytes, --backpressure-slope-divisor, --show-deleted,
+# --purge, and any added later) is reachable through this single passthrough rather than one env
 # var per flag - see README.md in this directory for examples.
 # Deliberately word-split unquoted below (shellcheck SC2086), the standard
 # way to turn one env var into several argv entries in POSIX sh (no
