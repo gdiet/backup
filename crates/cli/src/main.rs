@@ -54,11 +54,8 @@ fn resolve_cdc_target_size_bits(explicit_bits: Option<u32>) -> u32 {
 
 #[derive(Args)]
 struct RamBudgetArgs {
-    /// The gross, operator-configurable RAM budget for caching/buffering not-yet-durable content,
-    /// in megabytes. The SQLite connection's own `cache_size` and a per-thread stack reserve are
-    /// subtracted from this to get the actual caching budget - a repository whose own chunking
-    /// configuration cannot fit within what remains is refused rather than exceeding this bound
-    /// once running.
+    /// The memory budget this process aims to stay within, in megabytes. A higher budget allows
+    /// more caching, which can improve performance.
     #[arg(long, default_value_t = ram_budget::DEFAULT_GROSS_BUDGET_BYTES / (1024 * 1024))]
     ram_budget_mb: u64,
 }

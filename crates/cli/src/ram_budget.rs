@@ -110,7 +110,7 @@ impl std::fmt::Display for BudgetTooSmall {
             f,
             "RAM budget too small for this repository: {} bytes available for caching, but its \
              own chunking configuration needs at least {} bytes for a single chunk - increase the \
-             RAM budget or use a repository with a smaller target chunk size",
+             RAM budget",
             self.available_bytes, self.required_bytes
         )
     }
