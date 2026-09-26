@@ -62,12 +62,10 @@ struct RamBudgetArgs {
 
 #[derive(Args)]
 struct ReadOnlyMediumArgs {
-    /// Asserts that the repository's storage cannot be modified by anything else for as long as
-    /// this command runs (e.g. genuine read-only media). Lets a read-only open succeed on a
-    /// directory this process itself cannot write to, which otherwise fails outright. Only pass
-    /// this when the assertion is actually true: violating it is undefined behavior at the
-    /// SQLite level (possibly incorrect results or corruption, not merely stale reads) if
-    /// anything does modify the repository while this command has it open.
+    /// Allows opening a repository that lives on genuinely read-only media, which would
+    /// otherwise fail to open. If the repository is nonetheless modified by another process
+    /// while this command has it open, the result is undefined behavior and can include data
+    /// corruption.
     #[arg(long)]
     assume_read_only_medium: bool,
 }
