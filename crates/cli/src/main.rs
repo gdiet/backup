@@ -178,8 +178,7 @@ enum Commands {
         /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// Overwrite a file that already exists at the destination. Off by default: restoring
-        /// never overwrites a file that is already there unless told to.
+        /// Overwrite a file that already exists at the destination. Off by default.
         #[arg(long)]
         overwrite: bool,
         /// Check each restored file's content against its recorded hash. Off by default: a
