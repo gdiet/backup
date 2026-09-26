@@ -168,7 +168,10 @@ impl JobPool {
                 let receiver = Arc::clone(&receiver);
                 let context = Arc::clone(&context);
                 let queue = Arc::clone(&bytes_in_persist_queue);
-                thread::spawn(move || worker_loop(&receiver, &context, &queue))
+                thread::Builder::new()
+                    .stack_size(crate::ram_budget::RUST_THREAD_STACK_RESERVE_BYTES as usize)
+                    .spawn(move || worker_loop(&receiver, &context, &queue))
+                    .expect("spawning a settle worker thread must succeed")
             })
             .collect();
 

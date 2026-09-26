@@ -70,30 +70,33 @@ impl FileJobPool {
             .map(|_| {
                 let receiver = Arc::clone(&receiver);
                 let ctx = Arc::clone(&ctx);
-                thread::spawn(move || {
-                    loop {
-                        let job = {
-                            let receiver = receiver.lock().expect("not poisoned");
-                            receiver.recv()
-                        };
-                        let Ok(job) = job else {
-                            return;
-                        };
-                        let result = ingest_file_job(
-                            &ctx,
-                            &job.source_path,
-                            &job.metadata,
-                            job.target_parent_id,
-                            &job.name,
-                            job.reference.as_deref(),
-                        );
-                        // The receiving end (FileJobHandle) may already have been dropped if a
-                        // caller only ever waits on a subset of submitted jobs - not the case
-                        // today (every submit is eventually waited on), but not this worker's
-                        // concern either way.
-                        let _ = job.result_tx.send(result);
-                    }
-                })
+                thread::Builder::new()
+                    .stack_size(ram_budget::RUST_THREAD_STACK_RESERVE_BYTES as usize)
+                    .spawn(move || {
+                        loop {
+                            let job = {
+                                let receiver = receiver.lock().expect("not poisoned");
+                                receiver.recv()
+                            };
+                            let Ok(job) = job else {
+                                return;
+                            };
+                            let result = ingest_file_job(
+                                &ctx,
+                                &job.source_path,
+                                &job.metadata,
+                                job.target_parent_id,
+                                &job.name,
+                                job.reference.as_deref(),
+                            );
+                            // The receiving end (FileJobHandle) may already have been dropped if a
+                            // caller only ever waits on a subset of submitted jobs - not the case
+                            // today (every submit is eventually waited on), but not this worker's
+                            // concern either way.
+                            let _ = job.result_tx.send(result);
+                        }
+                    })
+                    .expect("spawning an ingest worker thread must succeed")
             })
             .collect();
         Self {
