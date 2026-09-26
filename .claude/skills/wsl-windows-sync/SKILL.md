@@ -38,6 +38,30 @@ convention, not a fixed rule this skill can state up front: check `.local/agent-
 what sessions on this environment have actually been doing, or ask the developer if it is not
 recorded there yet.
 
+### Transferring not-yet-pushed commits without the shared remote
+
+Committed but not yet pushed work (e.g. still under review, or deliberately kept off the shared
+branch for now) still needs to reach the other checkout sometimes - to run Linux-specific
+verification on WSL-only commits, for instance. Git itself already supports this without touching
+the shared remote at all: one checkout's own working tree is a valid git remote URL for the other,
+since it is just a local filesystem path. From the WSL side, add the Windows checkout (reachable
+via its own `/mnt/c/...` path) as a one-off remote, fetch the branch, then remove the remote again
+- the objects are already copied into WSL's own repo by then:
+
+```bash
+cd /home/georg/git/backup   # the WSL clone - use this environment's actual path, see above
+git remote add winlocal /mnt/c/Dateien/Computer/git/rust   # the Windows checkout's own path
+git fetch winlocal <branch>
+git checkout -B <branch> winlocal/<branch>
+git remote remove winlocal   # cleanup - the branch and its objects are already local now
+```
+
+The reverse direction (Windows fetching from the WSL checkout) works the same way, with the WSL
+clone's path as the remote URL (e.g. `\\wsl.localhost\Debian\home\georg\git\backup` from
+PowerShell, or `//wsl.localhost/Debian/home/georg/git/backup` from Git Bash). This is still a
+proper git fetch, not a file copy - it fully respects "never by copying source files directly"
+above, and works regardless of which checkout is ahead or how many commits are involved.
+
 ## Shell quoting across environments
 
 Any single command line that gets parsed by more than one shell in sequence (Git
