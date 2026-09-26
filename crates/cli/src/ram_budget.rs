@@ -104,14 +104,34 @@ pub struct BudgetTooSmall {
     pub required_bytes: u64,
 }
 
+/// Formats `bytes` in megabytes the way this crate's own `--ram-budget-mb`/`--cdc-target-size-bits`
+/// options are given, rather than in raw bytes - actionable without mental arithmetic. Rounded up
+/// to a whole MB above 9 MB, since a large figure's exact fractional MB is not worth the extra
+/// digits; rounded to 2 significant figures at or below 9 MB instead, since a small-but-nonzero
+/// figure (e.g. a chunk size at the low end of `--cdc-target-size-bits`'s 6-23 bit range) would
+/// otherwise collapse to a meaningless "0 MB".
+fn format_mb(bytes: u64) -> String {
+    let mb = bytes as f64 / (1024.0 * 1024.0);
+    if mb > 9.0 {
+        format!("{} MB", mb.ceil() as u64)
+    } else if mb <= 0.0 {
+        "0 MB".to_string()
+    } else {
+        let magnitude = mb.log10().floor() as i32;
+        let decimals = (1 - magnitude).max(0) as usize;
+        format!("{mb:.decimals$} MB")
+    }
+}
+
 impl std::fmt::Display for BudgetTooSmall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "RAM budget too small for this repository: {} bytes available for caching, but its \
-             own chunking configuration needs at least {} bytes for a single chunk - increase the \
-             RAM budget",
-            self.available_bytes, self.required_bytes
+            "RAM budget too small for this repository: {} available for caching, but its own \
+             chunking configuration needs at least {} for a single chunk - increase the RAM \
+             budget",
+            format_mb(self.available_bytes),
+            format_mb(self.required_bytes)
         )
     }
 }
@@ -138,6 +158,25 @@ pub fn check_fits_max_chunk_size(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_mb_shows_zero_bytes_as_zero_mb() {
+        assert_eq!(format_mb(0), "0 MB");
+    }
+
+    #[test]
+    fn format_mb_rounds_up_to_a_whole_mb_above_9_mb() {
+        // 11010048 bytes = 10.5 MiB exactly - a real figure this crate has actually produced.
+        assert_eq!(format_mb(11_010_048), "11 MB");
+        assert_eq!(format_mb(9 * 1024 * 1024 + 1), "10 MB");
+    }
+
+    #[test]
+    fn format_mb_uses_two_significant_figures_at_or_below_9_mb() {
+        assert_eq!(format_mb(9 * 1024 * 1024), "9.0 MB");
+        assert_eq!(format_mb((2.3 * 1024.0 * 1024.0) as u64), "2.3 MB");
+        assert_eq!(format_mb((0.15 * 1024.0 * 1024.0) as u64), "0.15 MB");
+    }
 
     /// The real OS-reported stack size of the *calling* thread - not a documented default assumed
     /// or read from `RUST_MIN_STACK` - via `pthread_getattr_np`/`pthread_attr_getstack`. Same
