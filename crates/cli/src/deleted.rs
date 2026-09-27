@@ -282,15 +282,43 @@ fn timestamped_name(base_name: &str, prefix: &str, max_bytes: Option<usize>) -> 
     }
 }
 
+/// Builds `time_prefix` followed by `base_name` with `id`'s own disambiguating suffix inserted
+/// before its extension (matching [`disambiguated_name`]'s own bracketed-before-extension form) -
+/// used only when the timestamp's one-second resolution does not by itself tell two same-named
+/// entries apart. The id is appended as a suffix rather than replacing the timestamp prefix
+/// outright: dropping the timestamp there would silently break [`timestamped_display_names`]'s one
+/// reason to exist, a plain alphabetic sort staying chronological. Truncates the stem - never the
+/// timestamp prefix or the id suffix, the parts that must survive intact - if the combination would
+/// not otherwise fit `max_bytes`.
+fn timestamped_name_with_id_suffix(
+    base_name: &str,
+    time_prefix: &str,
+    id: i64,
+    max_bytes: Option<usize>,
+) -> String {
+    let (stem, ext) = split_extension(base_name);
+    let prefix = format!("{time_prefix} ");
+    let suffix = format!(" [{id}]{ext}");
+    match max_bytes {
+        Some(max) if prefix.len() + stem.len() + suffix.len() > max => {
+            let budget = max.saturating_sub(prefix.len() + suffix.len());
+            format!("{prefix}{}{suffix}", truncate_to_byte_budget(stem, budget))
+        }
+        _ => format!("{prefix}{stem}{suffix}"),
+    }
+}
+
 /// REQ-MOUNT-008's own `[time]` view names for `children`: each entry's deletion timestamp always
 /// prefixed (unlike [`display_names`]'s suffix-only-when-ambiguous form), so a plain alphabetic
-/// sort of the view also sorts chronologically - falling back to the entry's own id as the prefix
-/// instead, independent of any length constraint, only in the rare case two entries share both the
-/// same name and the same deletion second (the timestamp's one-second resolution is not enough to
-/// tell them apart then, the same edge case [`display_names`] falls back to an id suffix for).
-/// `max_bytes` is REQ-TREE-009's own length constraint the calling context imposes
-/// (`mountfs::MAX_NAME_BYTES` for the mount - REQ-MOUNT-008), truncating the base name - never the
-/// prefix - if even the unambiguous form does not fit; `None` for no constraint.
+/// sort of the view also sorts chronologically - falling back to also appending the entry's own id
+/// as a trailing suffix ([`timestamped_name_with_id_suffix`]), independent of any length constraint,
+/// only in the rare case two entries share both the same name and the same deletion second (the
+/// timestamp's one-second resolution is not enough to tell them apart then, the same edge case
+/// [`display_names`] falls back to an id suffix for) - the timestamp prefix itself always stays,
+/// so this fallback never costs the view its own chronological sortability. `max_bytes` is
+/// REQ-TREE-009's own length constraint the calling context imposes (`mountfs::MAX_NAME_BYTES` for
+/// the mount - REQ-MOUNT-008), truncating the base name - never the prefix or, once needed, the id
+/// suffix - if even the unambiguous form does not fit; `None` for no constraint.
 pub fn timestamped_display_names(
     children: &[(String, db::DeletedEntry)],
     max_bytes: Option<usize>,
@@ -310,8 +338,12 @@ pub fn timestamped_display_names(
             result[index] = timestamped_name(&children[index].0, &second, max_bytes);
         } else {
             for index in indices {
-                let id_prefix = format!("[{}]", children[index].1.entry.id);
-                result[index] = timestamped_name(&children[index].0, &id_prefix, max_bytes);
+                result[index] = timestamped_name_with_id_suffix(
+                    &children[index].0,
+                    &second,
+                    children[index].1.entry.id,
+                    max_bytes,
+                );
             }
         }
     }
@@ -472,15 +504,44 @@ mod tests {
     }
 
     #[test]
-    fn timestamped_display_names_falls_back_to_the_id_prefix_on_a_same_second_collision() {
+    fn timestamped_display_names_falls_back_to_a_trailing_id_suffix_on_a_same_second_collision() {
         let children = vec![
             ("a.txt".to_string(), deleted_entry(1, 100_000)),
             ("a.txt".to_string(), deleted_entry(2, 100_000)),
         ];
         let names = timestamped_display_names(&children, None);
         assert_ne!(names[0], names[1]);
-        assert!(names[0].starts_with("[1] "), "got {}", names[0]);
-        assert!(names[1].starts_with("[2] "), "got {}", names[1]);
+        // The timestamp prefix must survive the fallback too - dropping it would break this
+        // view's whole reason to exist, staying sortable chronologically by plain name.
+        assert_eq!(names[0], "1970-01-01_000140 a [1].txt");
+        assert_eq!(names[1], "1970-01-01_000140 a [2].txt");
+    }
+
+    #[test]
+    fn timestamped_display_names_within_truncates_the_stem_not_the_timestamp_or_id_suffix() {
+        let long_stem = "a".repeat(50);
+        let children = vec![
+            (
+                format!("{long_stem}.jpg"),
+                deleted_entry(1, 946_684_800_000),
+            ),
+            (
+                format!("{long_stem}.jpg"),
+                deleted_entry(2, 946_684_800_000),
+            ),
+        ];
+        let names = timestamped_display_names(&children, Some(40));
+        assert_ne!(names[0], names[1]);
+        for name in &names {
+            assert!(name.len() <= 40, "got {} bytes: {name}", name.len());
+            assert!(
+                name.starts_with("2000-01-01_000000 "),
+                "the timestamp prefix must survive: {name}"
+            );
+            assert!(name.ends_with(".jpg"), "the extension must survive: {name}");
+        }
+        assert!(names[0].contains("[1]"), "got {}", names[0]);
+        assert!(names[1].contains("[2]"), "got {}", names[1]);
     }
 
     #[test]
