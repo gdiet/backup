@@ -16,7 +16,7 @@ clap = { version = "4.6.6", features = ["derive", "wrap_help"] }
 db = { version = "0.0.1", path = "../db" }
 mountfs = { path = "../mountfs" }
 store = { version = "0.0.1", path = "../store" }
-time = { version = "0.3.55", features = ["std"] }
+time = { version = "0.3.55", features = ["local-offset", "std"] }
 
 [dev-dependencies]
 libc = "0.2.189"

@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use crate::time_format::TimeDisplay;
+
 /// REQ-TREE-009's reserved path segment.
 pub const DELETED_SEGMENT: &str = "[deleted]";
 
@@ -322,10 +324,12 @@ fn timestamped_name_with_id_suffix(
 pub fn timestamped_display_names(
     children: &[(String, db::DeletedEntry)],
     max_bytes: Option<usize>,
+    display: TimeDisplay,
 ) -> Vec<String> {
     let mut by_key: HashMap<(&str, String), Vec<usize>> = HashMap::new();
     for (index, (name, entry)) in children.iter().enumerate() {
-        let second = crate::time_format::format_deletion_suffix(entry.deleted_at);
+        let second =
+            crate::time_format::format_deletion_suffix_for_display(entry.deleted_at, display);
         by_key
             .entry((name.as_str(), second))
             .or_default()
@@ -357,8 +361,9 @@ pub(crate) fn find_by_timestamped_name(
     children: &[(String, db::DeletedEntry)],
     segment: &str,
     max_bytes: Option<usize>,
+    display: TimeDisplay,
 ) -> Option<db::DeletedEntry> {
-    timestamped_display_names(children, max_bytes)
+    timestamped_display_names(children, max_bytes, display)
         .into_iter()
         .zip(children)
         .find_map(|(name, (_, entry))| (name == segment).then_some(*entry))
@@ -391,12 +396,12 @@ mod tests {
     #[test]
     fn disambiguated_name_inserts_the_suffix_before_the_extension() {
         assert_eq!(
-            disambiguated_name("photo.jpg", "2026-08-22_140414", None),
-            "photo [2026-08-22_140414].jpg"
+            disambiguated_name("photo.jpg", "2026-08-22_14-04-14", None),
+            "photo [2026-08-22_14-04-14].jpg"
         );
         assert_eq!(
-            disambiguated_name(".env", "2026-08-22_140414", None),
-            ".env [2026-08-22_140414]"
+            disambiguated_name(".env", "2026-08-22_14-04-14", None),
+            ".env [2026-08-22_14-04-14]"
         );
     }
 
@@ -404,10 +409,10 @@ mod tests {
     fn disambiguated_name_truncates_the_stem_not_the_suffix_when_over_budget() {
         let long_stem = "a".repeat(50);
         let name = format!("{long_stem}.jpg");
-        let result = disambiguated_name(&name, "2026-08-22_140414", Some(30));
+        let result = disambiguated_name(&name, "2026-08-22_14-04-14", Some(30));
         assert!(result.len() <= 30, "got {} bytes: {result}", result.len());
         assert!(
-            result.ends_with(" [2026-08-22_140414].jpg"),
+            result.ends_with(" [2026-08-22_14-04-14].jpg"),
             "the suffix and extension must survive intact: {result}"
         );
     }
@@ -481,8 +486,8 @@ mod tests {
     #[test]
     fn timestamped_display_names_always_prefixes_even_an_unambiguous_name() {
         let children = vec![("a.txt".to_string(), deleted_entry(1, 946_684_800_000))];
-        let names = timestamped_display_names(&children, None);
-        assert_eq!(names[0], "2000-01-01_000000 a.txt");
+        let names = timestamped_display_names(&children, None, TimeDisplay::Utc);
+        assert_eq!(names[0], "2000-01-01_00-00-00Z a.txt");
     }
 
     #[test]
@@ -493,7 +498,7 @@ mod tests {
             ("later.txt".to_string(), deleted_entry(1, 946_684_900_000)),
             ("earlier.txt".to_string(), deleted_entry(2, 946_684_800_000)),
         ];
-        let names = timestamped_display_names(&children, None);
+        let names = timestamped_display_names(&children, None, TimeDisplay::Utc);
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(
@@ -509,12 +514,12 @@ mod tests {
             ("a.txt".to_string(), deleted_entry(1, 100_000)),
             ("a.txt".to_string(), deleted_entry(2, 100_000)),
         ];
-        let names = timestamped_display_names(&children, None);
+        let names = timestamped_display_names(&children, None, TimeDisplay::Utc);
         assert_ne!(names[0], names[1]);
         // The timestamp prefix must survive the fallback too - dropping it would break this
         // view's whole reason to exist, staying sortable chronologically by plain name.
-        assert_eq!(names[0], "1970-01-01_000140 a [1].txt");
-        assert_eq!(names[1], "1970-01-01_000140 a [2].txt");
+        assert_eq!(names[0], "1970-01-01_00-01-40Z a [1].txt");
+        assert_eq!(names[1], "1970-01-01_00-01-40Z a [2].txt");
     }
 
     #[test]
@@ -530,12 +535,12 @@ mod tests {
                 deleted_entry(2, 946_684_800_000),
             ),
         ];
-        let names = timestamped_display_names(&children, Some(40));
+        let names = timestamped_display_names(&children, Some(40), TimeDisplay::Utc);
         assert_ne!(names[0], names[1]);
         for name in &names {
             assert!(name.len() <= 40, "got {} bytes: {name}", name.len());
             assert!(
-                name.starts_with("2000-01-01_000000 "),
+                name.starts_with("2000-01-01_00-00-00Z "),
                 "the timestamp prefix must survive: {name}"
             );
             assert!(name.ends_with(".jpg"), "the extension must survive: {name}");
@@ -548,7 +553,7 @@ mod tests {
     fn timestamped_display_names_within_truncates_the_base_name_not_the_prefix() {
         let long_stem = "a".repeat(50);
         let children = vec![(long_stem.clone(), deleted_entry(1, 946_684_800_000))];
-        let names = timestamped_display_names(&children, Some(30));
+        let names = timestamped_display_names(&children, Some(30), TimeDisplay::Utc);
         assert!(
             names[0].len() <= 30,
             "got {} bytes: {}",
@@ -556,7 +561,7 @@ mod tests {
             names[0]
         );
         assert!(
-            names[0].starts_with("2000-01-01_000000 "),
+            names[0].starts_with("2000-01-01_00-00-00Z "),
             "the prefix must survive intact: {}",
             names[0]
         );
@@ -565,14 +570,20 @@ mod tests {
     #[test]
     fn find_by_timestamped_name_matches_a_prefixed_name_back_to_its_entry() {
         let children = vec![("a.txt".to_string(), deleted_entry(1, 946_684_800_000))];
-        let found = find_by_timestamped_name(&children, "2000-01-01_000000 a.txt", None).unwrap();
+        let found = find_by_timestamped_name(
+            &children,
+            "2000-01-01_00-00-00Z a.txt",
+            None,
+            TimeDisplay::Utc,
+        )
+        .unwrap();
         assert_eq!(found.entry.id, 1);
     }
 
     #[test]
     fn find_by_timestamped_name_returns_none_without_a_match() {
         let children = vec![("a.txt".to_string(), deleted_entry(1, 946_684_800_000))];
-        assert!(find_by_timestamped_name(&children, "nope", None).is_none());
+        assert!(find_by_timestamped_name(&children, "nope", None, TimeDisplay::Utc).is_none());
     }
 
     #[test]

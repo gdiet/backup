@@ -70,6 +70,28 @@ struct ReadOnlyMediumArgs {
     assume_read_only_medium: bool,
 }
 
+/// REQ-OPERABILITY-008's own opt-in, shared by every command that shows a timestamp: local
+/// timezone by default, this command's own escape hatch into UTC.
+#[derive(Args)]
+struct UtcArgs {
+    /// Shows timestamps in UTC instead of the local timezone (the default). Does not affect
+    /// `[deleted]`'s own disambiguated names (`dfs list`/`dfs restore`'s output, or a mounted
+    /// read-write session's own `[deleted]` view) - that addressing stays UTC unconditionally,
+    /// since it is a stable identity meant to be pasted between commands and sessions, not a
+    /// place for a display preference to leak into.
+    #[arg(long)]
+    utc: bool,
+}
+
+/// [`UtcArgs::utc`] resolved into the enum [`time_format`] itself works with.
+fn time_display(utc: bool) -> time_format::TimeDisplay {
+    if utc {
+        time_format::TimeDisplay::Utc
+    } else {
+        time_format::TimeDisplay::Local
+    }
+}
+
 #[derive(Args)]
 struct BackpressureArgs {
     /// Slows writes down once too much data is still waiting to be durably saved, so a slow or
@@ -170,6 +192,10 @@ enum Commands {
         // writer for the reason DESIGN-METADATA-013's assertion cares about.
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
+        // Affects only the [time] view (REQ-MOUNT-008) - the base [deleted] view is unaffected
+        // (UtcArgs's own doc comment).
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -215,6 +241,8 @@ enum Commands {
         path: String,
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-QUERY-002.
     /// Searches live entries anywhere in the repository by name, without mounting.
@@ -228,6 +256,8 @@ enum Commands {
         pattern: String,
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-QUERY-003.
     /// Reports item counts and size statistics, repository-wide or for one directory's own
@@ -242,6 +272,8 @@ enum Commands {
         path: String,
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-CLI-003.
     /// Deletes a tree entry directly against the repository, without mounting.
@@ -435,6 +467,7 @@ fn main() {
             ram_budget,
             spill_directory,
             backpressure,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -465,6 +498,7 @@ fn main() {
                     backpressure_slope_divisor: backpressure.backpressure_slope_divisor,
                     show_deleted,
                     allow_purge: purge,
+                    time_display: time_display(utc.utc),
                 },
             );
         }
@@ -497,6 +531,7 @@ fn main() {
             show_deleted,
             path,
             read_only_medium,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -506,12 +541,14 @@ fn main() {
                 &path,
                 show_deleted,
                 read_only_medium.assume_read_only_medium,
+                time_display(utc.utc),
             );
         }
         Commands::Find {
             repository,
             pattern,
             read_only_medium,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -520,12 +557,14 @@ fn main() {
                 default_path_used,
                 &pattern,
                 read_only_medium.assume_read_only_medium,
+                time_display(utc.utc),
             );
         }
         Commands::Stats {
             repository,
             path,
             read_only_medium,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -534,6 +573,7 @@ fn main() {
                 default_path_used,
                 &path,
                 read_only_medium.assume_read_only_medium,
+                time_display(utc.utc),
             );
         }
         Commands::Del {

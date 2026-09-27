@@ -143,7 +143,7 @@ lasts.
 
 Within `[deleted]`, more than one soft-deleted entry can share the same original name (REQ-TREE-004
 - delete, recreate, delete again) - each is disambiguated with a deletion-timestamp suffix before
-its extension (e.g. `photo [2026-08-22_140414].jpg`; `.env [2026-08-22_140414]` for a dot-file,
+its extension (e.g. `photo [2026-08-22_14-04-14].jpg`; `.env [2026-08-22_14-04-14]` for a dot-file,
 which has no splittable extension), falling back to the entry's own id (`photo [42].jpg`) if the
 timestamp-suffixed form does not fit a length constraint the calling context imposes, and further
 truncating the base name - never the id suffix, the part actually meant to be unique - if even that

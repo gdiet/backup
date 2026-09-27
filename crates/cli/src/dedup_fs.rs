@@ -23,6 +23,7 @@ use crate::failure_log::{Failure, FailureLog};
 use crate::pending_files::{NewGeneration, PendingFiles};
 use crate::ram_budget::{self, DispatchPool};
 use crate::settle_pool::{JobPool, SettleJob};
+use crate::time_format::TimeDisplay;
 use crate::write_cache::MemoryBudget;
 
 /// Runtime tuning knobs [`DedupFs::new`] needs beyond its structural parameters - grouped to keep
@@ -45,6 +46,10 @@ pub struct Tuning {
     /// `read_write` - nothing mutating is ever allowed on a read-only mount regardless of this
     /// flag.
     pub allow_purge: bool,
+    /// REQ-OPERABILITY-008's `--utc` opt-in, resolved: which timezone REQ-MOUNT-008's `[time]`
+    /// view renders its timestamps in. The base `[deleted]` view is unaffected regardless (its own
+    /// addressing stays UTC unconditionally - REQ-TREE-009's stable identity, `crate::deleted`).
+    pub time_display: TimeDisplay,
 }
 
 pub struct DedupFs {
@@ -68,6 +73,7 @@ pub struct DedupFs {
     backpressure_slope_divisor: u128,
     show_deleted: bool,
     allow_purge: bool,
+    time_display: TimeDisplay,
 }
 
 impl DedupFs {
@@ -160,6 +166,7 @@ impl DedupFs {
             backpressure_slope_divisor: tuning.backpressure_slope_divisor,
             show_deleted: tuning.show_deleted,
             allow_purge: tuning.allow_purge,
+            time_display: tuning.time_display,
         })
     }
 }
@@ -307,6 +314,7 @@ impl DedupFs {
                 &children,
                 segments[time_index + 1],
                 Some(mountfs::MAX_NAME_BYTES),
+                self.time_display,
             ) else {
                 return Ok(None);
             };
@@ -518,16 +526,18 @@ impl DedupFs {
             .repo
             .list_deleted_children(parent_id)
             .map_err(|e| self.to_errno_reporting_connection_death(e))?;
-        Ok(
-            deleted::timestamped_display_names(&children, Some(mountfs::MAX_NAME_BYTES))
-                .into_iter()
-                .zip(&children)
-                .map(|(name, (_, entry))| DirEntry {
-                    name,
-                    kind: kind_to_mountfs(entry.entry.kind),
-                })
-                .collect(),
+        Ok(deleted::timestamped_display_names(
+            &children,
+            Some(mountfs::MAX_NAME_BYTES),
+            self.time_display,
         )
+        .into_iter()
+        .zip(&children)
+        .map(|(name, (_, entry))| DirEntry {
+            name,
+            kind: kind_to_mountfs(entry.entry.kind),
+        })
+        .collect())
     }
 }
 
@@ -910,6 +920,7 @@ mod tests {
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
             show_deleted: false,
             allow_purge: false,
+            time_display: TimeDisplay::Utc,
         }
     }
 

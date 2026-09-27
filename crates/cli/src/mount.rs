@@ -212,6 +212,7 @@ mod tests {
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
             show_deleted: false,
             allow_purge: false,
+            time_display: crate::time_format::TimeDisplay::Utc,
         }
     }
 

@@ -4,12 +4,14 @@
 use std::path::Path;
 
 use crate::entry_format::{format_line, kind_label};
+use crate::time_format::TimeDisplay;
 
 fn try_run(
     repo_path: &Path,
     default_path_used: bool,
     pattern: &str,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     // DESIGN-METADATA-013: validates an explicit --assume-read-only-medium against what actually
     // happens, rather than trusting it blindly - see the called function's own doc comment.
@@ -36,7 +38,13 @@ fn try_run(
     Ok(matches
         .into_iter()
         .map(|(path, entry)| {
-            format_line(kind_label(entry.kind), entry.size, entry.time_millis, &path)
+            format_line(
+                kind_label(entry.kind),
+                entry.size,
+                entry.time_millis,
+                &path,
+                display,
+            )
         })
         .collect::<Vec<_>>()
         .join("\n"))
@@ -47,12 +55,14 @@ pub fn run(
     default_path_used: bool,
     pattern: &str,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) {
     match try_run(
         repo_path,
         default_path_used,
         pattern,
         assume_read_only_medium,
+        display,
     ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -90,7 +100,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-find-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "*", false)
+        let message = try_run(&repo_path, true, "*", false, TimeDisplay::Utc)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -106,7 +116,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "one.jpg", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "one.jpg", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains("/photos/one.jpg"));
         assert!(message.starts_with("file"));
     }
@@ -117,7 +128,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "nope-*", false)
+        let message = try_run(&repo_root, false, "nope-*", false, TimeDisplay::Utc)
             .expect("an empty result is not itself an error");
         assert!(message.contains("no matches"));
     }
@@ -130,7 +141,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "*.txt", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "*.txt", false, TimeDisplay::Utc).expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("/a.txt"));

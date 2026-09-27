@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::deleted::{self, DELETED_SEGMENT, Resolved};
 use crate::entry_format::{format_line, kind_label};
+use crate::time_format::TimeDisplay;
 
 /// The listing "kind" column value for REQ-TREE-009's `[deleted]` marker row - distinct from
 /// `dir`/`file` so it is never confused with a real, identically-named live directory (which
@@ -21,6 +22,7 @@ fn try_run(
     target_path: &str,
     show_deleted: bool,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     // DESIGN-METADATA-013: validates an explicit --assume-read-only-medium against what actually
     // happens, rather than trusting it blindly - see the called function's own doc comment.
@@ -46,8 +48,10 @@ fn try_run(
     };
 
     match resolved {
-        Resolved::Live(entry) => list_live(&repo, target_path, entry.id, show_deleted),
-        Resolved::DeletedChildren { parent_id } => list_deleted(&repo, target_path, parent_id),
+        Resolved::Live(entry) => list_live(&repo, target_path, entry.id, show_deleted, display),
+        Resolved::DeletedChildren { parent_id } => {
+            list_deleted(&repo, target_path, parent_id, display)
+        }
         Resolved::Deleted(entry) if entry.entry.kind == db::EntryKind::Dir => Err(format!(
             "error: {target_path} is a soft-deleted directory - list its own deleted children \
              via {target_path}/{DELETED_SEGMENT}"
@@ -61,6 +65,7 @@ fn list_live(
     target_path: &str,
     dir_id: i64,
     show_deleted: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     let children = match repo.list_children(dir_id) {
         Ok(children) => children,
@@ -79,7 +84,13 @@ fn list_live(
         .map(|(name, entry)| {
             (
                 name.clone(),
-                format_line(kind_label(entry.kind), entry.size, entry.time_millis, name),
+                format_line(
+                    kind_label(entry.kind),
+                    entry.size,
+                    entry.time_millis,
+                    name,
+                    display,
+                ),
             )
         })
         .collect();
@@ -91,7 +102,7 @@ fn list_live(
         if let Some(most_recent) = deleted_children.iter().map(|(_, e)| e.deleted_at).max() {
             rows.push((
                 DELETED_SEGMENT.to_string(),
-                format_line(VIRTUAL_KIND, 0, most_recent, DELETED_SEGMENT),
+                format_line(VIRTUAL_KIND, 0, most_recent, DELETED_SEGMENT, display),
             ));
         }
     }
@@ -111,6 +122,7 @@ fn list_deleted(
     repo: &db::Repository,
     target_path: &str,
     parent_id: i64,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     let children = repo
         .list_deleted_children(parent_id)
@@ -130,6 +142,7 @@ fn list_deleted(
                     entry.entry.size,
                     entry.entry.time_millis,
                     &display_name,
+                    display,
                 ),
             )
         })
@@ -148,6 +161,7 @@ pub fn run(
     target_path: &str,
     show_deleted: bool,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) {
     match try_run(
         repo_path,
@@ -155,6 +169,7 @@ pub fn run(
         target_path,
         show_deleted,
         assume_read_only_medium,
+        display,
     ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -172,7 +187,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-list-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "/", false, false)
+        let message = try_run(&repo_path, true, "/", false, false, TimeDisplay::Utc)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -206,8 +221,8 @@ mod tests {
         let original_permissions = std::fs::metadata(&meta_dir).unwrap().permissions();
         std::fs::set_permissions(&meta_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        let without_flag = try_run(&repo_root, false, "/", false, false);
-        let with_flag = try_run(&repo_root, false, "/", false, true);
+        let without_flag = try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc);
+        let with_flag = try_run(&repo_root, false, "/", false, true, TimeDisplay::Utc);
         std::fs::set_permissions(&meta_dir, original_permissions).unwrap(); // before any assertion
 
         assert!(
@@ -236,8 +251,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message =
-            try_run(&repo_root, false, "/", false, false).expect("must succeed - root exists");
+        let message = try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc)
+            .expect("must succeed - root exists");
         assert_eq!(message, "/: empty");
     }
 
@@ -253,7 +268,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false, false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc).expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(
@@ -279,8 +295,15 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/does-not-exist", false, false)
-            .expect_err("must fail - the path does not exist");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/does-not-exist",
+            false,
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect_err("must fail - the path does not exist");
         assert!(
             message.contains("no such repository path"),
             "expected a no-such-path message, got: {message}"
@@ -298,7 +321,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false, false)
+        let message = try_run(&repo_root, false, "/a.txt", false, false, TimeDisplay::Utc)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(
             message.contains("not a directory"),
@@ -324,7 +347,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false, false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc).expect("must succeed");
         assert_eq!(
             message, "/: empty",
             "no [deleted] marker without --show-deleted"
@@ -338,7 +362,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains(VIRTUAL_KIND));
         assert!(message.contains(DELETED_SEGMENT));
     }
@@ -350,7 +375,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
         assert!(!message.contains(DELETED_SEGMENT));
     }
 
@@ -362,7 +388,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", true, false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
         let deleted_lines: Vec<&str> = message
             .lines()
             .filter(|line| line.ends_with(DELETED_SEGMENT))
@@ -392,6 +419,7 @@ mod tests {
             &format!("/{DELETED_SEGMENT}"),
             false,
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed");
         assert!(message.contains("gone.txt"));
@@ -418,6 +446,7 @@ mod tests {
             &format!("/{DELETED_SEGMENT}"),
             false,
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
@@ -441,6 +470,7 @@ mod tests {
             &format!("/{DELETED_SEGMENT}/a"),
             false,
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - a deleted directory needs its own [deleted] step");
         assert!(message.contains(DELETED_SEGMENT));

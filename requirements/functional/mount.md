@@ -134,7 +134,10 @@ decides when REQ-TREE-009's timestamp suffix gives way to its shorter id-only fo
 The view is additionally reachable at a `[time]` path directly under it, listing the same entries
 with the timestamp always prefixed instead - a second presentation of the same data, not a
 different one. `st_mtime` for any entry is always its own real, stored modification time, never the
-deletion time, in either presentation.
+deletion time, in either presentation. Which timezone that prefixed timestamp renders in follows
+REQ-OPERABILITY-008 in [`../non-functional/operability.md`](../non-functional/operability.md); the
+base view's own suffix (used only for disambiguation, not `[time]`'s chronological-browsing
+purpose) stays unaffected by it, per that same requirement.
 
 Rationale: a deletion timestamp is more informative at a glance than an opaque id, which is why
 REQ-TREE-009 already leads with it. Sorting by name only gives a meaningful chronological order

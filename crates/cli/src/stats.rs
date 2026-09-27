@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::time_format::format_time;
+use crate::time_format::{TimeDisplay, format_time};
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -18,6 +18,7 @@ fn try_run(
     default_path_used: bool,
     target_path: &str,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     // DESIGN-METADATA-013: validates an explicit --assume-read-only-medium against what actually
     // happens, rather than trusting it blindly - see the called function's own doc comment.
@@ -51,16 +52,22 @@ fn try_run(
             target_path,
             &stats,
             Some(repo.settings().creation_time_millis()),
+            display,
         ))
     } else {
         let stats = repo
             .stats_for(entry.id)
             .map_err(|err| format!("error: {err}"))?;
-        Ok(format_stats(target_path, &stats, None))
+        Ok(format_stats(target_path, &stats, None, display))
     }
 }
 
-fn format_stats(target_path: &str, stats: &db::Stats, creation_time_millis: Option<i64>) -> String {
+fn format_stats(
+    target_path: &str,
+    stats: &db::Stats,
+    creation_time_millis: Option<i64>,
+    display: TimeDisplay,
+) -> String {
     let mut lines = vec![
         format!(
             "{target_path}: {} dir(s), {} file(s)",
@@ -77,7 +84,7 @@ fn format_stats(target_path: &str, stats: &db::Stats, creation_time_millis: Opti
         lines.push(format!(
             "repository age: {} (created {})",
             age_label(creation_time_millis),
-            format_time(creation_time_millis)
+            format_time(creation_time_millis, display)
         ));
     }
     lines.join("\n")
@@ -104,12 +111,14 @@ pub fn run(
     default_path_used: bool,
     target_path: &str,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) {
     match try_run(
         repo_path,
         default_path_used,
         target_path,
         assume_read_only_medium,
+        display,
     ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -150,7 +159,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-stats-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "/", false)
+        let message = try_run(&repo_path, true, "/", false, TimeDisplay::Utc)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -165,7 +174,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains("1 file(s)"));
         assert!(message.contains("logical size:   10 bytes"));
         assert!(message.contains("repository age"));
@@ -184,7 +194,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/a", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains("1 file(s)"));
         assert!(message.contains("logical size:   10 bytes"));
         assert!(
@@ -207,7 +218,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains("logical size:   20 bytes"));
         assert!(message.contains("physical size:  10 bytes"));
         assert!(message.contains("2.00x"), "got: {message}");
@@ -219,7 +231,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false).expect("must succeed");
+        let message =
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains("0 dir(s), 0 file(s)"));
         assert!(message.contains("dedup ratio:    n/a"));
     }
@@ -230,8 +243,14 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/does-not-exist", false)
-            .expect_err("must fail - the path does not exist");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/does-not-exist",
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect_err("must fail - the path does not exist");
         assert!(message.contains("no such repository path"));
     }
 
@@ -242,7 +261,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false)
+        let message = try_run(&repo_root, false, "/a.txt", false, TimeDisplay::Utc)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(message.contains("not a directory"));
     }

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use clap::{ArgMatches, Command, parser::ValueSource};
 
-use crate::time_format::format_time;
+use crate::time_format::format_utc_time;
 
 const FILE_NAME: &str = "usage.log";
 
@@ -23,7 +23,7 @@ pub fn log_invocation(meta_dir: &Path, top: &Command, matches: &ArgMatches, time
         return;
     };
     let flags = used_flags(leaf_command, leaf_matches).join(",");
-    let line = format!("{}\t{name}\t{flags}\n", format_time(time_millis));
+    let line = format!("{}\t{name}\t{flags}\n", format_utc_time(time_millis));
 
     let Ok(mut file) = OpenOptions::new()
         .create(true)

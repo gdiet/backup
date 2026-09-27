@@ -112,3 +112,24 @@ this option given at all", not "does its value differ from the default". This is
 concern from REQ-OPERABILITY-004, which is about explaining a genuine failure clearly
 once one occurs — this is about recognizing that a semantically inert combination of inputs should
 be treated as a failure in the first place, rather than never surfacing at all.
+
+### REQ-OPERABILITY-008: User-facing timestamps default to local time, with a `--utc` escape hatch
+Status: agreed
+Importance: should
+
+Every timestamp a command prints for a human to read - `dfs list`/`dfs find`'s modification-time
+column, `dfs stats`' repository age, and `dfs mount`'s `[time]` view (REQ-MOUNT-008 in
+[`mount.md`](../functional/mount.md)) - renders in the process's own local timezone by default.
+Each of these commands' own `--utc` flag switches that one timestamp to UTC instead, marked with
+the ISO 8601 "Z" designator so the two forms are never confused for each other. REQ-TREE-009's
+`[deleted]` addressing in [`tree.md`](../functional/tree.md) - the name itself, not a command's
+separate modification-time column - is exempt: it stays UTC unconditionally, regardless of
+`--utc`.
+
+Rationale: this project's primary audience is a personal backup tool's own single operator, who is
+the only person who ever looks at these timestamps - their own wall clock is the more useful
+default. `--utc` stays available for the case that does need an unambiguous, portable reading
+regardless of where it is read, e.g. comparing timestamps taken on two machines in different
+timezones. Excluding `[deleted]`'s own addressing follows directly from REQ-TREE-009: a name
+pasted from one command's output into another only reaches the entry it named if reconstructing it
+does not silently depend on which display preference happened to generate it.
