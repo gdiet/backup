@@ -20,6 +20,20 @@ fn try_run(
     assume_read_only_medium: bool,
     display: TimeDisplay,
 ) -> Result<String, String> {
+    // REQ-OPERABILITY-007: --utc only ever affects the repository-age timestamp, itself only ever
+    // reported for the repository-wide root - given together with a specific, non-root path, it
+    // would otherwise be silently accepted and do nothing at all. Checked eagerly, from the raw
+    // argument alone, before ever opening the repository - the same fail-fast treatment this
+    // project already gives other options meaningless in context.
+    if display == TimeDisplay::Utc && target_path != "/" {
+        return Err(
+            "error: --utc only matters together with the repository-wide root (the default \
+             path, `/`) - repository age is not reported for any other path. Drop --utc, or omit \
+             the path."
+                .to_string(),
+        );
+    }
+
     // DESIGN-METADATA-013: validates an explicit --assume-read-only-medium against what actually
     // happens, rather than trusting it blindly - see the called function's own doc comment.
     let repo = match db::open_repository_read_only_with_medium_assertion(
@@ -186,6 +200,23 @@ mod tests {
     }
 
     #[test]
+    fn try_run_refuses_utc_given_together_with_a_non_root_path() {
+        // No filesystem setup needed: this check fires before try_run ever opens the repository.
+        let repo_path = std::env::temp_dir().join("dfs-stats-test-utc-non-root-repo");
+
+        let message = try_run(&repo_path, false, "/a", false, TimeDisplay::Utc)
+            .expect_err("must fail - --utc only ever affects repository age, not reported here");
+        assert!(
+            message.contains("--utc"),
+            "expected an actionable message naming --utc, got: {message}"
+        );
+        assert!(
+            message.contains('/'),
+            "expected the message to mention the repository-wide root, got: {message}"
+        );
+    }
+
+    #[test]
     fn try_run_reports_path_scoped_stats_without_age() {
         let (repo, dir) = setup();
         let a_id = repo.mkdir(0, "a", 1_700_000_000_000).unwrap();
@@ -195,7 +226,7 @@ mod tests {
         let repo_root = dir.path().join("repo");
 
         let message =
-            try_run(&repo_root, false, "/a", false, TimeDisplay::Utc).expect("must succeed");
+            try_run(&repo_root, false, "/a", false, TimeDisplay::Local).expect("must succeed");
         assert!(message.contains("1 file(s)"));
         assert!(message.contains("logical size:   10 bytes"));
         assert!(
@@ -248,7 +279,7 @@ mod tests {
             false,
             "/does-not-exist",
             false,
-            TimeDisplay::Utc,
+            TimeDisplay::Local,
         )
         .expect_err("must fail - the path does not exist");
         assert!(message.contains("no such repository path"));
@@ -261,7 +292,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false, TimeDisplay::Utc)
+        let message = try_run(&repo_root, false, "/a.txt", false, TimeDisplay::Local)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(message.contains("not a directory"));
     }

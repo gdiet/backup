@@ -60,35 +60,70 @@ fn try_run(
         );
     }
 
-    // REQ-OPERABILITY-007: these flags only ever affect a read-write mount's write cache - given
-    // without --read-write, they would otherwise be silently accepted and do nothing at all.
-    // --show-deleted is deliberately not in this list: REQ-MOUNT-004/007 make it meaningful on a
-    // read-only mount too (browsing works without --read-write, only recovery needs it).
+    // REQ-OPERABILITY-007: an option given without the one thing its whole purpose depends on
+    // would otherwise be silently accepted and do nothing at all. Two independent prerequisites
+    // apply here - a flag can lack either, or (only --purge) both at once - so each is collected
+    // and reported separately rather than only ever surfacing the first one found.
+    let mut problems = Vec::new();
+    // --show-deleted is deliberately never itself a target of either check below: REQ-MOUNT-004/
+    // 007 make it meaningful on a read-only mount too (browsing works without --read-write, only
+    // recovery needs it), and it depends on nothing else here.
     if !read_write {
-        let mut superfluous = Vec::new();
+        let mut needs_read_write = Vec::new();
         if tuning.allow_purge {
-            superfluous.push("--purge");
+            needs_read_write.push("--purge");
         }
         if spill_dir.is_some() {
-            superfluous.push("--spill-directory");
+            needs_read_write.push("--spill-directory");
         }
         if open_options.ram_budget_mb_given {
-            superfluous.push("--ram-budget-mb");
+            needs_read_write.push("--ram-budget-mb");
         }
         if open_options.backpressure_free_zone_bytes_given {
-            superfluous.push("--backpressure-free-zone-bytes");
+            needs_read_write.push("--backpressure-free-zone-bytes");
         }
         if open_options.backpressure_slope_divisor_given {
-            superfluous.push("--backpressure-slope-divisor");
+            needs_read_write.push("--backpressure-slope-divisor");
         }
-        if !superfluous.is_empty() {
-            let flags = superfluous.join(", ");
-            let pronoun = if superfluous.len() == 1 { "it" } else { "them" };
-            return Err(format!(
-                "error: {flags} only matter together with --read-write - add --read-write, or \
-                 drop {pronoun}."
+        if !needs_read_write.is_empty() {
+            let flags = needs_read_write.join(", ");
+            let pronoun = if needs_read_write.len() == 1 {
+                "it"
+            } else {
+                "them"
+            };
+            problems.push(format!(
+                "{flags} only matter together with --read-write - add --read-write, or drop \
+                 {pronoun}"
             ));
         }
+    }
+    if !tuning.show_deleted {
+        let mut needs_show_deleted = Vec::new();
+        if tuning.allow_purge {
+            needs_show_deleted.push("--purge");
+        }
+        // `time_display` only ever becomes `Utc` by the operator actually passing --utc (`main.rs`'s
+        // own `time_display` resolves the bare flag one-to-one) - never a stand-in for "not given",
+        // the same distinction REQ-OPERABILITY-007 already requires for `ram_budget_mb_given` et al.
+        if tuning.time_display == crate::time_format::TimeDisplay::Utc {
+            needs_show_deleted.push("--utc");
+        }
+        if !needs_show_deleted.is_empty() {
+            let flags = needs_show_deleted.join(", ");
+            let pronoun = if needs_show_deleted.len() == 1 {
+                "it"
+            } else {
+                "them"
+            };
+            problems.push(format!(
+                "{flags} only matter together with --show-deleted - add --show-deleted, or drop \
+                 {pronoun}"
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        return Err(format!("error: {}.", problems.join(". ")));
     }
 
     // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
@@ -212,7 +247,10 @@ mod tests {
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
             show_deleted: false,
             allow_purge: false,
-            time_display: crate::time_format::TimeDisplay::Utc,
+            // Local, not Utc: matches the "operator never passed --utc" default this new
+            // superfluous-flags check depends on - Utc here is not a value a test happens to want,
+            // it means "the operator passed --utc," so tests that need that must say so explicitly.
+            time_display: crate::time_format::TimeDisplay::Local,
         }
     }
 
@@ -323,6 +361,116 @@ mod tests {
         assert!(
             message.contains("no repository"),
             "expected the no-repository message (not a show-deleted refusal), got: {message}"
+        );
+    }
+
+    #[test]
+    fn try_run_refuses_utc_given_without_show_deleted() {
+        // No filesystem setup needed: this check fires before try_run ever touches the repository
+        // or mountpoint paths.
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-utc-without-show-deleted-repo");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-utc-without-show-deleted-mnt");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            true,
+            false,
+            None,
+            RepoOpenOptions {
+                assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
+            },
+            Tuning {
+                time_display: crate::time_format::TimeDisplay::Utc,
+                ..default_tuning()
+            },
+        )
+        .expect_err(
+            "must fail - --utc only ever affects the [time] view, unreachable without \
+                     --show-deleted",
+        );
+        assert!(
+            message.contains("--utc"),
+            "expected an actionable message naming --utc, got: {message}"
+        );
+        assert!(
+            message.contains("--show-deleted"),
+            "expected the message to name the missing prerequisite, got: {message}"
+        );
+    }
+
+    #[test]
+    fn try_run_refuses_purge_given_with_read_write_but_without_show_deleted() {
+        // Isolates the --show-deleted prerequisite specifically: --read-write is already present,
+        // so a refusal here must name --show-deleted, not --read-write.
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-purge-without-show-deleted-repo");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-purge-without-show-deleted-mnt");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            true,
+            false,
+            None,
+            RepoOpenOptions {
+                assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
+            },
+            Tuning {
+                allow_purge: true,
+                ..default_tuning()
+            },
+        )
+        .expect_err(
+            "must fail - --purge only ever affects the [deleted] view, unreachable \
+                     without --show-deleted",
+        );
+        assert!(
+            message.contains("--purge"),
+            "expected an actionable message naming --purge, got: {message}"
+        );
+        assert!(
+            message.contains("--show-deleted"),
+            "expected the message to name the missing prerequisite, got: {message}"
+        );
+        assert!(
+            !message.contains("--read-write"),
+            "must not claim --read-write is missing when it was already given, got: {message}"
+        );
+    }
+
+    #[test]
+    fn try_run_does_not_refuse_utc_given_together_with_show_deleted() {
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-utc-with-show-deleted-repo");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-utc-with-show-deleted-mnt");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            None,
+            RepoOpenOptions {
+                assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
+            },
+            Tuning {
+                show_deleted: true,
+                time_display: crate::time_format::TimeDisplay::Utc,
+                ..default_tuning()
+            },
+        )
+        .expect_err("must fail - repo_path holds no repository");
+        assert!(
+            message.contains("no repository"),
+            "expected the no-repository message (not a superfluous-flags refusal), got: {message}"
         );
     }
 
