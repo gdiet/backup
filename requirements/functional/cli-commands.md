@@ -32,10 +32,11 @@ restore do: an ordinary live path, or one drilling through REQ-TREE-009's `[dele
 [`tree.md`](tree.md)) down to a specific soft-deleted entry.
 
 A live target is soft-deleted, the same outcome as an ordinary mount-side delete. Deleting a
-directory with live (not yet deleted) children requires an explicit, separate opt-in to also delete
-them; the exact flag(s) for that opt-in, and their precise semantics (e.g. distinguishing "recurse
-into live children" from other behavior a recursive-delete flag might also need to control), are
-not yet decided.
+directory with live (not yet deleted) children requires an explicit `--recursive` opt-in; without
+it, the command refuses rather than silently doing nothing. Given `--recursive`, each live
+descendant is itself soft-deleted individually, deepest first - the same outcome an ordinary
+recursive delete through the mount already produces one `unlink`/`rmdir` call at a time
+(REQ-TREE-008), just reached directly instead.
 
 A target reached through `[deleted]` instead names a specific soft-deleted entry rather than a live
 one. Removing it this way is permanent, and only happens when the caller also passes an explicit
