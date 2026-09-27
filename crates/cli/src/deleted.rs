@@ -193,13 +193,31 @@ fn disambiguated_name(base_name: &str, suffix: &str, max_bytes: Option<usize>) -
     fit_stem(stem, &format!(" [{suffix}]{ext}"), max_bytes)
 }
 
+/// Like [`disambiguated_name`], but with both the deletion timestamp and the entry's own id
+/// appended as separate bracketed suffixes - used only when the timestamp suffix alone still
+/// collides (REQ-TREE-009's id fallback), so the id becomes an additional disambiguator rather
+/// than replacing the timestamp outright: the id must be unique regardless, but that is no reason
+/// to also throw away the timestamp's own information value (REQ-TREE-009's rationale for leading
+/// with it in the first place - "more informative at a glance than an opaque id"). Truncates the
+/// stem - never either bracketed suffix - if the combination would not otherwise fit `max_bytes`.
+fn disambiguated_name_with_id(
+    base_name: &str,
+    timestamp: &str,
+    id: i64,
+    max_bytes: Option<usize>,
+) -> String {
+    let (stem, ext) = split_extension(base_name);
+    fit_stem(stem, &format!(" [{timestamp}] [{id}]{ext}"), max_bytes)
+}
+
 /// REQ-TREE-009's own display names for `children` (a directory's soft-deleted children, as
 /// [`db::Repository::list_deleted_children`] returns them): a bare name where it does not collide
 /// with a sibling, the deletion-timestamp-suffixed form where it does, and - only for the rare
 /// case where even that timestamp is shared down to the second by more than one sibling with the
-/// same base name - the id-suffixed form instead, so two entries are never shown under the exact
-/// same name. Order matches `children`'s own order. No length constraint; see
-/// [`display_names_within`] for a caller that has one.
+/// same base name - the timestamp with the entry's own id additionally appended
+/// ([`disambiguated_name_with_id`]), so two entries are never shown under the exact same name
+/// without losing the timestamp's own information value along the way. Order matches `children`'s
+/// own order. No length constraint; see [`display_names_within`] for a caller that has one.
 pub fn display_names(children: &[(String, db::DeletedEntry)]) -> Vec<String> {
     display_names_impl(children, None)
 }
@@ -242,9 +260,12 @@ fn display_names_impl(
                 result[index] = timestamp_name;
             } else {
                 for index in indices {
-                    result[index] = disambiguated_name(
+                    let timestamp =
+                        crate::time_format::format_deletion_suffix(children[index].1.deleted_at);
+                    result[index] = disambiguated_name_with_id(
                         &children[index].0,
-                        &children[index].1.entry.id.to_string(),
+                        &timestamp,
+                        children[index].1.entry.id,
                         max_bytes,
                     );
                 }
@@ -417,6 +438,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn disambiguated_name_with_id_truncates_the_stem_not_either_bracketed_suffix() {
+        let long_stem = "a".repeat(50);
+        let name = format!("{long_stem}.jpg");
+        let result = disambiguated_name_with_id(&name, "2026-08-22_14-04-14", 42, Some(40));
+        assert!(result.len() <= 40, "got {} bytes: {result}", result.len());
+        assert!(
+            result.ends_with(" [2026-08-22_14-04-14] [42].jpg"),
+            "both bracketed suffixes and the extension must survive intact: {result}"
+        );
+    }
+
     fn deleted_entry(id: i64, deleted_at: i64) -> db::DeletedEntry {
         db::DeletedEntry {
             entry: db::Entry {
@@ -449,17 +482,18 @@ mod tests {
     }
 
     #[test]
-    fn display_names_falls_back_to_the_id_when_the_timestamp_suffix_still_collides() {
+    fn display_names_appends_the_id_without_dropping_the_timestamp_when_it_alone_still_collides() {
         // Same base name, same deletion second - the timestamp suffix alone would not
-        // disambiguate them.
+        // disambiguate them, but that is no reason to lose it entirely: it stays visible,
+        // with the id appended as a second, genuinely unique suffix.
         let children = vec![
             ("a.txt".to_string(), deleted_entry(1, 100_000)),
             ("a.txt".to_string(), deleted_entry(2, 100_000)),
         ];
         let names = display_names(&children);
         assert_ne!(names[0], names[1]);
-        assert!(names[0].contains(" [1]"), "got {}", names[0]);
-        assert!(names[1].contains(" [2]"), "got {}", names[1]);
+        assert_eq!(names[0], "a [1970-01-01_00-01-40] [1].txt");
+        assert_eq!(names[1], "a [1970-01-01_00-01-40] [2].txt");
     }
 
     #[test]
