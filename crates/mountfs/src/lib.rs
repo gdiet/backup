@@ -279,6 +279,9 @@ pub trait MountFilesystem: Send + Sync + 'static {
 mod disk_space;
 pub use disk_space::disk_space;
 
+mod logging;
+pub use logging::LoggingFilesystem;
+
 #[cfg(target_os = "linux")]
 pub mod linux;
 

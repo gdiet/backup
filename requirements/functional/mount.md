@@ -227,3 +227,18 @@ it identically regardless of which platform opens the file next.
 Rejected: case-sensitive everywhere, with no platform exception - reproduces the Windows-lookup
 surprise the Rationale above describes; kept as the base layer with the fallback added on top, not
 discarded.
+
+### REQ-MOUNT-011: Optional per-call debug log
+Status: agreed
+Importance: could
+
+`--debug-log <PATH>` logs every call this mount session's own filesystem implementation receives -
+its arguments and result - to `PATH`, one line per call, overwritten fresh on each invocation. Off
+by default, and independent of `--show-deleted`/`--purge`: it has no bearing on repository content,
+only on this one session's own observability.
+
+Rationale: REQ-MOUNT-007's own behavior around the deleted-entry view depends on exactly how a
+real file manager or shell drives the mount - something otherwise only inferable indirectly, from
+a caller's own error dialog or exit code, with no way to tell whether a given call reached this
+project's own code at all or was refused earlier by the OS/mount driver itself. A per-call log
+answers that directly.

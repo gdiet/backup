@@ -6,6 +6,7 @@
 //! default repository path (`crate::repo_path`) applies here too - see `try_run`'s
 //! `default_path_used`.
 
+use std::fs::File;
 use std::path::Path;
 
 use crate::dedup_fs::{DedupFs, Tuning};
@@ -37,6 +38,12 @@ pub struct RepoOpenOptions {
 /// `repo_path` the operator gave explicitly from one resolved via
 /// [`crate::repo_path::default_repo_path`], so a failure can point at passing the path explicitly
 /// only when there was no explicit path already (REQ-CLI-006, REQ-OPERABILITY-004).
+// `debug_log` does not fit `RepoOpenOptions` (a database-connection-opening knob, consumed before
+// `DedupFs::new` exists) or `Tuning` (`DedupFs`'s own runtime knobs - `DedupFs` never sees this
+// one, since it wraps the *outer* `MountFilesystem` only, at the `mountfs::mount` call site) - a
+// third one-field struct for just this would be its own premature abstraction, so `#[allow]`
+// instead.
+#[allow(clippy::too_many_arguments)]
 fn try_run(
     repo_path: &Path,
     mountpoint: &Path,
@@ -45,6 +52,7 @@ fn try_run(
     spill_dir: Option<&Path>,
     open_options: RepoOpenOptions,
     tuning: Tuning,
+    debug_log: Option<&Path>,
 ) -> Result<(), String> {
     // DESIGN-METADATA-013's assertion only exists to let a read-only open succeed on storage no
     // writer could reach anyway - a read-write mount already holds the repository-wide write lock
@@ -193,6 +201,18 @@ fn try_run(
         ));
     }
 
+    // Opened eagerly, before the blocking mount call, same treatment as the spill-directory
+    // check above - an unwritable --debug-log path should fail fast with an actionable message,
+    // not silently surface as "logging just never happened" partway through the session.
+    // Truncated fresh rather than appended to: this is meant to show one session's own calls,
+    // not accumulate across repeated `dfs mount` invocations while iterating on a test.
+    let debug_log_file = debug_log
+        .map(|path| {
+            File::create(path)
+                .map_err(|err| format!("error: --debug-log {}: {err}", path.display()))
+        })
+        .transpose()?;
+
     if let Err(err) = mountfs::preflight() {
         return Err(format!("error: {err}"));
     }
@@ -206,12 +226,21 @@ fn try_run(
         tuning,
     )
     .map_err(|err| format!("error: {err}"))?;
-    if let Err(err) = mountfs::mount(fs, mountpoint, !read_write) {
+    let mount_result = match debug_log_file {
+        Some(log) => mountfs::mount(
+            mountfs::LoggingFilesystem::new(fs, log),
+            mountpoint,
+            !read_write,
+        ),
+        None => mountfs::mount(fs, mountpoint, !read_write),
+    };
+    if let Err(err) = mount_result {
         return Err(format!("mount failed: {err}"));
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // see try_run's own comment just above it
 pub fn run(
     repo_path: &Path,
     mountpoint: &Path,
@@ -220,6 +249,7 @@ pub fn run(
     spill_dir: Option<&Path>,
     open_options: RepoOpenOptions,
     tuning: Tuning,
+    debug_log: Option<&Path>,
 ) {
     if let Err(message) = try_run(
         repo_path,
@@ -229,6 +259,7 @@ pub fn run(
         spill_dir,
         open_options,
         tuning,
+        debug_log,
     ) {
         eprintln!("{message}");
         std::process::exit(1);
@@ -274,6 +305,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err(
             "must fail - --read-write and --assume-read-only-medium together make no sense",
@@ -312,6 +344,7 @@ mod tests {
                 allow_purge: true,
                 ..default_tuning()
             },
+            None,
         )
         .expect_err("must fail - several read-write-only flags given without --read-write");
         for flag in [
@@ -356,6 +389,7 @@ mod tests {
                 show_deleted: true,
                 ..default_tuning()
             },
+            None,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -387,6 +421,7 @@ mod tests {
                 time_display: crate::time_format::TimeDisplay::Utc,
                 ..default_tuning()
             },
+            None,
         )
         .expect_err(
             "must fail - --utc only ever affects the [time] view, unreachable without \
@@ -425,6 +460,7 @@ mod tests {
                 allow_purge: true,
                 ..default_tuning()
             },
+            None,
         )
         .expect_err(
             "must fail - --purge only ever affects the [deleted] view, unreachable \
@@ -466,6 +502,7 @@ mod tests {
                 time_display: crate::time_format::TimeDisplay::Utc,
                 ..default_tuning()
             },
+            None,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -495,6 +532,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -533,6 +571,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err("must fail - mountpoint does not exist");
         assert!(
@@ -576,6 +615,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err("must fail - spill_dir does not exist");
         assert!(
@@ -585,6 +625,48 @@ mod tests {
         assert!(
             message.contains("does not exist"),
             "expected an actionable does-not-exist message, got: {message}"
+        );
+
+        std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
+        std::fs::remove_dir_all(&mountpoint).expect("test cleanup must succeed");
+    }
+
+    #[test]
+    fn try_run_gives_an_actionable_message_when_debug_log_cannot_be_created() {
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-debug-log-repo");
+        let _ = std::fs::remove_dir_all(&repo_path);
+        db::init_repository(
+            &repo_path,
+            db::RepositorySettings::new(20, 1_700_000_000_000),
+        )
+        .expect("repository setup for this test must succeed");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-debug-log-mountpoint");
+        std::fs::create_dir_all(&mountpoint).expect("test mountpoint setup must succeed");
+        // A path whose parent directory does not exist - File::create must fail eagerly, before
+        // ever reaching the blocking mount call.
+        let debug_log = std::env::temp_dir()
+            .join("dfs-mount-test-debug-log-no-such-parent-dir")
+            .join("debug.log");
+
+        let message = try_run(
+            &repo_path,
+            &mountpoint,
+            false,
+            false,
+            None,
+            RepoOpenOptions {
+                assume_read_only_medium: false,
+                ram_budget_mb_given: false,
+                backpressure_free_zone_bytes_given: false,
+                backpressure_slope_divisor_given: false,
+            },
+            default_tuning(),
+            Some(&debug_log),
+        )
+        .expect_err("must fail - debug_log's parent directory does not exist");
+        assert!(
+            message.contains("--debug-log"),
+            "expected an actionable message naming --debug-log, got: {message}"
         );
 
         std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
@@ -609,6 +691,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -647,6 +730,7 @@ mod tests {
                 backpressure_slope_divisor_given: false,
             },
             default_tuning(),
+            None,
         )
         .expect_err("must fail - the write lock is already held");
         assert!(

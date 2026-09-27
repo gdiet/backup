@@ -196,6 +196,14 @@ enum Commands {
         // (UtcArgs's own doc comment).
         #[command(flatten)]
         utc: UtcArgs,
+        /// Logs every call this mount session's own filesystem implementation receives (path,
+        /// arguments, result) to this file, one line per call - a diagnostic aid for working out
+        /// what a file manager or `rm -rf` actually does against the mount, not something an
+        /// ordinary session needs. Overwritten fresh on each `dfs mount` invocation. Off by
+        /// default: this can grow large fast, and unlike --show-deleted/--purge it has no
+        /// bearing on repository content, only on this one session's own observability.
+        #[arg(long)]
+        debug_log: Option<PathBuf>,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -468,6 +476,7 @@ fn main() {
             spill_directory,
             backpressure,
             utc,
+            debug_log,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -500,6 +509,7 @@ fn main() {
                     allow_purge: purge,
                     time_display: time_display(utc.utc),
                 },
+                debug_log.as_deref(),
             );
         }
         Commands::Restore {
