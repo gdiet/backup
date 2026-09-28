@@ -34,13 +34,12 @@ Rationale: some workflows genuinely need to edit backed-up content in place (or 
 tree) using ordinary file-manager operations rather than a sequence of dedicated commands.
 
 ### REQ-MOUNT-004: Deleted-entry browsing and recovery through the mount
-Status: draft
+Status: agreed
 Importance: should
 
-Once agreed, "agreed" here would mean this design is the wanted answer, conditioned on confirming
-REQ-MOUNT-007/008's details against real file managers before they count as settled - behavior this
-dependent on real tools cannot be fully validated on paper. Still draft for the additional reason
-given under "Open question" below.
+Agreed here means this design is the wanted answer, conditioned on confirming REQ-MOUNT-007/008's
+details against real file managers before they count as settled - behavior this dependent on real
+tools cannot be fully validated on paper.
 
 A directory's deletion history is visible and browsable through the mount, but never inline within
 the directory itself: a dedicated, always-present root entry, `[show-deleted]`, mirrors the live
@@ -48,11 +47,12 @@ tree's own structure, with REQ-TREE-009's `[deleted]` addressing (and its `[all]
 full-history views, in [`tree.md`](tree.md)) appearing at the corresponding location within that
 mirror for every directory - never inline within the ordinary, live-only tree itself. Unlike an
 earlier version of this requirement (see "Rejected" below), `[show-deleted]` needs no separate
-mount-time opt-in of its own - it is always present and always browsable, regardless of
-`--read-write`/read-only or `--purge`. On a read-write mount, an entry reached this way can be
-recovered by moving it out into the live tree (REQ-MOUNT-013 in the case of a directory). REQ-MOUNT-007
-covers purging and other mutating operations against the view; REQ-MOUNT-008 covers what the mount
-specifically adds to REQ-TREE-009's own addressing/display rules.
+mount-time opt-in of its own - it is always present and always browsable, whether the mount is
+`--read-write` or read-only, and regardless of `--purge`. On a read-write mount, an entry reached
+this way can be recovered by moving it out into the live tree (REQ-MOUNT-013 in the case of a
+directory). REQ-MOUNT-007 covers purging and other mutating operations against the view;
+REQ-MOUNT-008 covers what the mount specifically adds to REQ-TREE-009's own addressing/display
+rules.
 
 Rationale: recovering a deleted file should be possible with the same ordinary file-manager
 gesture (drag, cut-and-paste, copy) a user would already reach for, not only via a separate
@@ -73,12 +73,13 @@ content in the very directory a recursive purge had just finished emptying, maki
 any deletion history impossible to remove in a single pass. Verified live against a real WinFSP
 mount before being abandoned.
 
-Open question, not yet resolved: `[show-deleted]` being an always-present, ordinarily-named directory
-at the mount root means a completely naive, unscoped recursive tool walking the whole mount from `/`
-(not one that specifically asks for `[show-deleted]`) would still descend into it - the same class of
-surprise the earlier, flag-gated design tried to avoid entirely, just now through one discoverable
-entry point instead of scattered through every directory. Whether that smaller, more contained
-exposure is an acceptable trade-off as-is has not been explicitly weighed.
+Accepted trade-off: `[show-deleted]` being an always-present, ordinarily-named directory at the mount
+root means a completely naive, unscoped recursive tool walking the whole mount from `/` (not one
+that specifically asks for `[show-deleted]`) still descends into it - the same class of surprise the
+earlier, flag-gated design tried to avoid entirely, just now through one discoverable entry point
+instead of scattered through every directory. That smaller, more contained exposure - one clearly-
+named entry a tool could filter out by name, rather than every directory silently carrying one - is
+accepted as-is.
 
 ### REQ-MOUNT-005: Configurable handling of missing data on read
 Status: agreed

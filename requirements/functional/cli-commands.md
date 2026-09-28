@@ -111,11 +111,8 @@ storage), rather than through a system installer; it satisfies REQ-OPERABILITY-0
 "reasonable defaults" principle for this specific, recurring parameter.
 
 ### REQ-CLI-007: List soft-deleted entries without mounting
-Status: draft
+Status: agreed
 Importance: should
-
-Draft, not yet agreed - see REQ-MOUNT-004's own, matching "Open question" note, which applies here
-identically.
 
 `dfs list`, like the mount (REQ-MOUNT-004 in [`mount.md`](mount.md)), reaches REQ-TREE-009's
 `[deleted]` addressing (in [`tree.md`](tree.md)) only through a dedicated `[show-deleted]` root
