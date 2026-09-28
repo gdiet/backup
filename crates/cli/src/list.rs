@@ -341,7 +341,12 @@ mod tests {
             "expected the plain open to fail against a pristine repository on an unwritable \
              directory, got: {without_flag:?}"
         );
-        assert_eq!(with_flag.unwrap(), "/: empty");
+        let message = with_flag.unwrap();
+        // Never truly "empty": [show-deleted] is always present (DESIGN-MOUNT-020) - matches
+        // try_run_reports_an_empty_root_as_holding_only_show_deleted's own assertion shape.
+        assert_eq!(message.lines().count(), 1);
+        assert!(message.starts_with("virt"));
+        assert!(message.ends_with(deleted::SHOW_DELETED_SEGMENT));
     }
 
     fn setup() -> (db::Repository, tempfile::TempDir) {

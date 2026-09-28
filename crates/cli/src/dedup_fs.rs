@@ -740,10 +740,18 @@ impl MountFilesystem for DedupFs {
                 if write_intent {
                     return Err(Errno::EACCES);
                 }
-                // Deliberately not registered with `self.pending` - a soft-deleted entry's
-                // content never changes, so there is nothing for `write`/`truncate`/`release` to
-                // track here (`release`'s underlying `PendingFiles::release` already safely
-                // no-ops for a `file_id` never registered via `pending.open`).
+                // Registered with `self.pending` the same as any other read-only open, even
+                // though a soft-deleted entry's content never changes and nothing here ever
+                // writes to it: `self.pending`'s handle_count is keyed purely by `entry.id`, with
+                // no notion of which `MountPath` variant produced a given open - a live/
+                // mirrored-live open on this same id (soft-deleted out from under it, or
+                // soft-deleted again after a purge-recreate) could already be registered, or
+                // start being registered while this handle is still open. Leaving this open
+                // unregistered let its own, unrelated `release()` decrement a live handle's own
+                // in-flight count, eventually underflowing it - found the hard way, via a real
+                // crash (`release without a matching open`) triggered by editing a file through
+                // `[show-deleted]`/`[purge-deleted]` from a real SMB client.
+                self.pending.open(entry.entry.id);
                 Ok(Handle(entry.entry.id as u64))
             }
         }
@@ -764,10 +772,11 @@ impl MountFilesystem for DedupFs {
             .repo
             .entry_by_id(file_id)
             .map_err(|e| self.to_errno_reporting_connection_death(e))?;
-        // A `Handle` opened against a `MountPath::Deleted` entry (REQ-MOUNT-004) never registers
-        // with `self.pending` (see `open`'s own doc comment), so its content is only ever found
-        // here, not above - falls back to the soft-deleted lookup when the live one comes up
-        // empty.
+        // A `Handle` opened against a `MountPath::Deleted` entry (REQ-MOUNT-004) is registered
+        // with `self.pending` the same as any other read-only handle (see `open`), but never
+        // gains a `latest` generation there (nothing ever writes to it), so `self.pending.read`
+        // above always falls through to here regardless - falls back to the soft-deleted lookup
+        // when the live one comes up empty.
         let content_id = match live_entry {
             Some(entry) => entry.content_id,
             None => {
@@ -1680,6 +1689,51 @@ mod tests {
                 .unwrap_err(),
             Errno::EACCES
         );
+    }
+
+    // A real crash reproduced here at the `DedupFs` level: releasing a `MountPath::Deleted`
+    // handle must not corrupt `self.pending`'s bookkeeping for the same underlying entry -
+    // `self.pending`'s handle_count is keyed purely by `entry.id`, shared by every `MountPath`
+    // variant that can resolve to the same underlying row, with no notion of which one produced a
+    // given open. Found via a real SMB client editing a file through `[show-deleted]`/
+    // `[purge-deleted]`, which crashed the whole mount process (a panic inside a FUSE `release()`
+    // callback cannot unwind - `crates/mountfs/src/linux/mod.rs`'s `dispatch_release`).
+    //
+    // Deliberately does not wait for the write below to settle before deleting/reopening it - a
+    // `PendingFiles` entry survives at handle_count 0 as long as its `latest` generation has not
+    // yet been marked terminal by the background settle job (`PendingFiles::release`'s own
+    // `entry.latest.as_ref().is_some_and(is_terminal)` check), which is exactly the real-world
+    // window this bug needs: `writable` gets handed off (and cleared) on the *first* handle to
+    // drop the count to zero, but `latest` keeps the entry alive a little longer, long enough for
+    // an extra, wrongly-unregistered release to observe a present-but-already-zero handle_count
+    // and underflow it. Reliable without any real race: everything below is a handful of
+    // synchronous, in-process calls with no yield in between, settling comfortably faster than
+    // that in practice, but nowhere near fast enough to land inside this call chain.
+    #[test]
+    fn releasing_a_deleted_view_handle_does_not_corrupt_a_still_settling_entrys_handle_count() {
+        let (fs, _verify_repo, _store, _dir) = setup(true);
+        let write_handle = fs.create("/a.txt").unwrap();
+        fs.write(write_handle, 0, b"hello").unwrap();
+
+        // A second, plain read-only handle on the same live entry - keeps handle_count above zero
+        // across `write_handle`'s own release below, so `writable` is handed off (and cleared)
+        // without yet removing the entry (still kept alive by `latest`, per the comment above).
+        let read_handle = fs.open("/a.txt", false).unwrap();
+        fs.release(write_handle);
+
+        // Soft-deleted while `read_handle` is still open (REQ-MOUNT-004 allows this independently
+        // of any open handle) - now also reachable through `[show-deleted]`.
+        fs.unlink("/a.txt").unwrap();
+
+        // A third, Deleted-view handle on the exact same underlying entry, opened and released in
+        // full - before the fix, opening this never registered with `self.pending`, but releasing
+        // it still unconditionally decremented whatever count already sat under this same
+        // `entry.id`, i.e. `read_handle`'s own.
+        let deleted_handle = fs.open("/[show-deleted]/[deleted]/a.txt", false).unwrap();
+        fs.release(deleted_handle);
+
+        // Must not panic (`release without a matching open`) - the actual crash this reproduces.
+        fs.release(read_handle);
     }
 
     #[test]
