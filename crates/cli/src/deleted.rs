@@ -346,14 +346,15 @@ fn disambiguated_name_with_id(
 }
 
 /// REQ-TREE-009's own display names for `children` under `[all]` (a directory's *full*
-/// soft-deleted-child history, as [`db::Repository::list_deleted_children`] returns them): a bare
-/// name where it does not collide with a sibling, the deletion-timestamp-suffixed form where it
-/// does, and - only for the rare case where even that timestamp is shared down to the second by
-/// more than one sibling with the same base name - the timestamp with the entry's own id
-/// additionally appended ([`disambiguated_name_with_id`]), so two entries are never shown under
-/// the exact same name without losing the timestamp's own information value along the way. Order
-/// matches `children`'s own order. No length constraint; see [`display_names_within`] for a
-/// caller that has one.
+/// soft-deleted-child history, as [`db::Repository::list_deleted_children`] returns them): every
+/// entry's own deletion-timestamp suffix is always appended ([`disambiguated_name`]), regardless
+/// of whether a same-named sibling currently exists - so an entry's own `[all]` name never changes
+/// retroactively just because a same-named sibling happens to be deleted later. Falls back to also
+/// appending the entry's own id ([`disambiguated_name_with_id`]) only in the rare case where even
+/// that timestamp is shared down to the second by more than one sibling with the same base name, so
+/// two entries are never shown under the exact same name without losing the timestamp's own
+/// information value along the way. Order matches `children`'s own order. No length constraint; see
+/// [`display_names_within`] for a caller that has one.
 pub fn display_names(children: &[(String, db::DeletedEntry)]) -> Vec<String> {
     display_names_impl(children, None)
 }
@@ -371,40 +372,27 @@ fn display_names_impl(
     children: &[(String, db::DeletedEntry)],
     max_bytes: Option<usize>,
 ) -> Vec<String> {
-    let mut by_base_name: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (index, (name, _)) in children.iter().enumerate() {
-        by_base_name.entry(name.as_str()).or_default().push(index);
+    let mut by_key: HashMap<(&str, String), Vec<usize>> = HashMap::new();
+    for (index, (name, entry)) in children.iter().enumerate() {
+        let timestamp = crate::time_format::format_deletion_suffix(entry.deleted_at);
+        by_key
+            .entry((name.as_str(), timestamp))
+            .or_default()
+            .push(index);
     }
 
     let mut result = vec![String::new(); children.len()];
-    for indices in by_base_name.into_values() {
+    for ((_, timestamp), indices) in by_key {
         if let [index] = indices[..] {
-            result[index] = children[index].0.clone();
-            continue;
-        }
-        let mut by_timestamp_name: HashMap<String, Vec<usize>> = HashMap::new();
-        for index in indices {
-            let name = disambiguated_name(
-                &children[index].0,
-                &crate::time_format::format_deletion_suffix(children[index].1.deleted_at),
-                max_bytes,
-            );
-            by_timestamp_name.entry(name).or_default().push(index);
-        }
-        for (timestamp_name, indices) in by_timestamp_name {
-            if let [index] = indices[..] {
-                result[index] = timestamp_name;
-            } else {
-                for index in indices {
-                    let timestamp =
-                        crate::time_format::format_deletion_suffix(children[index].1.deleted_at);
-                    result[index] = disambiguated_name_with_id(
-                        &children[index].0,
-                        &timestamp,
-                        children[index].1.entry.id,
-                        max_bytes,
-                    );
-                }
+            result[index] = disambiguated_name(&children[index].0, &timestamp, max_bytes);
+        } else {
+            for index in indices {
+                result[index] = disambiguated_name_with_id(
+                    &children[index].0,
+                    &timestamp,
+                    children[index].1.entry.id,
+                    max_bytes,
+                );
             }
         }
     }
@@ -627,9 +615,12 @@ mod tests {
     }
 
     #[test]
-    fn display_names_leaves_an_unambiguous_name_bare() {
-        let children = vec![("a.txt".to_string(), deleted_entry(1, 100))];
-        assert_eq!(display_names(&children), vec!["a.txt".to_string()]);
+    fn display_names_always_suffixes_even_an_unambiguous_name() {
+        let children = vec![("a.txt".to_string(), deleted_entry(1, 946_684_800_000))];
+        assert_eq!(
+            display_names(&children),
+            vec!["a [2000-01-01_00-00-00].txt".to_string()]
+        );
     }
 
     #[test]

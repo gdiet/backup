@@ -152,22 +152,23 @@ unmodified name - no suffix, since at most one entry per name ever occupies this
 already unambiguous by construction.
 
 `[deleted]/[all]` shows every soft-deleted entry at that location, not only the most recent one per
-name - REQ-TREE-004's full, unfiltered history. More than one entry can share the same original name
-there; each is disambiguated with a deletion-timestamp suffix before its extension (e.g. `photo
-[2026-08-22_14-04-14].jpg`; `.env [2026-08-22_14-04-14]` for a dot-file, which has no splittable
-extension). If that timestamp suffix alone still does not tell two entries apart - either because
-they were deleted within the same second, or because a length constraint the calling context imposes
-forces both down to the same truncated form - the entry's own id is appended as a further suffix
-instead of replacing the timestamp outright (e.g. `photo [2026-08-22_14-04-14] [42].jpg`), so the
-timestamp's own information stays visible even then; the id alone is already enough to make the name
-unique, but that is not a reason to also lose the timestamp. The base name is truncated - never
-either bracketed suffix, the parts actually meant to stay unique and informative - if the combination
-does not otherwise fit. An entry whose bare name is not shared by any other soft-deleted entry at
-that same location is shown as-is within `[all]` too, no suffix needed.
+name - REQ-TREE-004's full, unfiltered history. Every entry is disambiguated with a
+deletion-timestamp suffix before its extension (e.g. `photo [2026-08-22_14-04-14].jpg`; `.env
+[2026-08-22_14-04-14]` for a dot-file, which has no splittable extension), regardless of whether
+another entry at that same location currently shares its original name - so an entry's own `[all]`
+name never changes later just because a same-named sibling happens to be deleted afterward. If that
+timestamp suffix alone still does not tell two entries apart - either because they were deleted
+within the same second, or because a length constraint the calling context imposes forces both down
+to the same truncated form - the entry's own id is appended as a further suffix instead of replacing
+the timestamp outright (e.g. `photo [2026-08-22_14-04-14] [42].jpg`), so the timestamp's own
+information stays visible even then; the id alone is already enough to make the name unique, but
+that is not a reason to also lose the timestamp. The base name is truncated - never either bracketed
+suffix, the parts actually meant to stay unique and informative - if the combination does not
+otherwise fit.
 
 `[deleted]/[all]/[by-time]` shows the same entries as `[deleted]/[all]` - a second presentation of
-the same data, not a different one - with the timestamp always prefixed instead of conditionally
-suffixed, for chronological browsing.
+the same data, not a different one - with the timestamp always prefixed instead of suffixed, for
+chronological browsing.
 
 Rationale: REQ-MOUNT-004/008 in [`mount.md`](mount.md) needed exactly this same addressing already,
 to let a mounted file manager browse and disambiguate a directory's deletion history in place;

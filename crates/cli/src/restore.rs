@@ -946,10 +946,21 @@ mod tests {
         )
         .expect("must succeed - restoring a soft-deleted directory descends into its own history");
         assert!(message.contains("restored 1 file"));
+        let restored_dir = target_dir.path().join("photos");
+        let names: Vec<String> = fs::read_dir(&restored_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
         assert_eq!(
-            fs::read(target_dir.path().join("photos/one.jpg")).unwrap(),
-            b"one"
+            names.len(),
+            1,
+            "expected exactly one restored file: {names:?}"
         );
+        assert!(
+            names[0].starts_with("one [") && names[0].ends_with("].jpg"),
+            "expected a disambiguated name even for a single history entry: {names:?}"
+        );
+        assert_eq!(fs::read(restored_dir.join(&names[0])).unwrap(), b"one");
     }
 
     #[test]

@@ -118,6 +118,23 @@ below). The simplification this reversal costs - one more level of "which of the
 current" bookkeeping at every depth, not only the outermost one - is worth it for the same reason the
 outer-level version was worth it in the first place.
 
+### `[all]` always disambiguates, even a name that is currently unique
+
+`[all]` appends every entry's own deletion-timestamp suffix unconditionally, rather than only once a
+same-named sibling actually exists. An earlier version left an entry bare whenever it was the only
+soft-deleted entry under that name - saving the suffix in the overwhelmingly common single-version
+case. Rejected once its consequence was worked through: that entry's own `[all]` name would then
+change later, with nothing about the entry itself changing, purely because a second, same-named
+entry happened to be deleted afterward - a name that is not stable under an unrelated later action
+is a poor fit for something meant to be addressed, scripted against, or simply remembered.
+Unconditional disambiguation also removes an asymmetry `[all]` and `[all]/[by-time]` otherwise had
+no reason to carry: the latter already always prefixes its timestamp regardless of collision, for
+the same "a plain sort stays chronological" reason - `[all]` gains the same "a name depends only on
+its own entry" property, just applied to a suffix instead of a prefix. The single-version case that
+would have shown a bare name is not left worse off in practice: it is exactly the case `[deleted]`
+itself already shows under the plain, unmodified name (DESIGN-MOUNT-021 above), so nothing that
+needs a bare name ever needed to reach it through `[all]` in the first place.
+
 ## DESIGN-MOUNT-022: `rename()` never substitutes a name; `--restore-original-names` opts into that convenience explicitly
 Status: implemented (crates/cli/src/dedup_fs.rs, crates/db/src/tree.rs's `deleted_name_by_id`)
 
