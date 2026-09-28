@@ -43,7 +43,11 @@ docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
   allow anonymous SMB logons by default.
 
 Connect from Windows: `\\<host-or-container-ip>\dedup`, or `net use Z: \\<ip>\dedup /user:dedup
-dedup`.
+dedup`. Running this from WSL2 on the Windows machine itself: use the WSL2 guest's own address
+(`hostname -I` inside WSL2, typically the `eth0` entry) - not `localhost`, and not the WSL2
+subnet's default gateway address, which is the *host's* own vEthernet adapter, not the guest
+actually running the container. That address changes across WSL2 restarts, so re-check it if a
+previously-working connection stops resolving.
 
 ## Mount options (`MOUNT_ARGS`)
 
@@ -93,12 +97,15 @@ docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
     -p 445:445 dedup-samba-mount
 ```
 
-Read-only, also revealing REQ-TREE-009's `[deleted]` view (matches `dfs mount --show-deleted`):
+Read-write, also revealing `[purge-deleted]` alongside the always-present `[show-deleted]`
+(REQ-MOUNT-007's second, escalating opt-in - matches `dfs mount --read-write --purge`; meaningless
+without `--read-write`, since nothing mutating, purging included, is ever allowed on a read-only
+mount):
 
 ```bash
 docker run --rm --init --cap-add SYS_ADMIN --device /dev/fuse \
     -v /path/to/repository:/repo \
-    -e MOUNT_ARGS="--show-deleted" \
+    -e MOUNT_ARGS="--read-write --purge" \
     -p 445:445 dedup-samba-mount
 ```
 
