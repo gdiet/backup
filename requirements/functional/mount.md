@@ -289,7 +289,7 @@ project's own code at all or was refused earlier by the OS/mount driver itself. 
 answers that directly.
 
 ### REQ-MOUNT-012: Optional automatic original-name restoration on recovery
-Status: draft
+Status: agreed
 Importance: could
 
 A mount-time opt-in, `--restore-original-names`: when given, moving an entry out of `[all]` or
