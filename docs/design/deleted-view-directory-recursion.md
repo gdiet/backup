@@ -194,11 +194,12 @@ REQ-OPERABILITY-007-Lücken, die genau daraus entstanden sind): der normale Moun
 den echten, lebenden Baum, ganz ohne synthetischen Inhalt. Zusätzlich blendet die Mount-Wurzel zwei
 weitere, synthetische Verzeichnisse ein:
 
-- `[show-deleted]` - rein lesend. Darunter erscheint dieselbe Baumstruktur wie im lebenden Baum,
-  ergänzt an jeder Stelle um genau die `[deleted]`/`[time]`-Sicht, die heute inline im lebenden Baum
-  selbst erscheint.
-- `[purge-deleted]` - dieselbe Struktur, aber Einträge innerhalb von `[deleted]`/`[time]` dürfen dort
-  tatsächlich (hart) entfernt werden.
+- `[show-deleted]` - Browsen und Wiederherstellen (Rename zurück in den Live-Baum). Darunter erscheint
+  dieselbe Baumstruktur wie im lebenden Baum, ergänzt an jeder Stelle um genau die
+  `[deleted]`/`[time]`-Sicht, die heute inline im lebenden Baum selbst erscheint.
+- `[purge-deleted]` - dieselbe Struktur, zusätzlich dürfen Einträge innerhalb der Sicht dort auch
+  tatsächlich (hart) entfernt werden. Details zur genauen Abgrenzung im Abschnitt "Sichtbarkeit der
+  beiden Ordner" weiter unten.
 
 (Einheitlich "purge" statt "prune" - "purge" ist der in diesem Projekt längst etablierte Begriff für
 das unwiderrufliche Entfernen von Dedup-Historie, `--purge`, `allow_purge`, `dfs del --purge`, REQ-
@@ -212,23 +213,28 @@ damit vollständig. `--purge` bleibt bestehen - siehe die Sichtbarkeitsregel im 
 
 `mount`s eigenes `--show-deleted`-Flag wird überflüssig und entfällt (nicht zu verwechseln mit `dfs
 list --show-deleted`/`dfs find --show-deleted` - eigenständige, von `mount` unabhängige
-CLI-Oberflächen, von dieser Entscheidung unberührt). `--purge` bleibt dagegen bestehen, ebenfalls
-unverändert als eigener Opt-in über `--read-write` hinaus:
+CLI-Oberflächen, siehe den eigenen Abschnitt weiter unten dazu). `--purge` bleibt bestehen, unverändert
+als eigener Opt-in über `--read-write` hinaus:
 
-- `[show-deleted]` wird immer angezeigt, unabhängig von `--read-write`/read-only und unabhängig von
-  `--purge` - reines Lesen braucht kein Schreibrecht auf den Mount und keine Erlaubnis, Historie zu
-  vernichten.
-- `[purge-deleted]` wird nur angezeigt, wenn sowohl `--read-write` als auch `--purge` gegeben sind.
-  Ohne `--read-write` ergäbe er ohnehin keinen Sinn (jeder Löschversuch darunter würde wie jede andere
-  Schreiboperation mit `EROFS` scheitern); ohne `--purge` bliebe die bewusste, zusätzliche Hürde vor
-  dem unwiderruflichen Vernichten von Dedup-Historie sonst ungeschützt bestehen. Beides dort gar nicht
-  erst zu zeigen, statt sichtbar-aber-verweigernd, ist konsistent mit REQ-OPERABILITY-007s eigenem
-  Prinzip: eine im Kontext sinnlose oder nicht erlaubte Fähigkeit wird verweigert/versteckt, nicht
-  sichtbar-aber-wirkungslos angeboten.
+- `[show-deleted]` wird **immer** angezeigt - unabhängig von `--read-write`/read-only (also auch auf
+  einem rein lesenden Mount browsbar) und unabhängig von `--purge`. **Korrektur gegenüber einer
+  früheren Fassung dieses Abschnitts:** `[show-deleted]` ist trotzdem nicht rein lesend. Auf einem
+  read-write-Mount erlaubt es zusätzlich das Wiederherstellen per Rename (einen Eintrag aus der
+  Ansicht heraus in den lebenden Baum verschieben) - REQ-MOUNT-004 verlangt dafür schon heute nur
+  `--read-write`, ausdrücklich nicht `--purge`. Auf einem read-only-Mount ist auch das natürlich nicht
+  möglich (`require_read_write` verweigert jede mutierende Operation ohnehin), nur das Browsen bleibt
+  dort übrig. Das eigentliche, unwiderrufliche Entfernen (`unlink`/`rmdir` *innerhalb* der Ansicht)
+  bleibt in jedem Fall verweigert, außer über `[purge-deleted]`.
+- `[purge-deleted]` wird nur angezeigt, wenn sowohl `--read-write` als auch `--purge` gegeben sind -
+  aus denselben Gründen wie zuvor (ein Löschversuch ohne `--read-write` liefe ohnehin auf `EROFS`;
+  ohne `--purge` bliebe die bewusste Hürde vor dem Vernichten von Historie ungeschützt). Dort ist
+  zusätzlich zum Wiederherstellen auch das endgültige Entfernen erlaubt.
 
 Damit bleibt die heute schon bestehende, feinere Sicherheitsstufe erhalten: `--read-write` allein
-erlaubt weiterhin nur normale Datei-Bearbeitung, das unwiderrufliche Vernichten von Historie bleibt
-ein eigener, zusätzlicher Opt-in.
+erlaubt Wiederherstellen, das unwiderrufliche Vernichten von Historie bleibt ein eigener,
+zusätzlicher Opt-in - und die alte Frage "wo landet Wiederherstellen per rename" ist damit
+beantwortet: über `[show-deleted]` selbst, nicht über einen dritten Namensraum (siehe die inzwischen
+überholte frühere Fassung dieses Abschnitts weiter unten).
 
 ### Das löst den strukturellen Rest aus `rust-purge-empty-view-removal` nebenbei mit auf
 
@@ -260,48 +266,146 @@ Wurzel-Präfix erreichbar sein muss statt inline im normalen Baum - im Kern eine
 (im Wesentlichen bestehende) Auflösungslogik übergeben, mit "Sicht auf Historie an" bzw. zusätzlich
 "Purge erlaubt" statt der heutigen `self.show_deleted`/`self.allow_purge`-Mount-Flags.
 
-Konkret, am Beispiel `Ordner a` mit Kind `Ordner a/b`:
+Konkret, am Beispiel `Ordner a` mit Kind `Ordner a/b.txt` (Namen hier an die unten beschriebene
+`[deleted]`/`[all]`/`[all]/[by-time]`-Struktur angepasst):
 
-- Solange `a` lebt und `b` darin gelöscht wird: `/[show-deleted]/a/[deleted]/b-mit-Timestamp` und
-  `/[show-deleted]/a/[deleted]/[time]/Timestamp-b`.
-- Wird `a` selbst gelöscht, rutscht `a` als Ganzes eine Ebene höher, in das `[deleted]`/`[time]`-Paar
-  seines eigenen Elternverzeichnisses (hier: Wurzel): `/[show-deleted]/[deleted]/a-mit-Timestamp` und
-  `/[show-deleted]/[time]/Timestamp-a`.
-- Innerhalb von `a-mit-Timestamp` (über welchen der beiden Pfade auch erreicht) erscheint
-  `b-mit-Timestamp` **direkt**, ohne ein weiteres verschachteltes `[deleted]`/`[time]`-Paar - unterhalb
-  einer bereits toten Wurzel gibt es keine Lebend/Tot-Unterscheidung mehr zu treffen, alles darunter
-  ist per Definition schon tot. Das gilt rekursiv beliebig tief.
+- Solange `a` lebt und `b.txt` darin zum ersten Mal gelöscht wird: `/[show-deleted]/a/[deleted]/b.txt`
+  (Originalname, da einzige/neueste Löschung dieses Namens), dieselbe Information zusätzlich unter
+  `/[show-deleted]/a/[deleted]/[all]/b <Zeitstempel>.txt` und
+  `/[show-deleted]/a/[deleted]/[all]/[by-time]/<Zeitstempel> b.txt`.
+- Wird `a` selbst gelöscht, rutscht `a` als Ganzes eine Ebene höher, in die `[deleted]`-Ansicht seines
+  eigenen Elternverzeichnisses (hier: Wurzel): `/[show-deleted]/[deleted]/a` (Originalname) bzw.
+  `/[show-deleted]/[deleted]/[all]/a <Zeitstempel>` bzw. `.../[all]/[by-time]/<Zeitstempel> a`.
+- Innerhalb von `a` (über welchen der drei Pfade auch erreicht - dieselbe zugrunde liegende ID)
+  erscheint `b.txt` weiterhin, aber (siehe die Umfangs-Empfehlung weiter unten) wieder disambiguiert
+  und flach, ohne die "nur neueste Version"-Vereinfachung: `a/b <Zeitstempel>.txt`, ohne ein weiteres
+  verschachteltes `[deleted]`/`[all]`-Paar - unterhalb einer bereits toten Wurzel gibt es keine
+  Lebend/Tot-Unterscheidung mehr zu treffen, alles darunter ist per Definition schon tot. Das gilt
+  rekursiv beliebig tief.
 
-### `[deleted]`/`[time]` bleiben unverändert ein festes Paar
+### `[deleted]` zeigt nur die neueste Version je Name, mit Originalname - volle Historie unter `[all]`/`[all]/[by-time]`
 
-`[time]` ist Kind von `[deleted]`, keine Geschwister-Beziehung - unverändert wie heute. Der einzige
-Unterschied zwischen beiden ist die Position des Zeitstempels im Namen: `<Dateiname> <Zeitstempel>
-<ggf. ID> <Extension>` bei `[deleted]`, `<Zeitstempel> <Dateiname> <ggf. ID> <Extension>` bei
-`[time]` - nicht Inhalt oder Tiefe. Diese ganze Namens-/Sortierlogik lässt sich unverändert
-wiederverwenden.
+Auslöser: ein einfaches Wiederherstellen per Drag&Drop/Cut&Paste bekäme sonst immer den
+zeitgestempelten Anzeigenamen mit ins Ziel - schlechte UX für den mit Abstand häufigsten Fall ("letzte
+Löschung rückgängig machen"). Empirisch bestätigt (siehe unten): Explorer und Total Commander
+übergeben bei einem einfachen Verschieben immer denselben Namen wie die Quelle, nie einen neu
+gewählten - der angezeigte Name *ist* also der Name, den man nach einem Move bekommt.
 
-### Noch offen: wo landet Wiederherstellen per rename?
+Lösung: `[deleted]` selbst zeigt pro Verzeichnis nur noch **die zuletzt gelöschte Version jedes
+einzelnen Original-Namens**, unter ihrem **unveränderten** Namen - kein Zeitstempel-Suffix, da pro
+Name per Konstruktion höchstens ein Eintrag existiert (das jeweils neueste `deleted_at` für diesen
+Namen), also naturgemäß eindeutig.
 
-`[show-deleted]` ist laut obiger Beschreibung rein lesend, `[purge-deleted]` nur zum endgültigen
-(harten) Löschen. Keins von beiden passt offensichtlich zu "einen gelöschten Eintrag per rename
-zurück in den lebenden Baum verschieben". Drei Möglichkeiten, noch nicht entschieden:
+- `[deleted]/[all]` zeigt das, was `[deleted]` bisher gezeigt hat: die vollständige Historie, mit
+  REQ-TREE-009s Disambiguierungs-Suffix (`<Name> <Zeitstempel> <ggf. ID>.<Extension>`).
+- `[deleted]/[all]/[by-time]` zeigt dieselbe vollständige Historie, nur mit vorangestelltem statt
+  angehängtem Zeitstempel, für chronologisches Browsen.
 
-1. Zusätzlich über `[purge-deleted]` erlauben - kein dritter Namensraum, dort wo ohnehin
-   schreibend/löschend zugegriffen werden darf, auch Rename zurück in den Live-Baum zulassen.
-2. Eigener dritter Ordner `[recover-deleted]` - saubere begriffliche Trennung "endgültig löschen" vs.
-   "wiederherstellen", aber ein weiterer Namensraum mit eigener Pfadauflösung.
-3. Vorerst nur über die CLI, nicht über den Mount - der Mount bleibt für gelöschte Inhalte rein
-   lesend bzw. purge-fähig, Wiederherstellung bleibt ein separates `dfs`-Kommando.
+`[all-by-time]` als direktes Geschwister von `[all]` (ein früherer Zwischenstand dieses Dokuments)
+wäre nach derselben Logik falsch, mit der zuvor schon `[time]` als Kind (nicht Geschwister) von
+`[deleted]` festgelegt wurde: `[all]` und `[by-time]` zeigen exakt denselben Inhalt, nur
+unterschiedlich benannt - genau die Beziehung, die vorher zwischen `[deleted]` und `[time]` bestand.
+Also `[deleted]/[all]/[by-time]`, ein Kind von `[all]`, nicht `[deleted]/[all-by-time]` als
+eigenständiges drittes Geschwister.
 
-Ein zusätzlicher, damit zusammenhängender Punkt: ein Rename von `[show-deleted]/a/b/[deleted]/c` (oder
-wo auch immer Recovery am Ende andockt) zurück nach `/a/b/c` wäre ein Rename über zwei getrennte
-Wurzel-Namensräume hinweg - technisch aufwendiger als der heutige Rename innerhalb desselben
-Verzeichnisses, auch wenn strukturell konsistent (das Wiederherstellen von `a` würde `a` exakt in den
-Zustand zurückversetzen, den das heutige Inline-Design ohnehin schon kennt: ein lebendes Verzeichnis
-mit eigenem `[deleted]`-Marker für `b`).
+Das ist mehr als eine Umbenennung: Kopieren (statt Verschieben) einer gelöschten Datei zurück in den
+Live-Baum geht nie über `rename()`, sondern über `open`/`read`/`create`/`write` - eine rein
+rename-seitige Lösung (siehe "`rename()` bleibt immer ehrlich" unten) hilft dabei grundsätzlich
+nicht, weil sie nur an einer einzigen Operation ansetzt. Weil der Anzeigename in `[deleted]` selbst
+aber schon sauber ist, bevor überhaupt irgendeine Operation stattfindet, funktioniert Kopieren genauso
+wie Verschieben, ganz ohne Sonderbehandlung.
+
+#### Umfang: nur an der äußeren Grenze, nicht rekursiv in bereits toten Teilbäumen (Empfehlung, noch nicht ausdrücklich bestätigt)
+
+Offene Frage dabei: gilt "nur neueste Version, Originalname" auch für die *eigenen* Kinder eines
+bereits toten Verzeichnisses (z. B. innerhalb von `a` im Beispiel oben, nachdem `a` selbst gelöscht
+wurde), oder bleibt es dort bei "immer volle Historie, immer disambiguiert", wie ursprünglich für
+diesen Fall entworfen? Empfehlung: **nur an der äußeren Grenze** (die direkte `[deleted]`-Ansicht
+eines noch lebenden Verzeichnisses) - das deckt den weitaus häufigsten Fall ab, ohne die
+Rekursions-Logik zusätzlich zu verkomplizieren. Wer sich tiefer in schon toten Verzeichnissen
+umschaut, ist ohnehin schon im "Historie durchforsten"-Modus, wo die volle, disambiguierte Sicht eher
+erwartet wird. Diese Empfehlung ist noch nicht ausdrücklich bestätigt.
+
+### Empirisch bestätigt: `rename()` bekommt beim Verschieben immer den vollständigen Zielpfad
+
+Live gegen einen echten WinFSP-Mount getestet (`dfs mount --read-write --debug-log ...`, Verzeichnisse
+`/a`, `/b`, Datei `/a/x`), über drei unterschiedliche Tools:
+
+```
+rename  /a/x  /b/x   (Cut & Paste, Explorer)
+rename  /b/x  /a/x   (Drag & Drop, Explorer)
+rename  /a/x  /b/x   (Total Commander)
+```
+
+Jedes Mal ein vollständiger Zielpfad mit demselben Basisnamen wie die Quelle - nie nur das
+Zielverzeichnis. Das ist kein Zufall, sondern folgt aus POSIX' `rename(2)` und Windows'
+`MoveFileEx`/der entsprechenden Rename-Operation, die beide immer einen vollständigen Zielpfad
+verlangen; das aufrufende Tool konstruiert den Namen selbst, bevor überhaupt ein Aufruf beim Mount
+ankommt. Bestätigt die Grundlage sowohl für "`[deleted]` zeigt nur die neueste Version" (oben) als
+auch für `--restore-original-names` (unten): bei einem einfachen Move landet exakt der angezeigte
+Name auch am Ziel.
+
+### `rename()` bleibt immer ehrlich - kein automatisches Umbenennen ohne Opt-in
+
+Ursprünglich erwogen: beim Wiederherstellen per Move automatisch den zeitgestempelten Namen gegen den
+echten Original-Namen tauschen, sobald der Aufrufer keinen eigenen, abweichenden Namen angegeben hat.
+**Verworfen als Standardverhalten:** `rename()` gibt am Protokoll keinen "so wurde tatsächlich
+benannt"-Rückgabewert zurück, nur Erfolg/Fehler. Ein Rückgabewert, der nicht zum tatsächlichen
+Ergebnis passt, ist exakt das, was REQ-MOUNT-007 an anderer Stelle schon verwirft ("This would make
+the mount's return value inconsistent with the repository's actual state ... That reads as a bug, not
+as a deliberate safety feature") - hier nur für `rename` statt `unlink`/`rmdir`. Ein Skript, das nach
+einem gemeldeten Erfolg gezielt den angeforderten Zielnamen anspricht, würde ihn nicht finden.
+
+Deshalb: `rename()` durch den Mount liefert standardmäßig immer exakt den angeforderten Namen, nie
+einen anderen - unabhängig davon, ob die Quelle `[deleted]`, `[all]` oder `[all]/[by-time]` ist.
+
+### `--restore-original-names`: Opt-in für automatisches Umbenennen bei Wiederherstellung älterer Versionen
+
+Da `[deleted]` selbst (siehe oben) für den häufigsten Fall schon ohne jede Sonderbehandlung einen
+sauberen Namen liefert, bleibt automatisches Umbenennen nur für das Wiederherstellen einer *älteren*
+Version (über `[all]`/`[all]/[by-time]`) interessant. Dafür ein neues, eigenes Mount-Flag,
+`--restore-original-names`: wenn gesetzt, liefert ein Move aus `[all]`/`[all]/[by-time]` heraus in den
+Live-Baum automatisch den echten Original-Namen, unabhängig vom angegebenen Zielnamen - sonst
+(Default) bleibt `rename()` ehrlich wie im vorigen Abschnitt beschrieben, der Zeitstempel bleibt im
+Namen, bis manuell umbenannt wird.
+
+Kein Widerspruch zum vorigen Abschnitt: die Ehrlichkeits-Garantie gilt für den *generischen*
+`rename()`-Aufruf, den irgendein beliebiges Tool jederzeit absetzen könnte. `--restore-original-names`
+ist dagegen ein bewusster, dokumentierter Opt-in des Mount-*Betreibers* - dasselbe Muster wie
+`--purge`: das Risiko (ein Skript könnte von der Namensänderung überrascht werden) liegt bei
+demjenigen, der das Flag aktiviert hat, nicht bei einem beliebigen, ahnungslosen Aufrufer unter einem
+Default-Mount.
+
+Wirkt nur auf `rename()` - eine Kopie aus `[all]`/`[all]/[by-time]` bekommt weiterhin den
+zeitgestempelten Namen, das Flag hat darauf keinen Einfluss. Wie `--purge` sollte
+`--restore-original-names` ohne `--read-write` sinnlos sein (Wiederherstellen gibt es nur auf einem
+read-write-Mount) und nach REQ-OPERABILITY-007 verweigert werden, statt es wirkungslos zu ignorieren.
+
+### Teilt sich die Struktur mit `dfs list`/`dfs find`/`dfs restore`/`dfs del`?
+
+Die `[deleted]`/`[all]`/`[all]/[by-time]`-Adressierung selbst spricht nichts dagegen, geteilt zu
+werden - sie baut auf [`deleted.rs`](../../crates/cli/src/deleted.rs) auf, das schon heute
+ausdrücklich für beide Aufrufer gedacht ist ("the right choice for a caller with none of its own
+(`dfs list`/`dfs restore`'s terminal-facing paths)"). Ein einheitliches Adressierungsschema überall
+ist also grundsätzlich der richtige Default.
+
+Zwei Einschränkungen dabei:
+
+- `[purge-deleted]` braucht `dfs list`/`dfs find`/`dfs restore` nicht zu zeigen - diese Kommandos
+  mutieren nie, `[purge-deleted]` wäre dort nur ein inhaltsgleiches Duplikat von `[show-deleted]` ohne
+  eigene Bedeutung.
+- Ob `[show-deleted]` als Wurzel-Präfix auch für `dfs list`/`dfs find`/`dfs restore` navigierbar sein
+  soll - zusätzlich zu, oder anstelle von, deren eigenem, bereits bestehendem `--show-deleted`-Flag -
+  ist eine eigene, größere Entscheidung, die hier nicht mitentschieden wird. Dieses Flag ändert heute
+  schon das Verhalten gewöhnlicher Pfade, genau die Art Problem, die REQ-OPERABILITY-007 für `mount`
+  gerade behoben hat. Ebenso offen: ob `dfs del --purge` durch Adressierung über
+  `/[purge-deleted]/...` ersetzt oder ergänzt werden sollte. Beides für eine spätere, eigene
+  Entscheidung vorgemerkt, nicht Teil dieser hier.
 
 ### Nächste Schritte (noch nicht umgesetzt)
 
 Reine Planung bis hier, auf diesem Branch (`rust-deleted-view-synthetic-roots`). Kein Code geändert,
-keine Anforderung geändert. Offen: die Recovery-Frage oben, danach eine `REQ-...`/`DESIGN-...`-ID und
-eine Umsetzungsreihenfolge.
+keine Anforderung geändert. Offen: die Rekursionsumfang-Empfehlung oben (ausdrückliche Bestätigung
+steht noch aus), ob/wie `dfs list`/`dfs find`/`dfs restore`/`dfs del` den `[show-deleted]`-Präfix
+zusätzlich zu ihren eigenen Flags navigieren sollen, danach eine `REQ-...`/`DESIGN-...`-ID und eine
+Umsetzungsreihenfolge.
