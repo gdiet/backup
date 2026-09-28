@@ -197,44 +197,47 @@ weitere, synthetische Verzeichnisse ein:
 - `[show-deleted]` - rein lesend. Darunter erscheint dieselbe Baumstruktur wie im lebenden Baum,
   ergänzt an jeder Stelle um genau die `[deleted]`/`[time]`-Sicht, die heute inline im lebenden Baum
   selbst erscheint.
-- `[prune-deleted]` - dieselbe Struktur, aber Einträge innerhalb von `[deleted]`/`[time]` dürfen dort
+- `[purge-deleted]` - dieselbe Struktur, aber Einträge innerhalb von `[deleted]`/`[time]` dürfen dort
   tatsächlich (hart) entfernt werden.
 
-`--show-deleted`/`--purge` als mount-weite Flags, die das Verhalten gewöhnlicher Pfade verändern,
-entfallen damit vollständig - welche Sicht/welches Recht gilt, ergibt sich rein daraus, durch welchen
-der drei Namensräume (lebender Baum, `[show-deleted]`, `[prune-deleted]`) ein Pfad geht.
+(Einheitlich "purge" statt "prune" - "purge" ist der in diesem Projekt längst etablierte Begriff für
+das unwiderrufliche Entfernen von Dedup-Historie, `--purge`, `allow_purge`, `dfs del --purge`, REQ-
+MOUNT-007 eingeschlossen. "Prune" tauchte nur kurz in diesem Dokument selbst auf und wird hier nicht
+als zweiter Begriff für dieselbe Sache eingeführt.)
 
-### Sichtbarkeit der beiden Ordner - keine eigenen Flags mehr nötig
+`--show-deleted` als mount-weites Flag, das das Verhalten gewöhnlicher Pfade verändert, entfällt
+damit vollständig. `--purge` bleibt bestehen - siehe die Sichtbarkeitsregel im nächsten Abschnitt.
 
-`mount`s eigene `--show-deleted`/`--purge`-Flags werden dadurch vollständig überflüssig und entfallen
-(nicht zu verwechseln mit `dfs list --show-deleted`/`dfs find --show-deleted`/`dfs del --purge` -
-eigenständige, von `mount` unabhängige CLI-Oberflächen, von dieser Entscheidung unberührt):
+### Sichtbarkeit der beiden Ordner
 
-- `[show-deleted]` wird immer angezeigt, unabhängig von `--read-write`/read-only - reines Lesen
-  braucht kein Schreibrecht auf den Mount.
-- `[prune-deleted]` wird nur auf einem read-write-Mount angezeigt. Auf einem read-only-Mount ergäbe
-  er ohnehin keinen Sinn (jeder Löschversuch darunter würde wie jede andere Schreiboperation mit
-  `EROFS` scheitern) - ihn dort gar nicht erst zu zeigen, ist konsistent mit REQ-OPERABILITY-007s
-  eigenem Prinzip: eine im Kontext sinnlose Fähigkeit wird verweigert/versteckt, nicht
+`mount`s eigenes `--show-deleted`-Flag wird überflüssig und entfällt (nicht zu verwechseln mit `dfs
+list --show-deleted`/`dfs find --show-deleted` - eigenständige, von `mount` unabhängige
+CLI-Oberflächen, von dieser Entscheidung unberührt). `--purge` bleibt dagegen bestehen, ebenfalls
+unverändert als eigener Opt-in über `--read-write` hinaus:
+
+- `[show-deleted]` wird immer angezeigt, unabhängig von `--read-write`/read-only und unabhängig von
+  `--purge` - reines Lesen braucht kein Schreibrecht auf den Mount und keine Erlaubnis, Historie zu
+  vernichten.
+- `[purge-deleted]` wird nur angezeigt, wenn sowohl `--read-write` als auch `--purge` gegeben sind.
+  Ohne `--read-write` ergäbe er ohnehin keinen Sinn (jeder Löschversuch darunter würde wie jede andere
+  Schreiboperation mit `EROFS` scheitern); ohne `--purge` bliebe die bewusste, zusätzliche Hürde vor
+  dem unwiderruflichen Vernichten von Dedup-Historie sonst ungeschützt bestehen. Beides dort gar nicht
+  erst zu zeigen, statt sichtbar-aber-verweigernd, ist konsistent mit REQ-OPERABILITY-007s eigenem
+  Prinzip: eine im Kontext sinnlose oder nicht erlaubte Fähigkeit wird verweigert/versteckt, nicht
   sichtbar-aber-wirkungslos angeboten.
 
-Ein bewusster Kompromiss dabei, obwohl bekannt ist, dass er eine heute existierende, feinere
-Sicherheitsstufe abbaut: `--purge` war bisher ein *eigener*, zusätzlicher Opt-in über `--read-write`
-hinaus - man konnte read-write mounten (für normale Datei-Bearbeitung), ohne das unwiderrufliche
-Vernichten von Dedup-Historie zu erlauben. Mit dieser Änderung verschmelzen beide zu einer Stufe:
-jeder read-write-Mount erlaubt automatisch auch Purge über `[prune-deleted]`. Das ist konsistent mit
-dem Rest des Mounts, der ohnehin schon jede andere destruktive Operation (`unlink`, `rmdir`,
-Überschreiben von Dateien) unter demselben einzigen `--read-write`-Gate erlaubt - nimmt aber die
-bisher separate, feinere Kontrolle über die eine besonders unwiderrufliche Operation weg.
+Damit bleibt die heute schon bestehende, feinere Sicherheitsstufe erhalten: `--read-write` allein
+erlaubt weiterhin nur normale Datei-Bearbeitung, das unwiderrufliche Vernichten von Historie bleibt
+ein eigener, zusätzlicher Opt-in.
 
 ### Das löst den strukturellen Rest aus `rust-purge-empty-view-removal` nebenbei mit auf
 
 Der Grund, warum das letzte lebende Kind eines Verzeichnisses zu entfernen dort einen neuen
 `[deleted]`-Eintrag *im selben, gerade geleerten Verzeichnis* erzeugt, ist, dass `[deleted]` inline im
 lebenden Baum sitzt - Löschen und die Sicht auf die Historie sind also unvermeidlich derselbe
-Namensraum. Unter `[prune-deleted]` gibt es diese Kollision nicht mehr: alles dort ist per Definition
+Namensraum. Unter `[purge-deleted]` gibt es diese Kollision nicht mehr: alles dort ist per Definition
 bereits tot, es gibt keine lebenden Geschwister, die durch ein "letztes Kind weg" erneut einen
-frischen Soft-Delete auslösen könnten. Ein rekursives Räumen unter `[prune-deleted]` kann daher
+frischen Soft-Delete auslösen könnten. Ein rekursives Räumen unter `[purge-deleted]` kann daher
 bottom-up echt (hart) entfernen, ohne dass sich unter der Hand wieder etwas regeneriert.
 
 ### Adressierung durch bereits tote Vorfahren - keine neue Fähigkeit nötig
@@ -253,7 +256,7 @@ Auf Mount-Seite läuft [`dedup_fs.rs`](../../crates/cli/src/dedup_fs.rs)'s `reso
 
 Neu ist also nicht die Traversierung selbst, sondern nur, dass sie künftig über einen neuen
 Wurzel-Präfix erreichbar sein muss statt inline im normalen Baum - im Kern eine Routing-Frage: den
-`[show-deleted]`/`[prune-deleted]`-Präfix am Pfadanfang erkennen, abschneiden, und den Rest an die
+`[show-deleted]`/`[purge-deleted]`-Präfix am Pfadanfang erkennen, abschneiden, und den Rest an die
 (im Wesentlichen bestehende) Auflösungslogik übergeben, mit "Sicht auf Historie an" bzw. zusätzlich
 "Purge erlaubt" statt der heutigen `self.show_deleted`/`self.allow_purge`-Mount-Flags.
 
@@ -279,11 +282,11 @@ wiederverwenden.
 
 ### Noch offen: wo landet Wiederherstellen per rename?
 
-`[show-deleted]` ist laut obiger Beschreibung rein lesend, `[prune-deleted]` nur zum endgültigen
+`[show-deleted]` ist laut obiger Beschreibung rein lesend, `[purge-deleted]` nur zum endgültigen
 (harten) Löschen. Keins von beiden passt offensichtlich zu "einen gelöschten Eintrag per rename
 zurück in den lebenden Baum verschieben". Drei Möglichkeiten, noch nicht entschieden:
 
-1. Zusätzlich über `[prune-deleted]` erlauben - kein dritter Namensraum, dort wo ohnehin
+1. Zusätzlich über `[purge-deleted]` erlauben - kein dritter Namensraum, dort wo ohnehin
    schreibend/löschend zugegriffen werden darf, auch Rename zurück in den Live-Baum zulassen.
 2. Eigener dritter Ordner `[recover-deleted]` - saubere begriffliche Trennung "endgültig löschen" vs.
    "wiederherstellen", aber ein weiterer Namensraum mit eigener Pfadauflösung.
