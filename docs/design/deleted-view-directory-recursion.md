@@ -381,31 +381,39 @@ zeitgestempelten Namen, das Flag hat darauf keinen Einfluss. Wie `--purge` sollt
 `--restore-original-names` ohne `--read-write` sinnlos sein (Wiederherstellen gibt es nur auf einem
 read-write-Mount) und nach REQ-OPERABILITY-007 verweigert werden, statt es wirkungslos zu ignorieren.
 
-### Teilt sich die Struktur mit `dfs list`/`dfs find`/`dfs restore`/`dfs del`?
+### `[show-deleted]` wird auch für `dfs list`/`dfs restore`/`dfs del` die Adressierung - `[purge-deleted]` nicht
 
 Die `[deleted]`/`[all]`/`[all]/[by-time]`-Adressierung selbst spricht nichts dagegen, geteilt zu
 werden - sie baut auf [`deleted.rs`](../../crates/cli/src/deleted.rs) auf, das schon heute
 ausdrücklich für beide Aufrufer gedacht ist ("the right choice for a caller with none of its own
-(`dfs list`/`dfs restore`'s terminal-facing paths)"). Ein einheitliches Adressierungsschema überall
-ist also grundsätzlich der richtige Default.
+(`dfs list`/`dfs restore`'s terminal-facing paths)"). Entschieden: ein einheitliches
+Adressierungsschema überall.
 
-Zwei Einschränkungen dabei:
+Konkret pro Kommando (**Korrektur einer eigenen, ungeprüften Behauptung von weiter oben:** nur `dfs
+list` hat heute tatsächlich ein `--show-deleted`-Flag; `dfs find` durchsucht schon immer ausdrücklich
+nur lebende Einträge, ohne jede Option für Historie; `dfs restore` hat nie ein eigenes Flag gehabt,
+sondern adressiert `[deleted]`-Inhalte schon heute direkt über den Pfad):
 
-- `[purge-deleted]` braucht `dfs list`/`dfs find`/`dfs restore` nicht zu zeigen - diese Kommandos
-  mutieren nie, `[purge-deleted]` wäre dort nur ein inhaltsgleiches Duplikat von `[show-deleted]` ohne
-  eigene Bedeutung.
-- Ob `[show-deleted]` als Wurzel-Präfix auch für `dfs list`/`dfs find`/`dfs restore` navigierbar sein
-  soll - zusätzlich zu, oder anstelle von, deren eigenem, bereits bestehendem `--show-deleted`-Flag -
-  ist eine eigene, größere Entscheidung, die hier nicht mitentschieden wird. Dieses Flag ändert heute
-  schon das Verhalten gewöhnlicher Pfade, genau die Art Problem, die REQ-OPERABILITY-007 für `mount`
-  gerade behoben hat. Ebenso offen: ob `dfs del --purge` durch Adressierung über
-  `/[purge-deleted]/...` ersetzt oder ergänzt werden sollte. Beides für eine spätere, eigene
-  Entscheidung vorgemerkt, nicht Teil dieser hier.
+- `dfs list`: `[show-deleted]` als Wurzel-Präfix **ersetzt** das bisherige `--show-deleted`-Flag
+  vollständig (`dfs list /[show-deleted]/a` statt `dfs list --show-deleted /a`). `dfs list /` zeigt
+  ohne Präfix nur den lebenden Baum, `[show-deleted]` selbst taucht dort als gewöhnlicher Eintrag in
+  der Auflistung auf - genau wie beim Mount, damit er ohne Vorwissen auffindbar bleibt.
+- `dfs find`: unverändert, durchsucht weiterhin nur lebende Einträge - nichts zu ersetzen hier, kein
+  Weg vorgesehen, Historie zu durchsuchen.
+- `dfs restore`: kein Flag zu ersetzen, aber die Adressierungs-Konvention selbst verschiebt sich -
+  künftig über `/[show-deleted]/...`, statt über das alte, inline `[deleted]` direkt unter dem
+  Zielverzeichnis.
+
+`[purge-deleted]` bleibt für keins dieser Kommandos sichtbar oder adressierbar - auch nicht für `dfs
+del`. `dfs del --purge` bleibt unverändert mit seinem eigenen `--purge`-Flag bestehen, statt über
+einen `/[purge-deleted]/...`-Pfad adressiert zu werden: ohne `[purge-deleted]` in `dfs list`s eigener
+Ausgabe gäbe es für ein pfadbasiertes Purge gar keinen Weg, den dafür nötigen Pfad überhaupt zu
+ermitteln. Der Zielpfad für `dfs del --purge` wird stattdessen über `/[show-deleted]/...` adressiert
+(dieselbe Konvention wie `dfs restore`) - die Erlaubnis zum tatsächlichen Purgen kommt weiterhin vom
+`--purge`-Flag selbst, nicht davon, durch welchen Wurzel-Ordner der Pfad führt.
 
 ### Nächste Schritte (noch nicht umgesetzt)
 
 Reine Planung bis hier, auf diesem Branch (`rust-deleted-view-synthetic-roots`). Kein Code geändert,
 keine Anforderung geändert. Offen: die Rekursionsumfang-Empfehlung oben (ausdrückliche Bestätigung
-steht noch aus), ob/wie `dfs list`/`dfs find`/`dfs restore`/`dfs del` den `[show-deleted]`-Präfix
-zusätzlich zu ihren eigenen Flags navigieren sollen, danach eine `REQ-...`/`DESIGN-...`-ID und eine
-Umsetzungsreihenfolge.
+steht noch aus), danach eine `REQ-...`/`DESIGN-...`-ID und eine Umsetzungsreihenfolge.
