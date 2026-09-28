@@ -193,5 +193,5 @@ sorting by name only gives a meaningful chronological order when the timestamp i
 at the start - which conflicts with keeping an unambiguous entry's original name intact within
 `[all]` itself. Offering both - suffix-only-when-needed within `[all]` for recognizability,
 always-prefixed under `[all]/[by-time]` for chronological browsing - serves both needs rather than
-picking one purpose for a single view to serve badly. `[all]`/`[all]/[by-time]` keep REQ-TREE-004's
-full, disambiguated history one step away for whoever wants it.
+picking one purpose for a single view to serve badly. `[all]` and `[all]/[by-time]` keep
+REQ-TREE-004's full, disambiguated history one step away for whoever wants it.

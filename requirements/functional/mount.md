@@ -44,7 +44,7 @@ given under "Open question" below.
 
 A directory's deletion history is visible and browsable through the mount, but never inline within
 the directory itself: a dedicated, always-present root entry, `[show-deleted]`, mirrors the live
-tree's own structure, with REQ-TREE-009's `[deleted]` addressing (and its `[all]`/`[all]/[by-time]`
+tree's own structure, with REQ-TREE-009's `[deleted]` addressing (and its `[all]` and `[all]/[by-time]`
 full-history views, in [`tree.md`](tree.md)) appearing at the corresponding location within that
 mirror for every directory - never inline within the ordinary, live-only tree itself. Unlike an
 earlier version of this requirement (see "Rejected" below), `[show-deleted]` needs no separate
@@ -131,8 +131,8 @@ or a standing invitation to destroy history without having deliberately opted in
 [`../non-functional/operability.md`](../non-functional/operability.md), applied to visibility rather
 than to refusing an already-given flag. Outside `[purge-deleted]`, any delete/create/rename/move
 within the view other than the recovery move-out fails with a clear error (`EACCES`/`EPERM`), never a
-false success. Renaming either view itself (the `[deleted]`/`[all]`/`[all]/[by-time]` segments, or
-`[show-deleted]`/`[purge-deleted]` themselves) is always refused.
+false success. Renaming either view itself (the `[deleted]`, `[all]`, and `[all]/[by-time]` segments,
+or `[show-deleted]`/`[purge-deleted]` themselves) is always refused.
 
 A `rename()`/move call through the mount never silently substitutes a different name than the one
 the caller actually requested for its destination, regardless of source - a returned success always
@@ -175,7 +175,7 @@ real Explorer/Thunar/Nautilus listing actually displays and sorts the suffixed/p
 assumed here is unverified.
 
 This requirement covers only what the mount adds on top of REQ-TREE-009's own addressing (in
-[`tree.md`](tree.md)), which defines `[deleted]`/`[all]`/`[all]/[by-time]` themselves. The "length
+[`tree.md`](tree.md)), which defines `[deleted]`, `[all]`, and `[all]/[by-time]` themselves. The "length
 constraint the calling context imposes" that REQ-TREE-009 says decides when its timestamp suffix
 gives way to its shorter id-only form is `mountfs::MAX_NAME_BYTES` here specifically - `dfs
 list`/`dfs restore`'s own terminal-facing paths (REQ-CLI-007 in
@@ -292,8 +292,8 @@ answers that directly.
 Status: draft
 Importance: could
 
-A mount-time opt-in, `--restore-original-names`: when given, moving an entry out of
-`[all]`/`[all]/[by-time]` (REQ-TREE-009 in [`tree.md`](tree.md)) into the live tree via `rename()`
+A mount-time opt-in, `--restore-original-names`: when given, moving an entry out of `[all]` or
+`[all]/[by-time]` (REQ-TREE-009 in [`tree.md`](tree.md)) into the live tree via `rename()`
 uses that entry's own true, stored name at the destination, regardless of what name the caller's
 move actually specified - trading REQ-MOUNT-007's default literalism for the convenience of never
 ending up with a timestamp baked into a recovered name. Requires `--read-write` - refused without it
@@ -317,8 +317,8 @@ live tree) recursively recovers exactly what REQ-TREE-009's own "most recent per
 have shown for it and every one of its own soft-deleted descendants, at every nested level - not
 literally every soft-deleted entry ever recorded beneath it. An older, superseded entry for a name
 that already has a more recent soft-deleted sibling stays soft-deleted, unaffected, still reachable
-afterward through the now-again-live directory's own `[deleted]`/`[all]`/`[all]/[by-time]` views,
-exactly as before the directory itself was deleted.
+afterward through the now-again-live directory's own `[deleted]`, `[all]`, and `[all]/[by-time]`
+views, exactly as before the directory itself was deleted.
 
 Because the directory being recovered lands either at an entirely new location (nothing existing to
 collide with) or is refused outright at the top level by REQ-MOUNT-009's own directory-collision
