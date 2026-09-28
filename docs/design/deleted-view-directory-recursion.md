@@ -363,29 +363,52 @@ die volle Historie dieser Ebene. Der einzige Unterschied zu einem noch lebenden 
 kein eigenes `[deleted]`-Markerpaar nötig, da es innerhalb einer bereits toten Wurzel keine
 Lebend/Tot-Unterscheidung mehr zu treffen gibt (unverändert gegenüber der ursprünglichen Analyse).
 
-#### Neu entdeckte, notwendige Lücke: Wiederherstellen kaskadiert heute nicht auf Kind-Einträge
+#### Notwendige Lücke, jetzt entworfen: kaskadierendes Wiederherstellen
 
-Beim Nachdenken über das Zehn-Bilder-Beispiel fällt eine tiefere Lücke auf, die unabhängig von der
-Browsing-Struktur oben besteht und noch nicht entworfen ist: [`crates/db/src/tree.rs`](../../crates/db/src/tree.rs)'s
-`recover_deleted_entry` macht **nur den einen angegebenen Eintrag** wieder lebendig (`UPDATE
-tree_entries SET parent_id = ?, name = ?, deleted_at = NULL WHERE id = ?`) - ohne jede Kaskade auf
-Kinder. Ein `photos`-Verzeichnis mit zehn gelöschten Bildern per Rename wiederherzustellen, würde
-`photos` selbst wieder lebendig machen, aber alle zehn Bilder blieben weiterhin `deleted_at IS NOT
-NULL` - `photos` erschiene danach als leeres, lebendes Verzeichnis, mit den zehn Bildern weiterhin
-nur über `photos`s eigene, frisch wieder aufgebaute `[deleted]`-Sicht erreichbar. Das ist nicht das,
-was "das Verzeichnis mit den zehn Bildern wiederherstellen" bedeuten soll.
+[`crates/db/src/tree.rs`](../../crates/db/src/tree.rs)'s `recover_deleted_entry` macht heute **nur
+den einen angegebenen Eintrag** wieder lebendig (`UPDATE tree_entries SET parent_id = ?, name = ?,
+deleted_at = NULL WHERE id = ?`) - ohne jede Kaskade auf Kinder. Ein `photos`-Verzeichnis mit zehn
+gelöschten Bildern per Rename wiederherzustellen, würde `photos` selbst wieder lebendig machen, aber
+alle zehn Bilder blieben weiterhin `deleted_at IS NOT NULL` - `photos` erschiene danach als leeres,
+lebendes Verzeichnis, mit den zehn Bildern weiterhin nur über `photos`s eigene, frisch wieder
+aufgebaute `[deleted]`-Sicht erreichbar. Das ist nicht das, was "das Verzeichnis mit den zehn Bildern
+wiederherstellen" bedeuten soll.
 
-Nötig also: `recover_deleted_entry` (oder ein neuer, darauf aufbauender Vorgang) müsste beim
-Wiederherstellen eines Verzeichnisses rekursiv auch jeden aktuell noch soft-gelöschten Nachfahren
-wieder lebendig machen - unabhängig davon, wann genau der einzelne Nachfahre gelöscht wurde (auch
-wenn ein Bild schon Wochen vor `photos` selbst individuell gelöscht wurde, käme es beim
-Wiederherstellen von `photos` mit zurück; wer das nicht will, holt es gezielt einzeln nicht mit
-zurück, statt das ganze Verzeichnis). Das wirft mindestens eine weitere Frage auf, die noch nicht
-entworfen ist: was passiert, wenn einer der wiederherzustellenden Nachfahren am Zielort inzwischen
-mit einem neuen, lebenden Eintrag gleichen Namens kollidiert - dieselbe Frage, die
-`no_replace`/REQ-MOUNT-009 heute schon für den einen obersten Eintrag beantwortet, hier aber
-rekursiv für potenziell viele Kollisionen gleichzeitig. Das ist neue, bisher nirgends entworfene
-Arbeit, keine reine Präsentationsfrage wie der Rest dieses Abschnitts.
+**Leitprinzip:** technisch ist das immer ein `rename()`/Move einer Datei oder eines Verzeichnisses;
+aus Benutzersicht ein gewöhnliches Verschieben per Drag&Drop. Am **Ziel** soll sich das Ergebnis
+genau wie ein gewöhnliches Verschieben verhalten - was beim Browsen sichtbar war, wird an der neuen
+Stelle sichtbar. An der **Quelle** gilt diese Erwartung ausdrücklich nicht uneingeschränkt: weil die
+"nur neueste Version"-Sicht dynamisch berechnet wird, kann das Wegverschieben eines Eintrags an
+genau dieser Stelle einen *anderen*, älteren, bisher durch ihn verdeckten Eintrag gleichen Namens neu
+sichtbar werden lassen.
+
+Konkret:
+
+- **Am Ziel:** kaskadierendes Wiederherstellen macht genau die Menge wieder lebendig, die die "nur
+  neueste Version, Originalname"-Ansicht (siehe oben) rekursiv gezeigt hätte - für `photos` also alle
+  zehn Bilder unter ihrem jeweils aktuellsten Stand, rekursiv auch für verschachtelte
+  Unterverzeichnisse. Eine ältere, durch eine neuere Löschung überschriebene Version (nur über
+  `[all]`/`[all]/[by-time]` erreichbar) bleibt unangetastet soft-gelöscht, weiterhin an denselben,
+  jetzt wieder lebenden Elternknoten hängend - erreichbar über dessen künftige, neu aufgebaute
+  `[deleted]`-Sicht, genau wie vor der Löschung. Unabhängig davon, wann genau ein einzelner Nachfahre
+  gelöscht wurde (auch ein Bild, das schon Wochen vor `photos` selbst individuell gelöscht wurde,
+  kommt mit zurück, wenn es zum Zeitpunkt der Wiederherstellung noch die aktuellste Version dieses
+  Namens ist) - wer das nicht will, holt gezielt nur Einzelnes zurück, statt des ganzen Verzeichnisses.
+- **An der Quelle:** kein Widerspruch zu "`rename()` bleibt immer ehrlich" (siehe unten) - diese
+  Garantie betrifft nur, ob *dieser eine* Rename-Aufruf genau das tut, was angefordert wurde (die
+  adressierte Instanz verschwindet von dort, taucht ehrlich benannt am Ziel auf). Was an derselben
+  Pfad-Position danach erscheint, ist eine andere, eigenständige historische Instanz mit demselben
+  Namen, die jetzt die "aktuell neueste"-Rolle übernimmt - keine Falschaussage über das Ergebnis
+  dieses Aufrufs, sondern eine inhärente Eigenschaft einer dynamisch neu berechneten Sicht.
+
+**Löst die zuvor offene Kollisionsfrage praktisch auf:** die vorher vermutete Notwendigkeit einer
+neuen, rekursiven Kollisionsbehandlung für kaskadierte Kinder entfällt. `photos` landet am Ziel
+entweder komplett frisch (kein existierender Live-Eintrag dort - nichts, womit kaskadierte Kinder
+kollidieren könnten), oder die oberste Ebene kollidiert bereits mit einem existierenden Verzeichnis,
+und dann verweigert die schon bestehende REQ-MOUNT-009-Regel ("ein Verzeichnis auf einer der beiden
+Seiten wird immer verweigert") die ganze Operation, bevor überhaupt kaskadiert wird. Pro-Kind-Kollision
+kann also strukturell gar nicht auftreten - nur die schon vorhandene, oberste Prüfung wird gebraucht,
+keine neue.
 
 ### Empirisch bestätigt: `rename()` bekommt beim Verschieben immer den vollständigen Zielpfad
 
@@ -478,14 +501,13 @@ ermitteln. Der Zielpfad für `dfs del --purge` wird stattdessen über `/[show-de
 Reine Planung bis hier, auf diesem Branch (`rust-deleted-view-synthetic-roots`). Kein Code geändert,
 keine Anforderung geändert.
 
-Offen bleibt nur noch die neu entdeckte Kaskaden-Lücke beim Wiederherstellen (siehe oben) - die
-Browsing-Struktur selbst ist jetzt vollständig entschieden. Sobald das geklärt ist: REQ-MOUNT-004/007/008
-in `requirements/functional/mount.md` neu formulieren plus eine neue Anforderung für
-`--restore-original-names`. Inhaltlich unverändert aus diesem Dokument übernommene Entscheidungen
-können dabei direkt auf `Status: agreed` gehen; wo sich aus einem Kaskaden-Effekt weitere, hier noch
-nicht besprochene Anforderungs-Änderungen ergeben (wie bei der Wiederherstellen-Kaskade), geht die
-betroffene Anforderung stattdessen auf `Status: draft`. Danach eine `DESIGN-...`-ID für die
-architektonischen Entscheidungen (Wurzel-Präfixe statt Mount-Flags, Ehrlichkeits-Garantie bei
+Design-Ebene jetzt vollständig, inklusive des kaskadierenden Wiederherstellens. Nächster Schritt:
+REQ-MOUNT-004/007/008 in `requirements/functional/mount.md` neu formulieren, plus eine neue
+Anforderung für `--restore-original-names` und für kaskadierendes Wiederherstellen. Inhaltlich
+unverändert aus diesem Dokument übernommene Entscheidungen können dabei direkt auf `Status: agreed`
+gehen; wo sich aus einem Kaskaden-Effekt weitere, hier noch nicht besprochene Anforderungs-Änderungen
+ergeben, geht die betroffene Anforderung stattdessen auf `Status: draft`. Danach eine `DESIGN-...`-ID
+für die architektonischen Entscheidungen (Wurzel-Präfixe statt Mount-Flags, Ehrlichkeits-Garantie bei
 `rename()`) und eine Umsetzungsreihenfolge.
 
 Aufräumen, zurückgestellt bis alles bestätigt und umgesetzt ist: dieses deutsche Dokument löschen,
