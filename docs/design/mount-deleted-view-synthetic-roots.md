@@ -6,6 +6,18 @@ How REQ-TREE-009's `[deleted]` addressing (in
 reached and recovered through the mount and the CLI, and why this design replaced an earlier one
 that exposed the same view inline within every directory.
 
+Live-verified against a real WinFSP mount (`--read-write --purge --debug-log`, driven through
+PowerShell/`cmd`, not yet Explorer itself - REQ-MOUNT-007/008's own "not yet verified for real"
+conditioning stays in place until that happens too): `[show-deleted]`/`[purge-deleted]` both appear
+at the mount root exactly as designed; descending into an already-recovered/still-dead directory
+(`photos`) shows its own children directly, no repeated `[deleted]` segment; a single `Move-Item` on
+`[show-deleted]/[deleted]/photos` cascaded correctly, bringing both of its files back at once;
+`unlink` on an entry reached through `[show-deleted]` was refused (`Err(Errno(13))` in the debug
+log) while the identical target reached through `[purge-deleted]` genuinely purged it
+(`Ok(())`) - confirmed via the debug log and a direct `Test-Path` check, not just the calling tool's
+own reported exit status, after a first, misleading run where `Remove-Item` did not itself surface
+the refusal as a catchable error.
+
 ## DESIGN-MOUNT-020: Synthetic `[show-deleted]`/`[purge-deleted]` root folders replace inline exposure
 Status: implemented (crates/cli/src/dedup_fs.rs, crates/cli/src/deleted.rs)
 
