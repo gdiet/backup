@@ -310,7 +310,7 @@ it becoming a silent default any caller could be surprised by (REQ-MOUNT-007's o
 `rename()` never silently substitutes a name).
 
 ### REQ-MOUNT-013: Recovering a directory brings back its own recent history with it
-Status: draft
+Status: agreed
 Importance: should
 
 Recovering a soft-deleted directory (moving it out of `[show-deleted]`/`[purge-deleted]` into the
