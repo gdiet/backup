@@ -7,7 +7,7 @@ reached and recovered through the mount and the CLI, and why this design replace
 that exposed the same view inline within every directory.
 
 ## DESIGN-MOUNT-020: Synthetic `[show-deleted]`/`[purge-deleted]` root folders replace inline exposure
-Status: decided
+Status: implemented (crates/cli/src/dedup_fs.rs, crates/cli/src/deleted.rs)
 
 The mount's ordinary, live tree carries no synthetic content at all. Two dedicated root entries
 mirror it instead: `[show-deleted]` (always present, browsing and recovery) and `[purge-deleted]`
@@ -72,7 +72,7 @@ through every directory. Accepted as-is: one clearly-named entry a tool could fi
 smaller and more contained exposure than every directory silently carrying its own `[deleted]` child.
 
 ## DESIGN-MOUNT-021: `[deleted]` shows only the most recent version per name; full history moves to `[all]`/`[all]/[by-time]`
-Status: decided
+Status: implemented (crates/cli/src/deleted.rs)
 
 REQ-TREE-009's `[deleted]` shows at most one entry per distinct original name (the most recently
 deleted one), under its own unmodified name. `[deleted]/[all]` carries what `[deleted]` used to mean
@@ -107,7 +107,7 @@ current" bookkeeping at every depth, not only the outermost one - is worth it fo
 outer-level version was worth it in the first place.
 
 ## DESIGN-MOUNT-022: `rename()` never substitutes a name; `--restore-original-names` opts into that convenience explicitly
-Status: decided
+Status: implemented (crates/cli/src/dedup_fs.rs, crates/db/src/tree.rs's `deleted_name_by_id`)
 
 A `rename()`/move call through the mount always uses exactly the destination name the caller
 specified - never a different one, regardless of source. REQ-MOUNT-012's `--restore-original-names`
@@ -135,7 +135,7 @@ an unmodified default mount - the same reasoning that already put `--purge` behi
 separate opt-in rather than folding it into `--read-write`.
 
 ## DESIGN-MOUNT-023: Cascading directory recovery targets exactly what browsing would have shown
-Status: decided
+Status: implemented (crates/db/src/tree.rs's `recover_latest_children`)
 
 REQ-MOUNT-013: recovering a soft-deleted directory recursively recovers exactly what
 DESIGN-MOUNT-021's "most recent per name" view would have shown for it and every one of its own
@@ -174,7 +174,7 @@ is inside it, precisely because REQ-MOUNT-009 never allows a directory-vs-anythi
 proceed far enough to reach cascading logic in the first place.
 
 ## DESIGN-MOUNT-024: `dfs list`/`dfs restore`/`dfs del --purge` share the mount's `[show-deleted]` addressing
-Status: decided
+Status: implemented (crates/cli/src/list.rs, crates/cli/src/restore.rs, crates/cli/src/del.rs)
 
 REQ-CLI-007: `dfs list` reaches REQ-TREE-009's addressing only through `[show-deleted]`, the same
 root entry the mount exposes - not through its own, separate `--show-deleted` flag. `dfs restore`

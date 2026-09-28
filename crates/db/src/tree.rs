@@ -795,7 +795,68 @@ pub(crate) fn recover_deleted_entry(
     )?;
     cache.invalidate(new_parent_id);
     touch(conn, new_parent_id, time_millis)?;
+
+    // REQ-MOUNT-013: a recovered directory brings its own "most recent per name" view
+    // (DESIGN-MOUNT-021) back to life with it, recursively - not literally every soft-deleted
+    // descendant ever recorded beneath it.
+    if kind == EntryKind::Dir {
+        recover_latest_children(conn, cache, id, time_millis)?;
+    }
     Ok(())
+}
+
+/// REQ-MOUNT-013's cascade: recursively recovers exactly what `parent_id`'s own "most recent per
+/// name" view (DESIGN-MOUNT-021, [`latest_deleted_children`]) would show - each brought back live
+/// in place, under its own existing name and (already correct, untouched) `parent_id`, recursing
+/// into any that are themselves directories. An older, superseded entry for a name that already
+/// has a more recent soft-deleted sibling is left untouched, still soft-deleted - reachable
+/// afterward through `parent_id`'s own, now-live-again `[deleted]`/`[all]`/`[all]/[by-time]` views
+/// exactly as before it was deleted. No collision handling is needed here the way
+/// [`recover_deleted_entry`] needs it for its own top-level target: every id this recurses into is
+/// currently soft-deleted, so it was never live to collide with anything in the first place.
+fn recover_latest_children(
+    conn: &Connection,
+    cache: &mut NameCache,
+    parent_id: i64,
+    time_millis: i64,
+) -> Result<(), Error> {
+    let latest = latest_deleted_children(conn, parent_id)?;
+    if latest.is_empty() {
+        return Ok(());
+    }
+    for entry in &latest {
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = NULL WHERE id = ?1",
+            params![entry.id],
+        )?;
+        if entry.kind == EntryKind::Dir {
+            recover_latest_children(conn, cache, entry.id, time_millis)?;
+        }
+    }
+    cache.invalidate(parent_id);
+    touch(conn, parent_id, time_millis)?;
+    Ok(())
+}
+
+/// DESIGN-MOUNT-021's "most recent per name" filter, applied to `parent_id`'s own soft-deleted
+/// children directly at the DB layer - `crate::deleted::latest_by_name` (the `cli` crate) does the
+/// same grouping for display purposes; this is the data-layer twin [`recover_latest_children`]
+/// needs, kept local rather than shared across the crate boundary for a handful of lines.
+fn latest_deleted_children(conn: &Connection, parent_id: i64) -> Result<Vec<Entry>, Error> {
+    let children = list_deleted_children(conn, parent_id)?;
+    let mut latest: std::collections::HashMap<String, DeletedEntry> =
+        std::collections::HashMap::new();
+    for (name, entry) in children {
+        latest
+            .entry(name)
+            .and_modify(|existing| {
+                if entry.deleted_at > existing.deleted_at {
+                    *existing = entry;
+                }
+            })
+            .or_insert(entry);
+    }
+    Ok(latest.into_values().map(|deleted| deleted.entry).collect())
 }
 
 /// Whether `ancestor_id` is `descendant_id` itself, or one of its ancestors (walking up via
@@ -2059,5 +2120,108 @@ mod tests {
             .recover_deleted_entry(id, 0, "a", false, 300)
             .unwrap_err();
         assert!(matches!(err, Error::EntryAlreadyExists { .. }));
+    }
+
+    #[test]
+    fn recover_deleted_entry_of_a_directory_recovers_its_most_recent_children_too() {
+        let (repo, _dir) = repo();
+        let photos = repo.mkdir(0, "photos", 100).unwrap();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+        let one = repo.settle_file(photos, "one.jpg", 100, content_a).unwrap();
+        repo.unlink_file(one, 150).unwrap();
+        let two = repo.settle_file(photos, "two.jpg", 100, content_b).unwrap();
+        repo.unlink_file(two, 160).unwrap();
+        repo.rmdir(photos, 200).unwrap();
+
+        repo.recover_deleted_entry(photos, 0, "photos", false, 300)
+            .expect("recovering the directory must succeed");
+
+        let one_live = repo.resolve_path("/photos/one.jpg").unwrap().unwrap();
+        assert_eq!(one_live.id, one);
+        let two_live = repo.resolve_path("/photos/two.jpg").unwrap().unwrap();
+        assert_eq!(two_live.id, two);
+        assert!(
+            repo.list_deleted_children(photos).unwrap().is_empty(),
+            "both children were recovered, none should remain soft-deleted"
+        );
+    }
+
+    #[test]
+    fn recover_deleted_entry_of_a_directory_leaves_a_superseded_child_soft_deleted() {
+        let (repo, _dir) = repo();
+        let photos = repo.mkdir(0, "photos", 100).unwrap();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+        let older = repo.settle_file(photos, "a.jpg", 100, content_a).unwrap();
+        repo.unlink_file(older, 120).unwrap();
+        let newer = repo.settle_file(photos, "a.jpg", 130, content_b).unwrap();
+        repo.unlink_file(newer, 140).unwrap();
+        repo.rmdir(photos, 200).unwrap();
+
+        repo.recover_deleted_entry(photos, 0, "photos", false, 300)
+            .expect("recovering the directory must succeed");
+
+        // The most recently deleted "a.jpg" (`newer`) comes back live; the superseded one
+        // (`older`) stays soft-deleted, reachable through `photos`'s own [deleted] view again.
+        let live = repo.resolve_path("/photos/a.jpg").unwrap().unwrap();
+        assert_eq!(live.id, newer);
+        let still_deleted = repo.list_deleted_children(photos).unwrap();
+        assert_eq!(still_deleted.len(), 1);
+        assert_eq!(still_deleted[0].1.entry.id, older);
+    }
+
+    #[test]
+    fn recover_deleted_entry_of_a_directory_recovers_nested_subdirectories_recursively() {
+        let (repo, _dir) = repo();
+        let a = repo.mkdir(0, "a", 100).unwrap();
+        let b = repo.mkdir(a, "b", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let file_id = repo.settle_file(b, "c.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 150).unwrap();
+        repo.rmdir(b, 160).unwrap();
+        repo.rmdir(a, 200).unwrap();
+
+        repo.recover_deleted_entry(a, 0, "a", false, 300)
+            .expect("recovering the outer directory must cascade into its own subdirectory too");
+
+        let file_live = repo.resolve_path("/a/b/c.txt").unwrap().unwrap();
+        assert_eq!(file_live.id, file_id);
+    }
+
+    #[test]
+    fn recover_deleted_entry_of_a_directory_bumps_its_own_mtime_when_children_recover() {
+        let (repo, _dir) = repo();
+        let photos = repo.mkdir(0, "photos", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let file_id = repo
+            .settle_file(photos, "one.jpg", 100, content_id)
+            .unwrap();
+        repo.unlink_file(file_id, 150).unwrap();
+        repo.rmdir(photos, 200).unwrap();
+
+        repo.recover_deleted_entry(photos, 0, "photos", false, 300)
+            .unwrap();
+
+        let recovered = repo.resolve_path("/photos").unwrap().unwrap();
+        assert_eq!(
+            recovered.time_millis, 300,
+            "the directory's own mtime should reflect its children coming back"
+        );
+    }
+
+    #[test]
+    fn recover_deleted_entry_of_an_empty_directory_does_not_touch_its_own_mtime_a_second_time() {
+        let (repo, _dir) = repo();
+        let empty = repo.mkdir(0, "empty", 100).unwrap();
+        repo.rmdir(empty, 200).unwrap();
+
+        repo.recover_deleted_entry(empty, 0, "empty", false, 300)
+            .unwrap();
+
+        // No children to recover - recover_latest_children must no-op rather than spuriously
+        // touching the (already-recovered) directory's own row a second time.
+        let recovered = repo.resolve_path("/empty").unwrap().unwrap();
+        assert_eq!(recovered.time_millis, 100);
     }
 }

@@ -1753,6 +1753,34 @@ mod tests {
     }
 
     #[test]
+    fn recovering_a_deleted_directory_cascades_its_own_recently_deleted_children_back_too() {
+        let (fs, verify_repo, _store, _dir) = setup(true);
+        fs.mkdir("/photos").unwrap();
+        for name in ["one.jpg", "two.jpg"] {
+            let handle = fs.create(&format!("/photos/{name}")).unwrap();
+            fs.write(handle, 0, b"x").unwrap();
+            fs.release(handle);
+            wait_for_settled(&verify_repo, &format!("/photos/{name}"), 1);
+            fs.unlink(&format!("/photos/{name}")).unwrap();
+        }
+        fs.rmdir("/photos").unwrap();
+        assert!(fs.getattr("/photos").is_err());
+
+        fs.rename("/[show-deleted]/[deleted]/photos", "/photos", false)
+            .unwrap();
+
+        // The whole directory comes back exactly as browsing it would have shown - both images,
+        // under their own original names, no manual per-file recovery needed.
+        assert_eq!(fs.getattr("/photos").unwrap().kind, FileKind::Directory);
+        for name in ["one.jpg", "two.jpg"] {
+            let attr = fs
+                .getattr(&format!("/photos/{name}"))
+                .unwrap_or_else(|_| panic!("{name} should have come back live with photos"));
+            assert_eq!(attr.kind, FileKind::File);
+        }
+    }
+
+    #[test]
     fn renaming_the_view_itself_is_always_refused() {
         let (fs, verify_repo, _store, _dir) = setup_deleted_view(true, true);
         create_and_delete_a_file(&fs, &verify_repo);
