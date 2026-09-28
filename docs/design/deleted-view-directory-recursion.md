@@ -174,16 +174,11 @@ Reine Planung bis hier. Kein Code geändert, keine Anforderung geändert. Warte 
 zu den offenen Fragen oben, insbesondere Frage 1, bevor hieraus eine `REQ-...`/`DESIGN-...`-ID und
 eine Umsetzung wird.
 
-Die Fragen oben wurden anschließend in zwei experimentellen Branches praktisch durchgespielt:
-`rust-noop-purgeless-delete` (No-Op-Rückgabewert bei "delete" auf die Sicht selbst - live als
-wirkungslos verifiziert, da ein Explorer/`.NET`s eigene Leerheits-Prüfung schon vor dem ersten
-`rmdir`-Aufruf erfolgt und sich durch einen gelogenen Rückgabewert nicht täuschen lässt) und
-`rust-purge-empty-view-removal` (echtes Leeren-und-Entfernen von `[deleted]`/`[time]` sobald
-`--purge` sie tatsächlich geräumt hat - funktioniert, stößt aber strukturell darauf, dass das letzte
-lebende Kind eines Verzeichnisses zu entfernen selbst wieder ein gewöhnlicher Soft-Delete ist
-(REQ-TREE-002) und dadurch frischen `[deleted]`-Inhalt erzeugt, den ein einzelner rekursiver
-Lösch-Durchlauf nie erneut sieht). Details dazu in den jeweiligen Branches selbst, nicht hier
-dupliziert.
+Die Fragen oben wurden anschließend in zwei experimentellen Branches praktisch durchgespielt,
+`rust-noop-purgeless-delete` und `rust-purge-empty-view-removal` - deren Kerninhalt und Funde jetzt
+im Abschnitt "Überlegt und verworfen: die beiden ersten experimentellen Branches" weiter unten
+festgehalten sind, statt hier dupliziert zu werden. Dieser Fund war es, der zum grundsätzlich anderen
+Ansatz weiter unten geführt hat ("Alternative: synthetische Wurzel-Ordner statt Inline-Einblendung").
 
 ## Alternative: synthetische Wurzel-Ordner statt Inline-Einblendung
 Status: idea
@@ -208,6 +203,38 @@ als zweiter Begriff für dieselbe Sache eingeführt.)
 
 `--show-deleted` als mount-weites Flag, das das Verhalten gewöhnlicher Pfade verändert, entfällt
 damit vollständig. `--purge` bleibt bestehen - siehe die Sichtbarkeitsregel im nächsten Abschnitt.
+
+### Überlegt und verworfen: die beiden ersten experimentellen Branches (Inline-Ansatz)
+
+Bevor dieser Wurzel-Ordner-Ansatz entstand, wurden zwei Zwischenschritte auf dem *Inline*-Ansatz
+(`[deleted]`/`[time]` weiterhin direkt im lebenden Baum, nur `--show-deleted`/`--purge`-Verhalten
+verfeinert) live gegen einen echten Mount durchgespielt. Beide Branches bleiben vorerst liegen (siehe
+"Aufräumen" ganz unten), aber ihr Kerninhalt gehört schon jetzt hierher, damit er nicht mit den
+Branches verschwindet.
+
+**`rust-noop-purgeless-delete`** - Idee: ohne `--purge` liefern Lösch-artige Operationen gegen
+`[deleted]`/`[time]` selbst ein No-Op-`Ok` statt `EACCES`, in der Hoffnung, ein rekursives
+Lösch-Werkzeug (Explorer, `rm -rf`) käme dann trotzdem bis zum eigentlichen Zielverzeichnis durch,
+ohne tatsächlich etwas zu vernichten. **Live widerlegt:** völlig wirkungslos. Windows/`.NET`s
+`Remove-Item -Recurse` (und vermutlich jeder vergleichbare Explorer-Mechanismus) prüft *selbst*,
+client-seitig, wiederholt "ist das jetzt wirklich leer", bevor es überhaupt ein einziges `rmdir`
+versucht - ein gelogener Rückgabewert wird nie auch nur abgefragt. Belegt durch das `--debug-log`:
+null `rmdir`-Aufrufe trotz ~7 Sekunden "Versuch". Widersprach außerdem direkt REQ-MOUNT-007s eigener,
+schon vorher getroffener "Rejected"-Klausel (Erfolg melden, ohne tatsächlich zu purgen).
+
+**`rust-purge-empty-view-removal`** - baute auf `--purge` auf: `unlink`/`rmdir` auf `[deleted]`/`[time]`
+selbst liefern echten (nicht vorgetäuschten) Erfolg, sobald `list_deleted_children` tatsächlich leer
+ist. Live-Test deckte einen zweiten, notwendigen Fix auf: `[time]` erschien unconditional in `readdir`,
+auch wenn leer - dadurch wirkte `[deleted]` für einen Aufrufer, der sich auf sein eigenes `readdir`
+verlässt, nie leer, selbst nachdem alles darunter schon geräumt war. Nach beiden Fixes live bestätigt:
+Entfernen von `[deleted]`/`[time]` selbst funktioniert, sobald sie echt leer sind. **Der tiefere,
+strukturelle Befund, der zu diesem Wurzel-Ordner-Ansatz geführt hat:** das letzte lebende Kind eines
+Verzeichnisses zu entfernen ist selbst ein gewöhnlicher Soft-Delete (REQ-TREE-002) - das erzeugt sofort
+wieder frischen `[deleted]`-Inhalt *im selben, gerade geleerten Verzeichnis*, den ein einzelner
+Top-down-Lösch-Durchlauf nie erneut besucht. Solange `[deleted]` inline im lebenden Baum sitzt, sind
+Löschen und Historie-Sicht also unvermeidlich derselbe Namensraum - dieser Widerspruch ist der
+eigentliche Auslöser für den Wechsel zu `[show-deleted]`/`[purge-deleted]` als eigene Namensräume
+(siehe "Das löst den strukturellen Rest ... nebenbei mit auf" weiter unten).
 
 ### Sichtbarkeit der beiden Ordner
 
@@ -277,11 +304,13 @@ Konkret, am Beispiel `Ordner a` mit Kind `Ordner a/b.txt` (Namen hier an die unt
   eigenen Elternverzeichnisses (hier: Wurzel): `/[show-deleted]/[deleted]/a` (Originalname) bzw.
   `/[show-deleted]/[deleted]/[all]/a <Zeitstempel>` bzw. `.../[all]/[by-time]/<Zeitstempel> a`.
 - Innerhalb von `a` (über welchen der drei Pfade auch erreicht - dieselbe zugrunde liegende ID)
-  erscheint `b.txt` weiterhin, aber (siehe die Umfangs-Empfehlung weiter unten) wieder disambiguiert
-  und flach, ohne die "nur neueste Version"-Vereinfachung: `a/b <Zeitstempel>.txt`, ohne ein weiteres
-  verschachteltes `[deleted]`/`[all]`-Paar - unterhalb einer bereits toten Wurzel gibt es keine
-  Lebend/Tot-Unterscheidung mehr zu treffen, alles darunter ist per Definition schon tot. Das gilt
-  rekursiv beliebig tief.
+  erscheint `b.txt` weiterhin unter seinem Originalnamen, **direkt als Kind von `a` selbst** - ohne
+  ein weiteres verschachteltes `[deleted]`-Markerpaar, denn unterhalb einer bereits toten Wurzel gibt
+  es keine Lebend/Tot-Unterscheidung mehr zu treffen, alles darunter ist per Definition schon tot
+  (das gilt weiterhin, unverändert). Was sich ändert (siehe den aktualisierten Abschnitt unten): `a`
+  selbst bekommt trotzdem eigene `[all]`/`[all]/[by-time]`-Kinder für seine volle Historie - die
+  "nur neueste Version, Originalname"-Vereinfachung gilt jetzt rekursiv auf jeder Ebene, nicht nur an
+  der äußersten Grenze.
 
 ### `[deleted]` zeigt nur die neueste Version je Name, mit Originalname - volle Historie unter `[all]`/`[all]/[by-time]`
 
@@ -315,16 +344,48 @@ nicht, weil sie nur an einer einzigen Operation ansetzt. Weil der Anzeigename in
 aber schon sauber ist, bevor überhaupt irgendeine Operation stattfindet, funktioniert Kopieren genauso
 wie Verschieben, ganz ohne Sonderbehandlung.
 
-#### Umfang: nur an der äußeren Grenze, nicht rekursiv in bereits toten Teilbäumen (Empfehlung, noch nicht ausdrücklich bestätigt)
+#### Umfang: entschieden - rekursiv auf jeder Ebene, nicht nur an der äußeren Grenze
 
-Offene Frage dabei: gilt "nur neueste Version, Originalname" auch für die *eigenen* Kinder eines
-bereits toten Verzeichnisses (z. B. innerhalb von `a` im Beispiel oben, nachdem `a` selbst gelöscht
-wurde), oder bleibt es dort bei "immer volle Historie, immer disambiguiert", wie ursprünglich für
-diesen Fall entworfen? Empfehlung: **nur an der äußeren Grenze** (die direkte `[deleted]`-Ansicht
-eines noch lebenden Verzeichnisses) - das deckt den weitaus häufigsten Fall ab, ohne die
-Rekursions-Logik zusätzlich zu verkomplizieren. Wer sich tiefer in schon toten Verzeichnissen
-umschaut, ist ohnehin schon im "Historie durchforsten"-Modus, wo die volle, disambiguierte Sicht eher
-erwartet wird. Diese Empfehlung ist noch nicht ausdrücklich bestätigt.
+**Entschieden** (frühere Empfehlung dieses Dokuments, nur an der äußeren Grenze, war zu eng gedacht
+und ist hiermit verworfen): "nur neueste Version, Originalname" gilt auf **jeder** Ebene, auch
+innerhalb bereits toter Verzeichnisse, nicht nur an der direkten `[deleted]`-Ansicht eines noch
+lebenden Verzeichnisses.
+
+Begründung (Beispiel): ein Verzeichnis mit 10 Bildern wird gelöscht. Ohne diese Rekursion gäbe es
+keine Ansicht, in der die Originalnamen der Bilder direkt sichtbar sind, und keine einfache
+Möglichkeit, das Verzeichnis mit allen zehn Bildern in einem Zug wiederherzustellen - genau der Fall,
+den die ganze "nur neueste Version"-Vereinfachung eigentlich lösen sollte, nur eine Ebene tiefer.
+
+Konkret heißt das: ein bereits totes Verzeichnis wie `a` aus dem Beispiel oben bekommt für seine
+*eigenen* Kinder dieselbe Struktur wie jedes lebende Verzeichnis auch - direkte Kinder unter ihrem
+Originalnamen (nur die jeweils neueste Version je Name), plus `a/[all]` und `a/[all]/[by-time]` für
+die volle Historie dieser Ebene. Der einzige Unterschied zu einem noch lebenden Verzeichnis bleibt:
+kein eigenes `[deleted]`-Markerpaar nötig, da es innerhalb einer bereits toten Wurzel keine
+Lebend/Tot-Unterscheidung mehr zu treffen gibt (unverändert gegenüber der ursprünglichen Analyse).
+
+#### Neu entdeckte, notwendige Lücke: Wiederherstellen kaskadiert heute nicht auf Kind-Einträge
+
+Beim Nachdenken über das Zehn-Bilder-Beispiel fällt eine tiefere Lücke auf, die unabhängig von der
+Browsing-Struktur oben besteht und noch nicht entworfen ist: [`crates/db/src/tree.rs`](../../crates/db/src/tree.rs)'s
+`recover_deleted_entry` macht **nur den einen angegebenen Eintrag** wieder lebendig (`UPDATE
+tree_entries SET parent_id = ?, name = ?, deleted_at = NULL WHERE id = ?`) - ohne jede Kaskade auf
+Kinder. Ein `photos`-Verzeichnis mit zehn gelöschten Bildern per Rename wiederherzustellen, würde
+`photos` selbst wieder lebendig machen, aber alle zehn Bilder blieben weiterhin `deleted_at IS NOT
+NULL` - `photos` erschiene danach als leeres, lebendes Verzeichnis, mit den zehn Bildern weiterhin
+nur über `photos`s eigene, frisch wieder aufgebaute `[deleted]`-Sicht erreichbar. Das ist nicht das,
+was "das Verzeichnis mit den zehn Bildern wiederherstellen" bedeuten soll.
+
+Nötig also: `recover_deleted_entry` (oder ein neuer, darauf aufbauender Vorgang) müsste beim
+Wiederherstellen eines Verzeichnisses rekursiv auch jeden aktuell noch soft-gelöschten Nachfahren
+wieder lebendig machen - unabhängig davon, wann genau der einzelne Nachfahre gelöscht wurde (auch
+wenn ein Bild schon Wochen vor `photos` selbst individuell gelöscht wurde, käme es beim
+Wiederherstellen von `photos` mit zurück; wer das nicht will, holt es gezielt einzeln nicht mit
+zurück, statt das ganze Verzeichnis). Das wirft mindestens eine weitere Frage auf, die noch nicht
+entworfen ist: was passiert, wenn einer der wiederherzustellenden Nachfahren am Zielort inzwischen
+mit einem neuen, lebenden Eintrag gleichen Namens kollidiert - dieselbe Frage, die
+`no_replace`/REQ-MOUNT-009 heute schon für den einen obersten Eintrag beantwortet, hier aber
+rekursiv für potenziell viele Kollisionen gleichzeitig. Das ist neue, bisher nirgends entworfene
+Arbeit, keine reine Präsentationsfrage wie der Rest dieses Abschnitts.
 
 ### Empirisch bestätigt: `rename()` bekommt beim Verschieben immer den vollständigen Zielpfad
 
@@ -415,5 +476,20 @@ ermitteln. Der Zielpfad für `dfs del --purge` wird stattdessen über `/[show-de
 ### Nächste Schritte (noch nicht umgesetzt)
 
 Reine Planung bis hier, auf diesem Branch (`rust-deleted-view-synthetic-roots`). Kein Code geändert,
-keine Anforderung geändert. Offen: die Rekursionsumfang-Empfehlung oben (ausdrückliche Bestätigung
-steht noch aus), danach eine `REQ-...`/`DESIGN-...`-ID und eine Umsetzungsreihenfolge.
+keine Anforderung geändert.
+
+Offen bleibt nur noch die neu entdeckte Kaskaden-Lücke beim Wiederherstellen (siehe oben) - die
+Browsing-Struktur selbst ist jetzt vollständig entschieden. Sobald das geklärt ist: REQ-MOUNT-004/007/008
+in `requirements/functional/mount.md` neu formulieren plus eine neue Anforderung für
+`--restore-original-names`. Inhaltlich unverändert aus diesem Dokument übernommene Entscheidungen
+können dabei direkt auf `Status: agreed` gehen; wo sich aus einem Kaskaden-Effekt weitere, hier noch
+nicht besprochene Anforderungs-Änderungen ergeben (wie bei der Wiederherstellen-Kaskade), geht die
+betroffene Anforderung stattdessen auf `Status: draft`. Danach eine `DESIGN-...`-ID für die
+architektonischen Entscheidungen (Wurzel-Präfixe statt Mount-Flags, Ehrlichkeits-Garantie bei
+`rename()`) und eine Umsetzungsreihenfolge.
+
+Aufräumen, zurückgestellt bis alles bestätigt und umgesetzt ist: dieses deutsche Dokument löschen,
+sobald alles Relevante in die englische Dokumentation übernommen ist. Die beiden alten experimentellen
+Branches (`rust-noop-purgeless-delete`, `rust-purge-empty-view-removal`) bleiben bewusst noch liegen,
+bis der aktuelle Ansatz sich als tragfähig erwiesen hat - ihr Kerninhalt ist oben schon gesichert,
+falls sie dann gelöscht werden.
