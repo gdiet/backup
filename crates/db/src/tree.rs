@@ -118,6 +118,20 @@ pub(crate) fn deleted_entry_by_id(
     .map_err(Error::from)
 }
 
+/// A soft-deleted entry's own stored name - REQ-MOUNT-012's `--restore-original-names`, the one
+/// piece [`deleted_entry_by_id`] does not itself carry (an [`Entry`] has no `name` field; the name
+/// only ever travels alongside it, e.g. from [`list_deleted_children`]). `None` for a live or
+/// unknown id, the same as [`deleted_entry_by_id`].
+pub(crate) fn deleted_name_by_id(conn: &Connection, id: i64) -> Result<Option<String>, Error> {
+    conn.query_row(
+        "SELECT name FROM tree_entries WHERE id = ?1 AND deleted_at IS NOT NULL",
+        params![id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 fn require_dir(conn: &Connection, id: i64) -> Result<Entry, Error> {
     let entry = get_by_id(conn, id)?.ok_or(Error::NoSuchEntry(id))?;
     if entry.kind != EntryKind::Dir {

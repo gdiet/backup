@@ -576,6 +576,12 @@ impl Repository {
         self.with_connection(|conn, _cache| tree::deleted_entry_by_id(conn, id))
     }
 
+    /// A soft-deleted entry's own stored name - REQ-MOUNT-012's `--restore-original-names`.
+    /// `Ok(None)` if `id` does not exist or is live.
+    pub fn deleted_name_by_id(&self, id: i64) -> Result<Option<String>, Error> {
+        self.with_connection(|conn, _cache| tree::deleted_name_by_id(conn, id))
+    }
+
     /// The live entry `id`'s current `(parent_id, name)` - `None` if it does not exist or is
     /// soft-deleted, reflecting any `rename` since `id` was first obtained.
     pub fn parent_and_name(&self, id: i64) -> Result<Option<(i64, String)>, Error> {

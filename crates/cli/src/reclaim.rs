@@ -104,9 +104,13 @@ mod tests {
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
-            crate::deleted::resolve(&repo, "/[deleted]/a.txt")
-                .unwrap()
-                .is_none(),
+            crate::deleted::resolve(
+                &repo,
+                "/[deleted]/a.txt",
+                crate::time_format::TimeDisplay::Utc
+            )
+            .unwrap()
+            .is_none(),
             "a reclaimed entry must no longer be addressable at all"
         );
     }
@@ -129,7 +133,12 @@ mod tests {
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
             matches!(
-                crate::deleted::resolve(&repo, "/[deleted]/a.txt").unwrap(),
+                crate::deleted::resolve(
+                    &repo,
+                    "/[deleted]/a.txt",
+                    crate::time_format::TimeDisplay::Utc
+                )
+                .unwrap(),
                 Some(crate::deleted::Resolved::Deleted(_))
             ),
             "an entry younger than the minimum age must be left alone"

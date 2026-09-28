@@ -1,26 +1,27 @@
 //! `dfs list` - REQ-QUERY-001 in requirements/functional/query.md, REQ-CLI-007 in
 //! requirements/functional/cli-commands.md. Lists a directory's live, direct children without
-//! mounting; `--show-deleted` additionally reveals REQ-TREE-009's `[deleted]` addressing segment
-//! where a directory has soft-deleted children, and a path naming `[deleted]` explicitly lists
-//! them directly - see `crate::deleted`.
+//! mounting; deletion history is reached through REQ-TREE-009's `[deleted]`/`[all]`/
+//! `[all]/[by-time]` addressing (`crate::deleted`), always present - `[show-deleted]` itself shows
+//! up as an ordinary entry in the repository root's own listing, the same way the mount exposes it
+//! (REQ-MOUNT-004), and a path naming it is stripped and resolved the same as one without it
+//! (`deleted::strip_show_deleted_prefix`).
 
 use std::path::Path;
 
-use crate::deleted::{self, DELETED_SEGMENT, Resolved};
+use crate::deleted::{self, ALL_SEGMENT, BY_TIME_SEGMENT, DELETED_SEGMENT, Resolved};
 use crate::entry_format::{format_line, kind_label};
 use crate::time_format::TimeDisplay;
 
-/// The listing "kind" column value for REQ-TREE-009's `[deleted]` marker row - distinct from
-/// `dir`/`file` so it is never confused with a real, identically-named live directory (which
-/// `[deleted]` itself already shows as an ordinary `dir` entry, per REQ-TREE-009's real-wins
-/// rule, without needing this marker at all).
+/// The listing "kind" column value for a synthetic marker row (`[deleted]`, `[show-deleted]`,
+/// `[all]`, `[by-time]`) - distinct from `dir`/`file` so it is never confused with a real,
+/// identically-named live directory (REQ-TREE-009's real-wins rule already shows that as an
+/// ordinary `dir` entry, without needing this marker at all).
 const VIRTUAL_KIND: &str = "virt";
 
 fn try_run(
     repo_path: &Path,
     default_path_used: bool,
     target_path: &str,
-    show_deleted: bool,
     assume_read_only_medium: bool,
     display: TimeDisplay,
 ) -> Result<String, String> {
@@ -41,21 +42,31 @@ fn try_run(
         Err(err) => return Err(format!("error: {err}")),
     };
 
-    let resolved = match deleted::resolve(&repo, target_path) {
+    let stripped = deleted::strip_show_deleted_prefix(target_path);
+    let resolved = match deleted::resolve(&repo, stripped, display) {
         Ok(Some(resolved)) => resolved,
         Ok(None) => return Err(format!("error: no such repository path: {target_path}")),
         Err(err) => return Err(format!("error: {err}")),
     };
 
     match resolved {
-        Resolved::Live(entry) => list_live(&repo, target_path, entry.id, show_deleted, display),
+        Resolved::Live(entry) => list_live(&repo, target_path, &entry, display),
         Resolved::DeletedChildren { parent_id } => {
             list_deleted(&repo, target_path, parent_id, display)
         }
-        Resolved::Deleted(entry) if entry.entry.kind == db::EntryKind::Dir => Err(format!(
-            "error: {target_path} is a soft-deleted directory - list its own deleted children \
-             via {target_path}/{DELETED_SEGMENT}"
-        )),
+        Resolved::AllDeletedChildren { parent_id } => {
+            list_all_deleted(&repo, target_path, parent_id, display)
+        }
+        Resolved::AllByTimeDeletedChildren { parent_id } => {
+            list_all_by_time_deleted(&repo, target_path, parent_id, display)
+        }
+        // REQ-TREE-008: a soft-deleted directory's own children are always themselves
+        // soft-deleted. No live/dead boundary left to signal here, so its own children are
+        // listed directly under DESIGN-MOUNT-021's same "most recent per name" default - never a
+        // repeated `[deleted]` segment one level down.
+        Resolved::Deleted(entry) if entry.entry.kind == db::EntryKind::Dir => {
+            list_deleted(&repo, target_path, entry.entry.id, display)
+        }
         Resolved::Deleted(_) => Err(format!("error: {target_path} is not a directory")),
     }
 }
@@ -63,21 +74,20 @@ fn try_run(
 fn list_live(
     repo: &db::Repository,
     target_path: &str,
-    dir_id: i64,
-    show_deleted: bool,
+    dir: &db::Entry,
     display: TimeDisplay,
 ) -> Result<String, String> {
-    let children = match repo.list_children(dir_id) {
+    let children = match repo.list_children(dir.id) {
         Ok(children) => children,
         Err(db::Error::WrongKind(_)) => {
             return Err(format!("error: {target_path} is not a directory"));
         }
         Err(err) => return Err(format!("error: {err}")),
     };
-    // REQ-TREE-009: a real live entry already named `[deleted]` wins outright - it is already in
-    // `children` above, listed like any other live entry, so the marker below is only added when
-    // nothing real occupies that name yet there is deletion history to reveal.
-    let already_real = children.iter().any(|(name, _)| name == DELETED_SEGMENT);
+    // REQ-TREE-009: a real live entry already named `[deleted]` (or, at the root,
+    // `[show-deleted]`) wins outright - it is already in `children` above, listed like any other
+    // live entry, so the marker below is only added when nothing real occupies that name yet.
+    let already_real = |name: &str| children.iter().any(|(n, _)| n == name);
 
     let mut rows: Vec<(String, String)> = children
         .iter()
@@ -95,9 +105,9 @@ fn list_live(
         })
         .collect();
 
-    if show_deleted && !already_real {
+    if !already_real(DELETED_SEGMENT) {
         let deleted_children = repo
-            .list_deleted_children(dir_id)
+            .list_deleted_children(dir.id)
             .map_err(|err| format!("error: {err}"))?;
         if let Some(most_recent) = deleted_children.iter().map(|(_, e)| e.deleted_at).max() {
             rows.push((
@@ -105,6 +115,20 @@ fn list_live(
                 format_line(VIRTUAL_KIND, 0, most_recent, DELETED_SEGMENT, display),
             ));
         }
+    }
+    // DESIGN-MOUNT-020/024: `[show-deleted]` appears only in the real repository root's own
+    // listing, the same as the mount's own root readdir - never inline elsewhere.
+    if dir.id == 0 && !already_real(deleted::SHOW_DELETED_SEGMENT) {
+        rows.push((
+            deleted::SHOW_DELETED_SEGMENT.to_string(),
+            format_line(
+                VIRTUAL_KIND,
+                0,
+                dir.time_millis,
+                deleted::SHOW_DELETED_SEGMENT,
+                display,
+            ),
+        ));
     }
 
     if rows.is_empty() {
@@ -118,6 +142,9 @@ fn list_live(
         .join("\n"))
 }
 
+/// `[deleted]` itself: `parent_id`'s soft-deleted children filtered to the most recent version per
+/// name (`deleted::latest_by_name`), under their own unmodified names, plus an `[all]` marker once
+/// there is any history at all.
 fn list_deleted(
     repo: &db::Repository,
     target_path: &str,
@@ -131,7 +158,47 @@ fn list_deleted(
         return Ok(format!("{target_path}: empty"));
     }
 
-    let mut lines: Vec<(String, String)> = deleted::display_names(&children)
+    let mut rows: Vec<(String, String)> = deleted::latest_by_name(&children)
+        .into_iter()
+        .map(|(name, entry)| {
+            let line = format_line(
+                kind_label(entry.entry.kind),
+                entry.entry.size,
+                entry.entry.time_millis,
+                &name,
+                display,
+            );
+            (name, line)
+        })
+        .collect();
+    rows.push((
+        ALL_SEGMENT.to_string(),
+        format_line(VIRTUAL_KIND, 0, 0, ALL_SEGMENT, display),
+    ));
+    rows.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(rows
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+/// `[deleted]/[all]`: `parent_id`'s full, disambiguated soft-deleted-child history, plus a
+/// `[by-time]` marker once there is any history at all.
+fn list_all_deleted(
+    repo: &db::Repository,
+    target_path: &str,
+    parent_id: i64,
+    display: TimeDisplay,
+) -> Result<String, String> {
+    let children = repo
+        .list_deleted_children(parent_id)
+        .map_err(|err| format!("error: {err}"))?;
+    if children.is_empty() {
+        return Ok(format!("{target_path}: empty"));
+    }
+
+    let mut rows: Vec<(String, String)> = deleted::display_names(&children)
         .into_iter()
         .zip(&children)
         .map(|(display_name, (_, entry))| {
@@ -147,8 +214,54 @@ fn list_deleted(
             )
         })
         .collect();
-    lines.sort_by(|(a, _), (b, _)| a.cmp(b));
-    Ok(lines
+    rows.push((
+        BY_TIME_SEGMENT.to_string(),
+        format_line(VIRTUAL_KIND, 0, 0, BY_TIME_SEGMENT, display),
+    ));
+    rows.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(rows
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+/// `[deleted]/[all]/[by-time]`: the same entries as [`list_all_deleted`], chronologically named -
+/// no further marker, since `[by-time]` is not itself nested any deeper.
+fn list_all_by_time_deleted(
+    repo: &db::Repository,
+    target_path: &str,
+    parent_id: i64,
+    display: TimeDisplay,
+) -> Result<String, String> {
+    let children = repo
+        .list_deleted_children(parent_id)
+        .map_err(|err| format!("error: {err}"))?;
+    if children.is_empty() {
+        return Ok(format!("{target_path}: empty"));
+    }
+
+    // A plain alphabetic sort already sorts chronologically here - the name itself always leads
+    // with the timestamp (REQ-TREE-009).
+    let mut rows: Vec<(String, String)> =
+        deleted::timestamped_display_names(&children, None, display)
+            .into_iter()
+            .zip(&children)
+            .map(|(display_name, (_, entry))| {
+                (
+                    display_name.clone(),
+                    format_line(
+                        kind_label(entry.entry.kind),
+                        entry.entry.size,
+                        entry.entry.time_millis,
+                        &display_name,
+                        display,
+                    ),
+                )
+            })
+            .collect();
+    rows.sort_by(|(a, _), (b, _)| a.cmp(b));
+    Ok(rows
         .into_iter()
         .map(|(_, line)| line)
         .collect::<Vec<_>>()
@@ -159,7 +272,6 @@ pub fn run(
     repo_path: &Path,
     default_path_used: bool,
     target_path: &str,
-    show_deleted: bool,
     assume_read_only_medium: bool,
     display: TimeDisplay,
 ) {
@@ -167,7 +279,6 @@ pub fn run(
         repo_path,
         default_path_used,
         target_path,
-        show_deleted,
         assume_read_only_medium,
         display,
     ) {
@@ -187,7 +298,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-list-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "/", false, false, TimeDisplay::Utc)
+        let message = try_run(&repo_path, true, "/", false, TimeDisplay::Utc)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -221,8 +332,8 @@ mod tests {
         let original_permissions = std::fs::metadata(&meta_dir).unwrap().permissions();
         std::fs::set_permissions(&meta_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        let without_flag = try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc);
-        let with_flag = try_run(&repo_root, false, "/", false, true, TimeDisplay::Utc);
+        let without_flag = try_run(&repo_root, false, "/", false, TimeDisplay::Utc);
+        let with_flag = try_run(&repo_root, false, "/", true, TimeDisplay::Utc);
         std::fs::set_permissions(&meta_dir, original_permissions).unwrap(); // before any assertion
 
         assert!(
@@ -246,14 +357,17 @@ mod tests {
     }
 
     #[test]
-    fn try_run_reports_an_empty_root() {
+    fn try_run_reports_an_empty_root_as_holding_only_show_deleted() {
         let (repo, dir) = setup();
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc)
+        let message = try_run(&repo_root, false, "/", false, TimeDisplay::Utc)
             .expect("must succeed - root exists");
-        assert_eq!(message, "/: empty");
+        // Never truly "empty": [show-deleted] is always present (DESIGN-MOUNT-020).
+        assert_eq!(message.lines().count(), 1);
+        assert!(message.starts_with("virt"));
+        assert!(message.ends_with(deleted::SHOW_DELETED_SEGMENT));
     }
 
     #[test]
@@ -269,23 +383,30 @@ mod tests {
         let repo_root = dir.path().join("repo");
 
         let message =
-            try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc).expect("must succeed");
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         let lines: Vec<&str> = message.lines().collect();
-        assert_eq!(lines.len(), 2);
+        // Two real children plus the always-present [show-deleted] entry - "[" sorts before
+        // lowercase letters, so [show-deleted] comes first alphabetically.
+        assert_eq!(lines.len(), 3);
         assert!(
-            lines[0].contains("a-file.txt") && lines[0].starts_with("file"),
-            "expected the file entry first (alphabetical), got: {}",
+            lines[0].ends_with(deleted::SHOW_DELETED_SEGMENT) && lines[0].starts_with("virt"),
+            "expected [show-deleted] first (alphabetical - '[' sorts before letters), got: {}",
             lines[0]
         );
         assert!(
-            lines[0].contains(" 3 "),
-            "expected the file's logical size (3 bytes), got: {}",
-            lines[0]
-        );
-        assert!(
-            lines[1].contains("b-dir") && lines[1].starts_with("dir"),
-            "expected the directory entry second (alphabetical), got: {}",
+            lines[1].contains("a-file.txt") && lines[1].starts_with("file"),
+            "expected the file entry second (alphabetical), got: {}",
             lines[1]
+        );
+        assert!(
+            lines[1].contains(" 3 "),
+            "expected the file's logical size (3 bytes), got: {}",
+            lines[1]
+        );
+        assert!(
+            lines[2].contains("b-dir") && lines[2].starts_with("dir"),
+            "expected the directory entry third (alphabetical), got: {}",
+            lines[2]
         );
     }
 
@@ -299,7 +420,6 @@ mod tests {
             &repo_root,
             false,
             "/does-not-exist",
-            false,
             false,
             TimeDisplay::Utc,
         )
@@ -321,7 +441,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false, false, TimeDisplay::Utc)
+        let message = try_run(&repo_root, false, "/a.txt", false, TimeDisplay::Utc)
             .expect_err("must fail - a.txt is a file, not a directory");
         assert!(
             message.contains("not a directory"),
@@ -341,42 +461,29 @@ mod tests {
     }
 
     #[test]
-    fn show_deleted_is_off_by_default() {
+    fn root_listing_always_shows_deleted_and_show_deleted_once_history_exists() {
         let (repo, dir) = setup();
         delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
         drop(repo);
         let repo_root = dir.path().join("repo");
 
         let message =
-            try_run(&repo_root, false, "/", false, false, TimeDisplay::Utc).expect("must succeed");
-        assert_eq!(
-            message, "/: empty",
-            "no [deleted] marker without --show-deleted"
-        );
-    }
-
-    #[test]
-    fn show_deleted_reveals_the_deleted_marker_when_history_exists() {
-        let (repo, dir) = setup();
-        delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
-        drop(repo);
-        let repo_root = dir.path().join("repo");
-
-        let message =
-            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         assert!(message.contains(VIRTUAL_KIND));
         assert!(message.contains(DELETED_SEGMENT));
+        assert!(message.contains(deleted::SHOW_DELETED_SEGMENT));
     }
 
     #[test]
-    fn show_deleted_adds_no_marker_when_nothing_was_ever_deleted() {
+    fn show_deleted_is_shown_at_root_even_without_any_deletion_history() {
         let (repo, dir) = setup();
         repo.mkdir(0, "a", 1_700_000_000_000).unwrap();
         drop(repo);
         let repo_root = dir.path().join("repo");
 
         let message =
-            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
+        assert!(message.contains(deleted::SHOW_DELETED_SEGMENT));
         assert!(!message.contains(DELETED_SEGMENT));
     }
 
@@ -389,7 +496,7 @@ mod tests {
         let repo_root = dir.path().join("repo");
 
         let message =
-            try_run(&repo_root, false, "/", true, false, TimeDisplay::Utc).expect("must succeed");
+            try_run(&repo_root, false, "/", false, TimeDisplay::Utc).expect("must succeed");
         let deleted_lines: Vec<&str> = message
             .lines()
             .filter(|line| line.ends_with(DELETED_SEGMENT))
@@ -407,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn listing_the_deleted_segment_directly_shows_its_children() {
+    fn listing_the_deleted_segment_shows_its_children_under_their_unmodified_name() {
         let (repo, dir) = setup();
         delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
         drop(repo);
@@ -418,16 +525,19 @@ mod tests {
             false,
             &format!("/{DELETED_SEGMENT}"),
             false,
-            false,
             TimeDisplay::Utc,
         )
         .expect("must succeed");
         assert!(message.contains("gone.txt"));
-        assert!(message.starts_with("file"));
+        assert!(message.starts_with("file") || message.contains("\nfile"));
+        assert!(
+            message.contains(ALL_SEGMENT),
+            "the [all] marker must appear once there is any history: {message}"
+        );
     }
 
     #[test]
-    fn listing_the_deleted_segment_disambiguates_same_named_entries() {
+    fn listing_the_deleted_segment_shows_only_the_latest_version_per_name() {
         let (repo, dir) = setup();
         delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
         let content_id = repo
@@ -445,22 +555,78 @@ mod tests {
             false,
             &format!("/{DELETED_SEGMENT}"),
             false,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed");
+        let gone_lines: Vec<&str> = message.lines().filter(|l| l.contains("gone")).collect();
+        assert_eq!(
+            gone_lines.len(),
+            1,
+            "only the most recent version should appear under the plain name: {message}"
+        );
+        assert!(gone_lines[0].ends_with("gone.txt"), "got: {message}");
+    }
+
+    #[test]
+    fn listing_all_disambiguates_same_named_entries() {
+        let (repo, dir) = setup();
+        delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
+        let content_id = repo
+            .find_or_create_content(1, b"gone.txt-hash-000001", &[])
+            .unwrap();
+        let id = repo
+            .settle_file(0, "gone.txt", 1_700_000_150_000, content_id)
+            .unwrap();
+        repo.unlink_file(id, 1_700_000_200_000).unwrap();
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}/{ALL_SEGMENT}"),
             false,
             TimeDisplay::Utc,
         )
         .expect("must succeed");
-        let lines: Vec<&str> = message.lines().collect();
+        let lines: Vec<&str> = message.lines().filter(|l| l.contains("gone [")).collect();
         assert_eq!(lines.len(), 2);
         assert_ne!(lines[0], lines[1]);
-        assert!(lines[0].contains("gone ["));
-        assert!(lines[1].contains("gone ["));
+        assert!(
+            message.contains(BY_TIME_SEGMENT),
+            "the [by-time] marker must appear once there is any history: {message}"
+        );
     }
 
     #[test]
-    fn a_deleted_directory_addressed_directly_points_at_its_own_deleted_segment() {
+    fn listing_all_by_time_shows_chronologically_prefixed_names() {
+        let (repo, dir) = setup();
+        delete_a_file(&repo, "gone.txt", 946_684_800_000);
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let message = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}/{ALL_SEGMENT}/{BY_TIME_SEGMENT}"),
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed");
+        assert!(message.contains("2000-01-01_00-00-00Z gone.txt"));
+    }
+
+    #[test]
+    fn a_deleted_directory_addressed_directly_lists_its_own_children_without_a_second_deleted_segment()
+     {
         let (repo, dir) = setup();
         let a_id = repo.mkdir(0, "a", 1_700_000_000_000).unwrap();
-        repo.rmdir(a_id, 1_700_000_100_000).unwrap();
+        let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
+        let file_id = repo
+            .settle_file(a_id, "f.txt", 1_700_000_000_000, content_id)
+            .unwrap();
+        repo.unlink_file(file_id, 1_700_000_100_000).unwrap();
+        repo.rmdir(a_id, 1_700_000_200_000).unwrap();
         drop(repo);
         let repo_root = dir.path().join("repo");
 
@@ -469,10 +635,35 @@ mod tests {
             false,
             &format!("/{DELETED_SEGMENT}/a"),
             false,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed - a's own children are reached directly, no second [deleted] needed");
+        assert!(message.contains("f.txt"));
+    }
+
+    #[test]
+    fn a_show_deleted_prefixed_path_resolves_the_same_as_the_bare_one() {
+        let (repo, dir) = setup();
+        delete_a_file(&repo, "gone.txt", 1_700_000_100_000);
+        drop(repo);
+        let repo_root = dir.path().join("repo");
+
+        let via_prefix = try_run(
+            &repo_root,
+            false,
+            &format!("/{}/{DELETED_SEGMENT}", deleted::SHOW_DELETED_SEGMENT),
             false,
             TimeDisplay::Utc,
         )
-        .expect_err("must fail - a deleted directory needs its own [deleted] step");
-        assert!(message.contains(DELETED_SEGMENT));
+        .expect("must succeed");
+        let bare = try_run(
+            &repo_root,
+            false,
+            &format!("/{DELETED_SEGMENT}"),
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed");
+        assert_eq!(via_prefix, bare);
     }
 }

@@ -10,6 +10,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use crate::deleted::{self, Resolved};
 use crate::settle::HASH_WIDTH;
+use crate::time_format::TimeDisplay;
 
 /// The three independent restore behaviors a caller can opt into - bundled together since
 /// [`restore_entry`]/[`restore_dir`] thread them unchanged through every level of recursion.
@@ -36,6 +37,7 @@ fn try_run(
     target: &Path,
     options: RestoreOptions,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     if !target.is_dir() {
         return Err(format!(
@@ -64,7 +66,8 @@ fn try_run(
 
     let mut outcome = Outcome::default();
     for source in sources {
-        match deleted::resolve(&repo, source) {
+        let stripped = deleted::strip_show_deleted_prefix(source);
+        match deleted::resolve(&repo, stripped, display) {
             Ok(Some(Resolved::Live(entry))) => outcome.merge(restore_entry(
                 &repo,
                 &store,
@@ -81,9 +84,13 @@ fn try_run(
                 source_basename(source),
                 options,
             )),
-            Ok(Some(Resolved::DeletedChildren { .. })) => outcome.failures.push(format!(
+            Ok(Some(
+                Resolved::DeletedChildren { .. }
+                | Resolved::AllDeletedChildren { .. }
+                | Resolved::AllByTimeDeletedChildren { .. },
+            )) => outcome.failures.push(format!(
                 "{source}: names every soft-deleted entry at this location, not one specific \
-                 entry - restore one by its own name instead (see `dfs list --show-deleted`)"
+                 entry - restore one by its own name instead (see `dfs list`)"
             )),
             Ok(None) => outcome
                 .failures
@@ -465,6 +472,7 @@ pub fn run(
     target: &Path,
     options: RestoreOptions,
     assume_read_only_medium: bool,
+    display: TimeDisplay,
 ) {
     match try_run(
         repo_path,
@@ -473,6 +481,7 @@ pub fn run(
         target,
         options,
         assume_read_only_medium,
+        display,
     ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -554,6 +563,7 @@ mod tests {
             target.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - repo_path holds no repository");
         assert!(
@@ -577,6 +587,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed");
         assert!(message.contains("restored 1 file"));
@@ -608,6 +619,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed");
         assert!(message.contains("restored 2 file"));
@@ -638,6 +650,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - the target file already exists");
         assert!(
@@ -667,6 +680,7 @@ mod tests {
             target_dir.path(),
             opts(true, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - overwrite was requested");
         assert!(message.contains("restored 1 file"));
@@ -695,6 +709,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail overall - one item failed");
         assert!(message.contains("restored 1 file"));
@@ -717,6 +732,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail overall - one item failed");
         assert!(message.contains("no such repository path"));
@@ -738,6 +754,7 @@ mod tests {
             target_dir.path(),
             opts(false, true, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - the content genuinely matches its recorded hash");
         assert!(message.contains("restored 1 file"));
@@ -766,6 +783,7 @@ mod tests {
             target_dir.path(),
             opts(false, true, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - the stored bytes no longer match the recorded hash");
         assert!(message.contains("does not match its recorded hash"));
@@ -795,6 +813,7 @@ mod tests {
             target_dir.path(),
             opts(false, true, true),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - best-effort keeps mismatched content instead of failing");
         assert!(message.contains("restored 1 file"));
@@ -829,6 +848,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - the stored data was never actually written");
         assert!(message.contains("missing or incomplete"));
@@ -857,6 +877,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, true),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - best-effort zero-fills missing data instead of failing");
         assert!(message.contains("restored 1 file"));
@@ -892,6 +913,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - the soft-deleted file is directly addressable");
         assert!(message.contains("restored 1 file"));
@@ -920,6 +942,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed - restoring a soft-deleted directory descends into its own history");
         assert!(message.contains("restored 1 file"));
@@ -951,6 +974,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect("must succeed");
         assert!(message.contains("restored 2 file"));
@@ -990,6 +1014,7 @@ mod tests {
             target_dir.path(),
             opts(false, false, false),
             false,
+            TimeDisplay::Utc,
         )
         .expect_err("must fail - [deleted] alone does not name one specific entry");
         assert!(message.contains("not one specific entry"));

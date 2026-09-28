@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::deleted::{self, Resolved};
+use crate::time_format::TimeDisplay;
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -22,6 +23,7 @@ fn try_run(
     path: &str,
     recursive: bool,
     purge: bool,
+    display: TimeDisplay,
 ) -> Result<String, String> {
     let repo = match db::open_repository(repo_path) {
         Ok(repo) => repo,
@@ -39,12 +41,13 @@ fn try_run(
     // REQ-MAINTENANCE-004's exclusivity applies here too.
     let _write_lock = db::acquire_write_lock(repo_path).map_err(|err| format!("error: {err}"))?;
 
-    match deleted::resolve(&repo, path).map_err(|err| format!("error: {err}"))? {
+    let stripped = deleted::strip_show_deleted_prefix(path);
+    match deleted::resolve(&repo, stripped, display).map_err(|err| format!("error: {err}"))? {
         Some(Resolved::Live(entry)) => {
             if purge {
                 return Err(format!(
                     "{path} is a live entry - --purge only applies to an entry already reached \
-                     through `[deleted]` (see `dfs list --show-deleted`)"
+                     through `[show-deleted]` (see `dfs list`)"
                 ));
             }
             delete_live(&repo, path, &entry, recursive)
@@ -58,9 +61,13 @@ fn try_run(
             }
             delete_deleted(&repo, path, &entry, purge)
         }
-        Some(Resolved::DeletedChildren { .. }) => Err(format!(
+        Some(
+            Resolved::DeletedChildren { .. }
+            | Resolved::AllDeletedChildren { .. }
+            | Resolved::AllByTimeDeletedChildren { .. },
+        ) => Err(format!(
             "{path} names every soft-deleted entry at this location, not one specific entry - \
-             address one by its own name instead (see `dfs list --show-deleted`)"
+             address one by its own name instead (see `dfs list`)"
         )),
         None => Err(format!("no such repository path: {path}")),
     }
@@ -170,8 +177,22 @@ fn delete_deleted(
     ))
 }
 
-pub fn run(repo_path: &Path, default_path_used: bool, path: &str, recursive: bool, purge: bool) {
-    match try_run(repo_path, default_path_used, path, recursive, purge) {
+pub fn run(
+    repo_path: &Path,
+    default_path_used: bool,
+    path: &str,
+    recursive: bool,
+    purge: bool,
+    display: TimeDisplay,
+) {
+    match try_run(
+        repo_path,
+        default_path_used,
+        path,
+        recursive,
+        purge,
+        display,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -208,7 +229,7 @@ mod tests {
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         let repo_path = std::env::temp_dir().join("dfs-del-test-no-default-repository-here");
 
-        let message = try_run(&repo_path, true, "/a", false, false)
+        let message = try_run(&repo_path, true, "/a", false, false, TimeDisplay::Utc)
             .expect_err("must fail - repo_path holds no repository");
         assert!(
             message.contains("no repository"),
@@ -223,7 +244,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false, false).expect("must succeed");
+        let message = try_run(&repo_root, false, "/a.txt", false, false, TimeDisplay::Utc)
+            .expect("must succeed");
         assert!(message.contains("deleted /a.txt"));
         assert!(
             message.contains("recoverable at /[deleted]/a.txt"),
@@ -235,7 +257,7 @@ mod tests {
         assert!(repo.resolve_path("/a.txt").unwrap().is_none());
         assert!(
             matches!(
-                deleted::resolve(&repo, "/[deleted]/a.txt").unwrap(),
+                deleted::resolve(&repo, "/[deleted]/a.txt", TimeDisplay::Utc).unwrap(),
                 Some(Resolved::Deleted(_))
             ),
             "a soft-deleted file must be reachable through REQ-TREE-009's addressing afterward"
@@ -250,8 +272,15 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message =
-            try_run(&repo_root, false, "/photos/one.jpg", false, false).expect("must succeed");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/photos/one.jpg",
+            false,
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed");
         assert!(
             message.contains("recoverable at /photos/[deleted]/one.jpg"),
             "got: {message}"
@@ -265,7 +294,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/empty", false, false).expect("must succeed");
+        let message = try_run(&repo_root, false, "/empty", false, false, TimeDisplay::Utc)
+            .expect("must succeed");
         assert!(message.contains("deleted /empty"));
     }
 
@@ -277,7 +307,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a", false, false)
+        let message = try_run(&repo_root, false, "/a", false, false, TimeDisplay::Utc)
             .expect_err("must fail - the directory still has a live child");
         assert!(message.contains("--recursive"));
 
@@ -298,8 +328,8 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message =
-            try_run(&repo_root, false, "/a", true, false).expect("must succeed with --recursive");
+        let message = try_run(&repo_root, false, "/a", true, false, TimeDisplay::Utc)
+            .expect("must succeed with --recursive");
         assert!(message.contains("deleted /a"));
         assert!(message.contains("3 descendant"), "got: {message}");
 
@@ -314,7 +344,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/a.txt", false, true)
+        let message = try_run(&repo_root, false, "/a.txt", false, true, TimeDisplay::Utc)
             .expect_err("must fail - --purge does not apply to a live path");
         assert!(message.contains("--purge"));
 
@@ -334,14 +364,21 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/[deleted]/a.txt", true, true)
-            .expect_err("must fail - --recursive does not apply to an already-deleted target");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/[deleted]/a.txt",
+            true,
+            true,
+            TimeDisplay::Utc,
+        )
+        .expect_err("must fail - --recursive does not apply to an already-deleted target");
         assert!(message.contains("--recursive"));
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
             matches!(
-                deleted::resolve(&repo, "/[deleted]/a.txt").unwrap(),
+                deleted::resolve(&repo, "/[deleted]/a.txt", TimeDisplay::Utc).unwrap(),
                 Some(Resolved::Deleted(_))
             ),
             "a refused delete must leave the soft-deleted entry untouched"
@@ -354,7 +391,7 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/nope", false, false)
+        let message = try_run(&repo_root, false, "/nope", false, false, TimeDisplay::Utc)
             .expect_err("must fail - the path does not exist");
         assert!(message.contains("no such repository path"));
     }
@@ -368,14 +405,21 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/[deleted]/a.txt", false, false)
-            .expect_err("must fail - --purge was not given");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/[deleted]/a.txt",
+            false,
+            false,
+            TimeDisplay::Utc,
+        )
+        .expect_err("must fail - --purge was not given");
         assert!(message.contains("--purge"));
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
             matches!(
-                deleted::resolve(&repo, "/[deleted]/a.txt").unwrap(),
+                deleted::resolve(&repo, "/[deleted]/a.txt", TimeDisplay::Utc).unwrap(),
                 Some(Resolved::Deleted(_))
             ),
             "a refused purge must leave the soft-deleted entry addressable"
@@ -391,8 +435,15 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/[deleted]/a.txt", false, true)
-            .expect("must succeed - --purge was given");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/[deleted]/a.txt",
+            false,
+            true,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed - --purge was given");
         assert!(message.contains("permanently purged"));
         assert!(
             !message.contains("descendant"),
@@ -401,7 +452,7 @@ mod tests {
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
-            deleted::resolve(&repo, "/[deleted]/a.txt")
+            deleted::resolve(&repo, "/[deleted]/a.txt", TimeDisplay::Utc)
                 .unwrap()
                 .is_none(),
             "a purged entry must no longer be addressable at all"
@@ -419,8 +470,15 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/[deleted]/photos", false, true)
-            .expect("must succeed - purging a deleted directory also purges its own children");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/[deleted]/photos",
+            false,
+            true,
+            TimeDisplay::Utc,
+        )
+        .expect("must succeed - purging a deleted directory also purges its own children");
         assert!(message.contains("permanently purged"));
         assert!(
             message.contains("1 descendant"),
@@ -429,7 +487,7 @@ mod tests {
 
         let repo = db::open_repository(&repo_root).unwrap();
         assert!(
-            deleted::resolve(&repo, "/[deleted]/photos")
+            deleted::resolve(&repo, "/[deleted]/photos", TimeDisplay::Utc)
                 .unwrap()
                 .is_none(),
             "the purged directory must no longer be addressable"
@@ -445,8 +503,15 @@ mod tests {
         drop(repo);
         let repo_root = dir.path().join("repo");
 
-        let message = try_run(&repo_root, false, "/[deleted]", false, true)
-            .expect_err("must fail - [deleted] alone does not name one specific entry");
+        let message = try_run(
+            &repo_root,
+            false,
+            "/[deleted]",
+            false,
+            true,
+            TimeDisplay::Utc,
+        )
+        .expect_err("must fail - [deleted] alone does not name one specific entry");
         assert!(message.contains("not one specific entry"));
     }
 }

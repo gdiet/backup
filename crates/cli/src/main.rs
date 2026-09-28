@@ -166,19 +166,24 @@ enum Commands {
         /// mount. Without this, the mount is read-only.
         #[arg(long)]
         read_write: bool,
-        // REQ-MOUNT-004/007.
-        /// Reveal and make browsable the `[deleted]` view (and its `[time]` presentation) through
-        /// the mount, at the same locations `dfs list --show-deleted` reveals them. Off by
-        /// default, so an ordinary recursive tool walking the mount never descends into deletion
-        /// history without asking for it. Available on a read-only mount too.
-        #[arg(long)]
-        show_deleted: bool,
-        /// A second, escalating opt-in: additionally allows permanently purging an
-        /// entry from inside the `[deleted]` view (deleting it there, rather than only recovering
-        /// it by moving it out). Meaningless without `--show-deleted`, and without `--read-write`
-        /// - nothing mutating is ever allowed on a read-only mount regardless of this flag.
+        // REQ-MOUNT-007.
+        /// Additionally shows `[purge-deleted]` at the mount root (alongside the always-present
+        /// `[show-deleted]`) and allows permanently purging an entry from inside either view
+        /// (deleting it there, rather than only recovering it by moving it out). Meaningless
+        /// without `--read-write` - nothing mutating is ever allowed on a read-only mount
+        /// regardless of this flag.
         #[arg(long)]
         purge: bool,
+        // REQ-MOUNT-012.
+        /// A `rename()`-based recovery out of `[all]`/`[all]/[by-time]` (an entry other than the
+        /// most recent one for its name) uses that entry's own true, stored name at the
+        /// destination, regardless of what name the move itself specified. Off by default, so
+        /// `rename()` stays literal - a returned success always means the entry now exists exactly
+        /// where and as named as asked. Has no effect on `[deleted]` itself (already the true name
+        /// regardless) or on a copy. Meaningless without `--read-write` - recovery only happens on
+        /// a read-write mount.
+        #[arg(long)]
+        restore_original_names: bool,
         #[command(flatten)]
         ram_budget: RamBudgetArgs,
         // DESIGN-MOUNT-018.
@@ -195,16 +200,16 @@ enum Commands {
         // writer for the reason DESIGN-METADATA-013's assertion cares about.
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
-        // Affects only the [time] view (REQ-MOUNT-008) - the base [deleted] view is unaffected
-        // (UtcArgs's own doc comment).
+        // Affects only [all]/[by-time] (REQ-TREE-009) - [deleted]/[all]'s own addressing is
+        // unaffected (UtcArgs's own doc comment).
         #[command(flatten)]
         utc: UtcArgs,
         /// Logs every call this mount session's own filesystem implementation receives (path,
         /// arguments, result) to this file, one line per call - a diagnostic aid for working out
         /// what a file manager or `rm -rf` actually does against the mount, not something an
         /// ordinary session needs. Overwritten fresh on each `dfs mount` invocation. Off by
-        /// default: this can grow large fast, and unlike --show-deleted/--purge it has no
-        /// bearing on repository content, only on this one session's own observability.
+        /// default: this can grow large fast, and unlike --purge/--restore-original-names it has
+        /// no bearing on repository content, only on this one session's own observability.
         #[arg(long)]
         debug_log: Option<PathBuf>,
     },
@@ -233,20 +238,18 @@ enum Commands {
         paths: Vec<String>,
         #[command(flatten)]
         read_only_medium: ReadOnlyMediumArgs,
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-QUERY-001, REQ-CLI-007.
-    /// Lists a directory's live, direct contents, without mounting.
+    /// Lists a directory's live, direct contents, without mounting. Deletion history is reached
+    /// through `[show-deleted]`, an ordinary entry always present at the repository root - not a
+    /// flag - the same way the mount exposes it (REQ-MOUNT-004).
     List {
         /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
         /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// Reveal the `[deleted]` marker in the listing wherever the target directory
-        /// has soft-deleted children - off by default, so a script parsing plain `dfs list`
-        /// output is never surprised by an extra entry. A path that already names `[deleted]`
-        /// explicitly works regardless of this flag.
-        #[arg(long)]
-        show_deleted: bool,
         /// Repository path to list.
         #[arg(default_value = "/")]
         path: String,
@@ -298,15 +301,17 @@ enum Commands {
         /// resolves to a soft-deleted entry, where it would have no effect.
         #[arg(long)]
         recursive: bool,
-        /// When the target is a specific soft-deleted entry (reached through the `[deleted]`
-        /// segment - see `dfs list --show-deleted`), permanently remove it instead of
-        /// refusing. Without this, such a target is left untouched: an irreversible removal never
-        /// happens just because the given path happened to resolve under `[deleted]`. Refused as
-        /// an error if the target instead resolves to a live path, where it would have no effect.
+        /// When the target is a specific soft-deleted entry (reached through `[show-deleted]` -
+        /// see `dfs list`), permanently remove it instead of refusing. Without this, such a target
+        /// is left untouched: an irreversible removal never happens just because the given path
+        /// happened to resolve under `[deleted]`. Refused as an error if the target instead
+        /// resolves to a live path, where it would have no effect.
         #[arg(long)]
         purge: bool,
-        /// Repository path to delete - a live path, or one reached through `[deleted]`.
+        /// Repository path to delete - a live path, or one reached through `[show-deleted]`.
         path: String,
+        #[command(flatten)]
+        utc: UtcArgs,
     },
     // REQ-MAINTENANCE-008, DESIGN-MAINTENANCE-003.
     /// Checks whether a repository's write lock is stale (nothing currently holds it) and clears
@@ -513,8 +518,8 @@ fn main() {
             mountpoint,
             read_write,
             read_only_medium,
-            show_deleted,
             purge,
+            restore_original_names,
             ram_budget,
             spill_directory,
             backpressure,
@@ -548,8 +553,8 @@ fn main() {
                     ram_budget_gross_bytes: ram_budget.ram_budget_mb * 1024 * 1024,
                     backpressure_free_zone_bytes: backpressure.backpressure_free_zone_bytes,
                     backpressure_slope_divisor: backpressure.backpressure_slope_divisor,
-                    show_deleted,
                     allow_purge: purge,
+                    restore_original_names,
                     time_display: time_display(utc.utc),
                 },
                 debug_log.as_deref(),
@@ -562,6 +567,7 @@ fn main() {
             best_effort,
             paths,
             read_only_medium,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -577,11 +583,11 @@ fn main() {
                     best_effort,
                 },
                 read_only_medium.assume_read_only_medium,
+                time_display(utc.utc),
             );
         }
         Commands::List {
             repository,
-            show_deleted,
             path,
             read_only_medium,
             utc,
@@ -592,7 +598,6 @@ fn main() {
                 &repository,
                 default_path_used,
                 &path,
-                show_deleted,
                 read_only_medium.assume_read_only_medium,
                 time_display(utc.utc),
             );
@@ -634,10 +639,18 @@ fn main() {
             recursive,
             purge,
             path,
+            utc,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
-            del::run(&repository, default_path_used, &path, recursive, purge);
+            del::run(
+                &repository,
+                default_path_used,
+                &path,
+                recursive,
+                purge,
+                time_display(utc.utc),
+            );
         }
         Commands::Unlock { path } => {
             let (path, default_path_used) = resolve_repo_path(path);

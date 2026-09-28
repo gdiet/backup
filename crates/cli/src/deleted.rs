@@ -1,64 +1,111 @@
-//! REQ-TREE-009's `[deleted]` path-segment addressing (`requirements/functional/tree.md`) - CLI
-//! side: resolving a whole `dfs list`/`dfs restore` path that may name the reserved segment, and
-//! formatting/matching the disambiguated display name a soft-deleted entry gets shown under when
-//! more than one shares its original name. Also exposes the length-constrained variants and the
-//! `[time]` naming/matching building blocks REQ-MOUNT-004/007/008's mount-side addressing needs on
-//! top of this - see `crate::dedup_fs`.
+//! REQ-TREE-009's `[deleted]`/`[all]`/`[all]/[by-time]` path-segment addressing
+//! (`requirements/functional/tree.md`) - resolving a whole `dfs list`/`dfs restore`/`dfs del`/mount
+//! path that may name a reserved segment, and formatting/matching the display names entries get
+//! shown under. Shared by the mount (`crate::dedup_fs`) and every CLI command that reaches
+//! soft-deleted content - both strip their own `[show-deleted]`/`[purge-deleted]` root prefix
+//! before calling in here, which knows nothing about that prefix itself.
 
 use std::collections::HashMap;
 
 use crate::time_format::TimeDisplay;
 
-/// REQ-TREE-009's reserved path segment.
+/// REQ-TREE-009's reserved path segment - the "most recent version per name" view.
 pub const DELETED_SEGMENT: &str = "[deleted]";
+/// REQ-TREE-009's reserved segment for the full, disambiguated history - what `[deleted]` itself
+/// used to mean before the "most recent per name" default. Only meaningful directly inside a
+/// `[deleted]` view, never elsewhere.
+pub const ALL_SEGMENT: &str = "[all]";
+/// REQ-TREE-009's reserved segment for the same entries [`ALL_SEGMENT`] shows, chronologically
+/// named instead. Only meaningful directly inside an `[all]` view, never elsewhere.
+pub const BY_TIME_SEGMENT: &str = "[by-time]";
+/// DESIGN-MOUNT-020's mount-root entry point for REQ-MOUNT-004's read/recovery view - always
+/// present through the mount, and `dfs list`/`dfs restore`/`dfs del`'s own optional, cosmetic
+/// prefix (REQ-CLI-007/DESIGN-MOUNT-024): [`resolve`]/[`resolve_within`] themselves need no
+/// prefix at all, a bare `[deleted]` path keeps working exactly as it always has - see
+/// [`strip_show_deleted_prefix`].
+pub const SHOW_DELETED_SEGMENT: &str = "[show-deleted]";
+/// The mount-root entry point for REQ-MOUNT-007's purge-capable view - present only on a
+/// `--read-write --purge` mount. No CLI counterpart (DESIGN-MOUNT-024): `dfs del --purge`'s own
+/// flag decides permission, not which root a path is prefixed with.
+pub const PURGE_DELETED_SEGMENT: &str = "[purge-deleted]";
 
-/// REQ-MOUNT-008's own reserved segment, unlike [`DELETED_SEGMENT`] not part of REQ-TREE-009's
-/// general addressing - only meaningful immediately inside a `[deleted]` view, never elsewhere,
-/// and only ever consulted by the mount (`crate::dedup_fs`), never `dfs list`/`dfs restore`.
-pub const TIME_SEGMENT: &str = "[time]";
+/// Strips a leading `[show-deleted]` segment from `path`, if present - `dfs list`/`dfs restore`/
+/// `dfs del`'s own optional, cosmetic counterpart to the mount's mandatory root prefix
+/// (DESIGN-MOUNT-024): these commands are always deliberate, explicit invocations, so unlike the
+/// mount there is no risk of a naive tool wandering in unannounced, and [`resolve`]/
+/// [`resolve_within`] already resolve a bare `[deleted]` path without needing this prefix at all.
+/// Kept purely so a path `dfs list` itself printed (which shows `[show-deleted]` as an ordinary,
+/// discoverable root entry) can be pasted back in unchanged.
+pub fn strip_show_deleted_prefix(path: &str) -> &str {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed
+        .strip_prefix('/')
+        .and_then(|s| s.strip_prefix(SHOW_DELETED_SEGMENT))
+    {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => path,
+    }
+}
 
-/// What a repository path resolves to once REQ-TREE-009's `[deleted]` segment is taken into
-/// account.
+/// What a repository path resolves to once REQ-TREE-009's addressing is taken into account.
 #[derive(Clone, Copy)]
 pub enum Resolved {
     /// An ordinary live entry - what plain [`db::Repository::resolve_path`] alone would return.
     /// Also what a path ending in `[deleted]` resolves to when a real, live entry already has
     /// that name (REQ-TREE-009: the real entry always wins).
     Live(db::Entry),
-    /// The `[deleted]` segment itself, naming `parent_id`'s own soft-deleted children - the path
-    /// ends exactly at `[deleted]`, with nothing after it.
+    /// The `[deleted]` segment itself - `parent_id`'s own soft-deleted children, filtered to at
+    /// most one entry per distinct original name (see [`latest_by_name`]). The path ends exactly
+    /// at `[deleted]`, with nothing after it.
     DeletedChildren { parent_id: i64 },
-    /// One specific soft-deleted entry, addressed by its own disambiguated display name.
+    /// The `[deleted]/[all]` segment - `parent_id`'s own soft-deleted children, every one of them
+    /// (REQ-TREE-004's full history), disambiguated (see [`display_names`]).
+    AllDeletedChildren { parent_id: i64 },
+    /// The `[deleted]/[all]/[by-time]` segment - the same entries as `AllDeletedChildren`, shown
+    /// chronologically (see [`timestamped_display_names`]) instead.
+    AllByTimeDeletedChildren { parent_id: i64 },
+    /// One specific soft-deleted entry, addressed by whichever of the three views above named it.
     Deleted(db::DeletedEntry),
 }
 
-/// Resolves `path` against `repo`, honoring REQ-TREE-009's `[deleted]` addressing anywhere it
-/// appears in the path - not just as the final segment, since a soft-deleted directory's own
-/// children are themselves always soft-deleted too (REQ-TREE-008) and so need their own `[deleted]`
-/// step to reach. `Ok(None)` if any segment does not resolve, the same as plain `resolve_path`. No
-/// length constraint on a matched display name - the right choice for a caller with none of its
-/// own (`dfs list`/`dfs restore`'s terminal-facing paths); see [`resolve_within`] for a caller that
-/// has one (the mount, REQ-MOUNT-008).
-pub fn resolve(repo: &db::Repository, path: &str) -> Result<Option<Resolved>, db::Error> {
-    resolve_impl(repo, path, None)
+/// Resolves `path` against `repo`, honoring REQ-TREE-009's addressing anywhere it appears in the
+/// path - not just as the final segment, since a soft-deleted directory's own children are
+/// themselves always soft-deleted too (REQ-TREE-008) and so are reached the same way, one level
+/// down, without needing another literal `[deleted]` segment (REQ-TREE-009: that marker signals
+/// only the live/dead crossing itself, not every level beneath it). `Ok(None)` if any segment does
+/// not resolve, the same as plain `resolve_path`. No length constraint on a matched display name -
+/// the right choice for a caller with none of its own (`dfs list`/`dfs restore`/`dfs del`'s
+/// terminal-facing paths); see [`resolve_within`] for a caller that has one (the mount).
+/// `display` decides which timezone a matched `[all]/[by-time]` segment's timestamps render in
+/// (REQ-OPERABILITY-008) - irrelevant to every other segment, which stays UTC-unconditional
+/// (REQ-TREE-009's own stable-identity guarantee).
+pub fn resolve(
+    repo: &db::Repository,
+    path: &str,
+    display: TimeDisplay,
+) -> Result<Option<Resolved>, db::Error> {
+    resolve_impl(repo, path, None, display)
 }
 
-/// Like [`resolve`], but a matched display name must additionally fit within `max_bytes` -
-/// REQ-MOUNT-008's own length-constrained matching (`mountfs::MAX_NAME_BYTES` in practice), so a
-/// path segment the mount handed a caller (via `readdir`) resolves back to the same entry the
-/// caller was shown, not a name that only exists in an unconstrained context.
+/// Like [`resolve`], but a matched display name must additionally fit within `max_bytes` - the
+/// mount's own length-constrained matching (`mountfs::MAX_NAME_BYTES` in practice), so a path
+/// segment the mount handed a caller (via `readdir`) resolves back to the same entry the caller
+/// was shown, not a name that only exists in an unconstrained context.
 pub fn resolve_within(
     repo: &db::Repository,
     path: &str,
     max_bytes: usize,
+    display: TimeDisplay,
 ) -> Result<Option<Resolved>, db::Error> {
-    resolve_impl(repo, path, Some(max_bytes))
+    resolve_impl(repo, path, Some(max_bytes), display)
 }
 
 fn resolve_impl(
     repo: &db::Repository,
     path: &str,
     max_bytes: Option<usize>,
+    display: TimeDisplay,
 ) -> Result<Option<Resolved>, db::Error> {
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if segments.is_empty() {
@@ -88,64 +135,152 @@ fn resolve_impl(
         }
     }
 
-    // Phase 2: `segments[i]` was `[deleted]` with no live collision.
-    if i == segments.len() - 1 {
-        return Ok(Some(Resolved::DeletedChildren {
-            parent_id: current_parent_id,
-        }));
-    }
-    resolve_deleted_children(repo, current_parent_id, &segments, i + 1, max_bytes)
+    // Phase 2: `segments[i]` was `[deleted]` with no live collision - resolve everything after it
+    // against `current_parent_id`'s own soft-deleted children.
+    resolve_deleted_view(
+        repo,
+        current_parent_id,
+        &segments,
+        i + 1,
+        max_bytes,
+        display,
+    )
 }
 
-/// Continues REQ-TREE-009's `[deleted]`-segment resolution from `parent_id`'s own soft-deleted
-/// children, given `segments[next_index..]` still to consume - the shared tail both [`resolve`]'s
-/// own walk and the mount's `[time]`-addressing (`crate::dedup_fs`, which independently matches
-/// its own first segment via [`find_by_timestamped_name`] before handing off here) recurse
-/// through, every remaining segment alternating between naming one specific soft-deleted entry and,
-/// if there is more path after it, another literal `[deleted]` to descend into it (REQ-TREE-008: a
-/// soft-deleted directory never has live children, only soft-deleted ones).
-pub(crate) fn resolve_deleted_children(
+/// Resolves `segments[next_index..]` against `parent_id`'s own soft-deleted children - reached
+/// either right after a literal `[deleted]` segment, or recursively, one level further down into
+/// an already-dead directory's own children, without needing another literal `[deleted]` segment
+/// there (REQ-TREE-009: no live/dead boundary left to signal once already inside dead territory).
+fn resolve_deleted_view(
     repo: &db::Repository,
     parent_id: i64,
     segments: &[&str],
     next_index: usize,
     max_bytes: Option<usize>,
+    display: TimeDisplay,
 ) -> Result<Option<Resolved>, db::Error> {
     if next_index == segments.len() {
         return Ok(Some(Resolved::DeletedChildren { parent_id }));
     }
+    if segments[next_index] == ALL_SEGMENT {
+        return resolve_all_view(
+            repo,
+            parent_id,
+            segments,
+            next_index + 1,
+            max_bytes,
+            display,
+        );
+    }
     let children = repo.list_deleted_children(parent_id)?;
-    let Some(deleted_entry) = find_by_display_name(&children, segments[next_index], max_bytes)
+    let Some(entry) = latest_by_name(&children)
+        .into_iter()
+        .find(|(name, _)| name == segments[next_index])
+        .map(|(_, entry)| entry)
     else {
         return Ok(None);
     };
-    continue_from_deleted_entry(repo, deleted_entry, segments, next_index + 1, max_bytes)
+    continue_into_deleted_entry(repo, entry, segments, next_index + 1, max_bytes, display)
 }
 
-/// Continues resolution once `deleted_entry` has just been matched by whichever name scheme the
-/// caller used (REQ-TREE-009's bare/timestamp/id-suffixed form via [`resolve_deleted_children`], or
-/// REQ-MOUNT-008's always-timestamp-prefixed `[time]` form via `crate::dedup_fs`) -
-/// `segments[next_index..]` is whatever remains of the path after the segment that named it.
-pub(crate) fn continue_from_deleted_entry(
+/// Resolves `segments[next_index..]` against `parent_id`'s full, disambiguated soft-deleted-child
+/// history - reached right after `[deleted]/[all]`.
+fn resolve_all_view(
+    repo: &db::Repository,
+    parent_id: i64,
+    segments: &[&str],
+    next_index: usize,
+    max_bytes: Option<usize>,
+    display: TimeDisplay,
+) -> Result<Option<Resolved>, db::Error> {
+    if next_index == segments.len() {
+        return Ok(Some(Resolved::AllDeletedChildren { parent_id }));
+    }
+    if segments[next_index] == BY_TIME_SEGMENT {
+        return resolve_by_time_view(
+            repo,
+            parent_id,
+            segments,
+            next_index + 1,
+            max_bytes,
+            display,
+        );
+    }
+    let children = repo.list_deleted_children(parent_id)?;
+    let Some(entry) = find_by_display_name(&children, segments[next_index], max_bytes) else {
+        return Ok(None);
+    };
+    continue_into_deleted_entry(repo, entry, segments, next_index + 1, max_bytes, display)
+}
+
+/// Resolves `segments[next_index..]` against `parent_id`'s full soft-deleted-child history,
+/// chronologically named - reached right after `[deleted]/[all]/[by-time]`.
+fn resolve_by_time_view(
+    repo: &db::Repository,
+    parent_id: i64,
+    segments: &[&str],
+    next_index: usize,
+    max_bytes: Option<usize>,
+    display: TimeDisplay,
+) -> Result<Option<Resolved>, db::Error> {
+    if next_index == segments.len() {
+        return Ok(Some(Resolved::AllByTimeDeletedChildren { parent_id }));
+    }
+    let children = repo.list_deleted_children(parent_id)?;
+    let Some(entry) = find_by_timestamped_name(&children, segments[next_index], max_bytes, display)
+    else {
+        return Ok(None);
+    };
+    continue_into_deleted_entry(repo, entry, segments, next_index + 1, max_bytes, display)
+}
+
+/// Continues resolution once `deleted_entry` has just been matched, by whichever of the three
+/// views named it - `segments[next_index..]` is whatever remains of the path after the segment
+/// that named it. If `deleted_entry` is itself a directory and more path remains, that remainder
+/// addresses its own soft-deleted children directly (`resolve_deleted_view` again), with no
+/// further literal `[deleted]` segment required.
+fn continue_into_deleted_entry(
     repo: &db::Repository,
     deleted_entry: db::DeletedEntry,
     segments: &[&str],
     next_index: usize,
     max_bytes: Option<usize>,
+    display: TimeDisplay,
 ) -> Result<Option<Resolved>, db::Error> {
     if next_index == segments.len() {
         return Ok(Some(Resolved::Deleted(deleted_entry)));
     }
-    if segments[next_index] != DELETED_SEGMENT {
-        return Ok(None);
-    }
-    resolve_deleted_children(
+    resolve_deleted_view(
         repo,
         deleted_entry.entry.id,
         segments,
-        next_index + 1,
+        next_index,
         max_bytes,
+        display,
     )
+}
+
+/// REQ-TREE-009's `[deleted]` view: `children` filtered to at most one entry per distinct
+/// original name - whichever was deleted most recently - paired with that name unchanged. No
+/// disambiguation and no length constraint: at most one entry per name reaches this view, so it
+/// is already unique by construction, and its name was already a valid entry name before (nothing
+/// added that could push it over a length limit).
+pub fn latest_by_name(children: &[(String, db::DeletedEntry)]) -> Vec<(String, db::DeletedEntry)> {
+    let mut latest: HashMap<&str, db::DeletedEntry> = HashMap::new();
+    for (name, entry) in children {
+        latest
+            .entry(name.as_str())
+            .and_modify(|existing| {
+                if entry.deleted_at > existing.deleted_at {
+                    *existing = *entry;
+                }
+            })
+            .or_insert(*entry);
+    }
+    latest
+        .into_iter()
+        .map(|(name, entry)| (name.to_string(), entry))
+        .collect()
 }
 
 /// Splits `name` into `(stem, extension-with-dot)` at its last splittable extension - a `.` not
@@ -185,9 +320,9 @@ fn fit_stem(stem: &str, fixed: &str, max_bytes: Option<usize>) -> String {
     }
 }
 
-/// REQ-TREE-009's disambiguated display name for a soft-deleted entry named `base_name`, with
-/// `suffix` (a deletion timestamp or an id - the caller decides which) inserted before its
-/// extension, respecting `max_bytes` (see [`fit_stem`]).
+/// REQ-TREE-009's disambiguated display name (`[all]`) for a soft-deleted entry named
+/// `base_name`, with `suffix` (a deletion timestamp or an id - the caller decides which) inserted
+/// before its extension, respecting `max_bytes` (see [`fit_stem`]).
 fn disambiguated_name(base_name: &str, suffix: &str, max_bytes: Option<usize>) -> String {
     let (stem, ext) = split_extension(base_name);
     fit_stem(stem, &format!(" [{suffix}]{ext}"), max_bytes)
@@ -210,20 +345,21 @@ fn disambiguated_name_with_id(
     fit_stem(stem, &format!(" [{timestamp}] [{id}]{ext}"), max_bytes)
 }
 
-/// REQ-TREE-009's own display names for `children` (a directory's soft-deleted children, as
-/// [`db::Repository::list_deleted_children`] returns them): a bare name where it does not collide
-/// with a sibling, the deletion-timestamp-suffixed form where it does, and - only for the rare
-/// case where even that timestamp is shared down to the second by more than one sibling with the
-/// same base name - the timestamp with the entry's own id additionally appended
-/// ([`disambiguated_name_with_id`]), so two entries are never shown under the exact same name
-/// without losing the timestamp's own information value along the way. Order matches `children`'s
-/// own order. No length constraint; see [`display_names_within`] for a caller that has one.
+/// REQ-TREE-009's own display names for `children` under `[all]` (a directory's *full*
+/// soft-deleted-child history, as [`db::Repository::list_deleted_children`] returns them): a bare
+/// name where it does not collide with a sibling, the deletion-timestamp-suffixed form where it
+/// does, and - only for the rare case where even that timestamp is shared down to the second by
+/// more than one sibling with the same base name - the timestamp with the entry's own id
+/// additionally appended ([`disambiguated_name_with_id`]), so two entries are never shown under
+/// the exact same name without losing the timestamp's own information value along the way. Order
+/// matches `children`'s own order. No length constraint; see [`display_names_within`] for a
+/// caller that has one.
 pub fn display_names(children: &[(String, db::DeletedEntry)]) -> Vec<String> {
     display_names_impl(children, None)
 }
 
-/// Like [`display_names`], but every name respects `max_bytes` (see [`fit_stem`]) -
-/// REQ-MOUNT-008's own length-constrained display (`mountfs::MAX_NAME_BYTES` in practice).
+/// Like [`display_names`], but every name respects `max_bytes` (see [`fit_stem`]) - the mount's
+/// own length-constrained display (`mountfs::MAX_NAME_BYTES` in practice).
 pub fn display_names_within(
     children: &[(String, db::DeletedEntry)],
     max_bytes: usize,
@@ -275,9 +411,9 @@ fn display_names_impl(
     result
 }
 
-/// Matches `segment` (as a caller typed it, e.g. copied from `dfs list --show-deleted`'s own
-/// output) against `children`'s own [`display_names`]/[`display_names_within`], rather than trying
-/// to parse the bracket syntax back out of an arbitrary string - reconstructing and comparing each
+/// Matches `segment` (as a caller typed it, e.g. copied from a `dfs list`-shown `[all]` line)
+/// against `children`'s own [`display_names`]/[`display_names_within`], rather than trying to
+/// parse the bracket syntax back out of an arbitrary string - reconstructing and comparing each
 /// candidate is exact and needs no assumptions about which of the id/timestamp forms `segment`
 /// uses.
 fn find_by_display_name(
@@ -293,7 +429,7 @@ fn find_by_display_name(
 
 /// Builds `prefix` followed by a space and `base_name`, truncating `base_name` - never `prefix` -
 /// if the result would otherwise exceed `max_bytes` (see [`fit_stem`]'s own reasoning; the
-/// direction is reversed here since REQ-MOUNT-008's prefix comes first, not last).
+/// direction is reversed here since the prefix comes first, not last).
 fn timestamped_name(base_name: &str, prefix: &str, max_bytes: Option<usize>) -> String {
     let fixed = format!("{prefix} ");
     match max_bytes {
@@ -331,17 +467,17 @@ fn timestamped_name_with_id_suffix(
     }
 }
 
-/// REQ-MOUNT-008's own `[time]` view names for `children`: each entry's deletion timestamp always
-/// prefixed (unlike [`display_names`]'s suffix-only-when-ambiguous form), so a plain alphabetic
-/// sort of the view also sorts chronologically - falling back to also appending the entry's own id
-/// as a trailing suffix ([`timestamped_name_with_id_suffix`]), independent of any length constraint,
-/// only in the rare case two entries share both the same name and the same deletion second (the
-/// timestamp's one-second resolution is not enough to tell them apart then, the same edge case
-/// [`display_names`] falls back to an id suffix for) - the timestamp prefix itself always stays,
-/// so this fallback never costs the view its own chronological sortability. `max_bytes` is
-/// REQ-TREE-009's own length constraint the calling context imposes (`mountfs::MAX_NAME_BYTES` for
-/// the mount - REQ-MOUNT-008), truncating the base name - never the prefix or, once needed, the id
-/// suffix - if even the unambiguous form does not fit; `None` for no constraint.
+/// REQ-TREE-009's `[all]/[by-time]` view names for `children`: each entry's deletion timestamp
+/// always prefixed (unlike [`display_names`]'s suffix-only-when-ambiguous form), so a plain
+/// alphabetic sort of the view also sorts chronologically - falling back to also appending the
+/// entry's own id as a trailing suffix ([`timestamped_name_with_id_suffix`]), independent of any
+/// length constraint, only in the rare case two entries share both the same name and the same
+/// deletion second (the timestamp's one-second resolution is not enough to tell them apart then,
+/// the same edge case [`display_names`] falls back to an id suffix for) - the timestamp prefix
+/// itself always stays, so this fallback never costs the view its own chronological sortability.
+/// `max_bytes` is the mount's own length constraint (`mountfs::MAX_NAME_BYTES`), truncating the
+/// base name - never the prefix or, once needed, the id suffix - if even the unambiguous form
+/// does not fit; `None` for no constraint. `display` is REQ-OPERABILITY-008's local-vs-UTC choice.
 pub fn timestamped_display_names(
     children: &[(String, db::DeletedEntry)],
     max_bytes: Option<usize>,
@@ -375,10 +511,9 @@ pub fn timestamped_display_names(
     result
 }
 
-/// Matches `segment` against `children`'s own [`timestamped_display_names`] - REQ-MOUNT-008's
-/// `[time]`-addressed lookup, the same reconstruct-and-compare approach [`find_by_display_name`]
-/// uses for the base scheme.
-pub(crate) fn find_by_timestamped_name(
+/// Matches `segment` against `children`'s own [`timestamped_display_names`] - the same
+/// reconstruct-and-compare approach [`find_by_display_name`] uses for the `[all]` scheme.
+fn find_by_timestamped_name(
     children: &[(String, db::DeletedEntry)],
     segment: &str,
     max_bytes: Option<usize>,
@@ -461,6 +596,34 @@ mod tests {
             },
             deleted_at,
         }
+    }
+
+    #[test]
+    fn latest_by_name_leaves_a_single_entry_unchanged() {
+        let children = vec![("a.txt".to_string(), deleted_entry(1, 100))];
+        let latest = latest_by_name(&children);
+        assert_eq!(latest.len(), 1);
+        assert_eq!(latest[0].0, "a.txt");
+        assert_eq!(latest[0].1.entry.id, 1);
+        assert_eq!(latest[0].1.deleted_at, 100);
+    }
+
+    #[test]
+    fn latest_by_name_keeps_only_the_most_recently_deleted_entry_per_name() {
+        let children = vec![
+            ("a.txt".to_string(), deleted_entry(1, 100)),
+            ("a.txt".to_string(), deleted_entry(2, 200)),
+            ("b.txt".to_string(), deleted_entry(3, 150)),
+        ];
+        let mut latest = latest_by_name(&children);
+        latest.sort_by(|(name, _), (other, _)| name.cmp(other));
+        assert_eq!(latest.len(), 2);
+        assert_eq!(latest[0].0, "a.txt");
+        assert_eq!(latest[0].1.entry.id, 2);
+        assert_eq!(latest[0].1.deleted_at, 200);
+        assert_eq!(latest[1].0, "b.txt");
+        assert_eq!(latest[1].1.entry.id, 3);
+        assert_eq!(latest[1].1.deleted_at, 150);
     }
 
     #[test]
@@ -621,18 +784,41 @@ mod tests {
     }
 
     #[test]
+    fn strip_show_deleted_prefix_removes_a_leading_show_deleted_segment() {
+        assert_eq!(strip_show_deleted_prefix("/[show-deleted]"), "/");
+        assert_eq!(
+            strip_show_deleted_prefix("/[show-deleted]/a/[deleted]/b.txt"),
+            "/a/[deleted]/b.txt"
+        );
+    }
+
+    #[test]
+    fn strip_show_deleted_prefix_leaves_a_path_without_the_prefix_unchanged() {
+        assert_eq!(
+            strip_show_deleted_prefix("/a/[deleted]/b.txt"),
+            "/a/[deleted]/b.txt"
+        );
+        assert_eq!(
+            strip_show_deleted_prefix("/[show-deleted]extra"),
+            "/[show-deleted]extra"
+        );
+    }
+
+    #[test]
     fn resolve_returns_live_for_an_ordinary_path() {
         let (repo, _dir) = repo_and_dir();
         repo.mkdir(0, "photos", 100).unwrap();
 
-        let resolved = resolve(&repo, "/photos").unwrap().unwrap();
+        let resolved = resolve(&repo, "/photos", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
         assert!(matches!(resolved, Resolved::Live(entry) if entry.kind == db::EntryKind::Dir));
     }
 
     #[test]
     fn resolve_returns_none_for_a_path_that_does_not_exist() {
         let (repo, _dir) = repo_and_dir();
-        assert!(resolve(&repo, "/nope").unwrap().is_none());
+        assert!(resolve(&repo, "/nope", TimeDisplay::Utc).unwrap().is_none());
     }
 
     #[test]
@@ -643,7 +829,9 @@ mod tests {
         let file_id = repo.settle_file(photos, "a.txt", 100, content_id).unwrap();
         repo.unlink_file(file_id, 200).unwrap();
 
-        let resolved = resolve(&repo, "/photos/[deleted]").unwrap().unwrap();
+        let resolved = resolve(&repo, "/photos/[deleted]", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
         match resolved {
             Resolved::DeletedChildren { parent_id } => assert_eq!(parent_id, photos),
             _ => panic!("expected DeletedChildren"),
@@ -651,24 +839,27 @@ mod tests {
     }
 
     #[test]
-    fn resolve_addresses_one_specific_deleted_entry_by_its_bare_name_when_unambiguous() {
+    fn resolve_addresses_the_most_recent_entry_for_a_name_by_its_bare_unmodified_name() {
         let (repo, _dir) = repo_and_dir();
-        let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
-        let file_id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
-        repo.unlink_file(file_id, 200).unwrap();
+        let content_a = repo.find_or_create_content(1, &[0xAAu8; 20], &[]).unwrap();
+        let content_b = repo.find_or_create_content(2, &[0xBBu8; 20], &[]).unwrap();
+        let _first = repo.settle_file(0, "a.txt", 100, content_a).unwrap();
+        let second = repo.settle_file(0, "a.txt", 200, content_b).unwrap();
+        repo.unlink_file(second, 300).unwrap();
 
-        let resolved = resolve(&repo, "/[deleted]/a.txt").unwrap().unwrap();
+        let resolved = resolve(&repo, "/[deleted]/a.txt", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
         match resolved {
-            Resolved::Deleted(entry) => {
-                assert_eq!(entry.entry.id, file_id);
-                assert_eq!(entry.deleted_at, 200);
-            }
+            // settle_file's own replace already soft-deleted `first`; `second` was soft-deleted
+            // last (at 300), so it is the one "a.txt" addresses.
+            Resolved::Deleted(entry) => assert_eq!(entry.entry.id, second),
             _ => panic!("expected Deleted"),
         }
     }
 
     #[test]
-    fn resolve_addresses_a_specific_deleted_entry_by_its_disambiguated_name() {
+    fn resolve_addresses_an_older_entry_only_through_all() {
         let (repo, _dir) = repo_and_dir();
         let content_a = repo.find_or_create_content(1, &[0xAAu8; 20], &[]).unwrap();
         let content_b = repo.find_or_create_content(2, &[0xBBu8; 20], &[]).unwrap();
@@ -676,8 +867,6 @@ mod tests {
         let second = repo.settle_file(0, "a.txt", 200, content_b).unwrap();
         repo.unlink_file(second, 300).unwrap();
 
-        // Both history entries for "a.txt" are now soft-deleted (the first via settle_file's own
-        // replace, the second via the explicit unlink above) - disambiguate by name.
         let children = repo.list_deleted_children(0).unwrap();
         let names = display_names(&children);
         let first_name = names[children
@@ -686,13 +875,76 @@ mod tests {
             .unwrap()]
         .clone();
 
-        let resolved = resolve(&repo, &format!("/[deleted]/{first_name}"))
-            .unwrap()
-            .unwrap();
+        let resolved = resolve(
+            &repo,
+            &format!("/[deleted]/[all]/{first_name}"),
+            TimeDisplay::Utc,
+        )
+        .unwrap()
+        .unwrap();
         match resolved {
             Resolved::Deleted(entry) => assert_eq!(entry.entry.id, first),
             _ => panic!("expected Deleted"),
         }
+        // Not reachable through the bare, "most recent" view - that name is already taken by
+        // `second`.
+        assert!(
+            resolve(&repo, &format!("/[deleted]/{first_name}"), TimeDisplay::Utc)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn resolve_returns_all_deleted_children_for_a_bare_all_segment() {
+        let (repo, _dir) = repo_and_dir();
+        let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
+        let file_id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 200).unwrap();
+
+        let resolved = resolve(&repo, "/[deleted]/[all]", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            resolved,
+            Resolved::AllDeletedChildren { parent_id: 0 }
+        ));
+    }
+
+    #[test]
+    fn resolve_addresses_an_entry_through_all_by_time() {
+        let (repo, _dir) = repo_and_dir();
+        let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
+        let file_id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 946_684_800_000).unwrap();
+
+        let resolved = resolve(
+            &repo,
+            "/[deleted]/[all]/[by-time]/2000-01-01_00-00-00Z a.txt",
+            TimeDisplay::Utc,
+        )
+        .unwrap()
+        .unwrap();
+        match resolved {
+            Resolved::Deleted(entry) => assert_eq!(entry.entry.id, file_id),
+            _ => panic!("expected Deleted"),
+        }
+    }
+
+    #[test]
+    fn resolve_returns_all_by_time_deleted_children_for_a_bare_by_time_segment() {
+        let (repo, _dir) = repo_and_dir();
+        let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
+        let file_id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+        repo.unlink_file(file_id, 200).unwrap();
+
+        let resolved = resolve(&repo, "/[deleted]/[all]/[by-time]", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            resolved,
+            Resolved::AllByTimeDeletedChildren { parent_id: 0 }
+        ));
     }
 
     #[test]
@@ -700,12 +952,15 @@ mod tests {
         let (repo, _dir) = repo_and_dir();
         repo.mkdir(0, "[deleted]", 100).unwrap();
 
-        let resolved = resolve(&repo, "/[deleted]").unwrap().unwrap();
+        let resolved = resolve(&repo, "/[deleted]", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
         assert!(matches!(resolved, Resolved::Live(entry) if entry.kind == db::EntryKind::Dir));
     }
 
     #[test]
-    fn resolve_descends_into_an_already_deleted_directorys_own_deleted_children() {
+    fn resolve_descends_into_an_already_deleted_directorys_own_children_without_a_second_deleted_segment()
+     {
         let (repo, _dir) = repo_and_dir();
         let a_id = repo.mkdir(0, "a", 100).unwrap();
         let content_id = repo.find_or_create_content(0, &[0xAAu8; 20], &[]).unwrap();
@@ -713,13 +968,57 @@ mod tests {
         repo.unlink_file(file_id, 150).unwrap();
         repo.rmdir(a_id, 200).unwrap();
 
-        let resolved = resolve(&repo, "/[deleted]/a/[deleted]/f.txt")
+        // No second `[deleted]` needed between `a` and `f.txt` - `a` is already dead, so its own
+        // children appear directly.
+        let resolved = resolve(&repo, "/[deleted]/a/f.txt", TimeDisplay::Utc)
             .unwrap()
             .unwrap();
         match resolved {
             Resolved::Deleted(entry) => assert_eq!(entry.entry.id, file_id),
             _ => panic!("expected Deleted"),
         }
+    }
+
+    #[test]
+    fn resolve_reaches_all_and_all_by_time_recursively_within_an_already_deleted_directory() {
+        let (repo, _dir) = repo_and_dir();
+        let a_id = repo.mkdir(0, "a", 100).unwrap();
+        let content_x = repo.find_or_create_content(1, &[0xAAu8; 20], &[]).unwrap();
+        let content_y = repo.find_or_create_content(2, &[0xBBu8; 20], &[]).unwrap();
+        let older = repo.settle_file(a_id, "f.txt", 100, content_x).unwrap();
+        let newer = repo.settle_file(a_id, "f.txt", 150, content_y).unwrap();
+        repo.unlink_file(newer, 175).unwrap();
+        repo.rmdir(a_id, 200).unwrap();
+
+        // Bare name inside the already-dead `a` reaches the newest "f.txt".
+        let resolved = resolve(&repo, "/[deleted]/a/f.txt", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(resolved, Resolved::Deleted(e) if e.entry.id == newer));
+
+        // `a`'s own `[all]` reaches the full history, including the older, superseded entry.
+        let all_resolved = resolve(&repo, "/[deleted]/a/[all]", TimeDisplay::Utc)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            all_resolved,
+            Resolved::AllDeletedChildren { parent_id } if parent_id == a_id
+        ));
+        let children = repo.list_deleted_children(a_id).unwrap();
+        let names = display_names(&children);
+        let older_name = names[children
+            .iter()
+            .position(|(_, e)| e.entry.id == older)
+            .unwrap()]
+        .clone();
+        let older_resolved = resolve(
+            &repo,
+            &format!("/[deleted]/a/[all]/{older_name}"),
+            TimeDisplay::Utc,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(older_resolved, Resolved::Deleted(e) if e.entry.id == older));
     }
 
     #[test]
@@ -741,9 +1040,14 @@ mod tests {
             .unwrap()]
         .clone();
 
-        let resolved = resolve_within(&repo, &format!("/[deleted]/{first_shown}"), 30)
-            .unwrap()
-            .unwrap();
+        let resolved = resolve_within(
+            &repo,
+            &format!("/[deleted]/[all]/{first_shown}"),
+            30,
+            TimeDisplay::Utc,
+        )
+        .unwrap()
+        .unwrap();
         match resolved {
             Resolved::Deleted(entry) => assert_eq!(entry.entry.id, first),
             _ => panic!("expected Deleted"),
