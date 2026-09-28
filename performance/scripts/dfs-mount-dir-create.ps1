@@ -1,10 +1,9 @@
 # location: dfs-mount, directory creation, sequential - see ../methodology.md's "Statistical
 # approach" and "Workload catalog", and ../methodology.md's Location catalog entry for
 # `dfs-mount`. Builds a release `dfs.exe`, creates a repository, mounts it read-write, and times
-# `New-Item -ItemType Directory` against the *mounted* path instead of a native one - the mounted
-# op set only covers directories today (db::Repository has no file-entry creation yet, same
-# limitation ../../crates/db/examples/db_bench.rs's header comment documents), so this matches
-# that benchmark's scope exactly, one layer further up the stack.
+# `New-Item -ItemType Directory` against the *mounted* path instead of a native one. Directory
+# creation only, to match `db_bench.rs`'s own scope one layer further down the stack -
+# `dfs-mount-file10mb-{create,read}.ps1` cover file content through the mount separately.
 #
 # 5 runs, each ~20 s; the counter (and the tree under the mount) keeps growing across runs and
 # across repeated invocations of this script, per the "state between runs" rule.
@@ -22,10 +21,10 @@
 # session (see requirements/functional/mount.md - Ctrl+C is the documented, clean way to stop a
 # real `dfs mount`).
 #
-# This script has not been run against a real WinFSP install from the environment that wrote it
-# (no WinFSP available there) - reasoned through against the actual mount/CLI code and the
-# existing `windows_mount.rs` integration test's own patterns, but treat the first real run as a
-# validation of the script itself, not just a measurement, and fix forward if something is off.
+# First run against a real WinFSP install (2026-09-29, `julius`) found and fixed a real bug in
+# this script's own readiness probe (see the comment at that step) - the reported throughput and
+# resulting repository were silently meaningless until then. Confirmed correct after the fix: the
+# repository's own `dfs stats` afterward reports a matching directory count.
 
 $ErrorActionPreference = "Stop"
 
@@ -66,14 +65,37 @@ try {
     # content - does not work here. Instead, retry the actual operation being benchmarked
     # (mkdir) until it succeeds, then remove that probe entry so it does not pollute the Scale
     # count below.
-    $probePath = Join-Path $mountPath "_ready_probe"
+    #
+    # Bug found on this script's first real run (2026-09-29): `New-Item -ItemType Directory`
+    # silently creates missing *parent* directories too, even without `-Force` - confirmed
+    # empirically, not assumed. If the probe below ran while $mountPath itself did not exist yet
+    # (WinFSP not attached there yet), it would silently create $mountPath as an ordinary native
+    # NTFS directory, the probe would "succeed" against that fake directory, and every
+    # `New-Item`/`WriteAllBytes` call for the rest of the run would then go to plain NTFS instead
+    # of the mount - no error anywhere, but the reported throughput and the resulting repository
+    # (still empty) would both be meaningless. Fixed by waiting for $mountPath to actually exist
+    # first (`Test-Path` only ever checks, never creates), before ever calling `New-Item` against
+    # a path under it.
     $deadline = (Get-Date).AddSeconds(15)
+    while (-not (Test-Path $mountPath)) {
+        if ($mountProc.HasExited) {
+            throw "dfs mount process exited early (exit code $($mountProc.ExitCode)) before the mountpoint appeared - requires WinFSP to be installed"
+        }
+        if ((Get-Date) -gt $deadline) {
+            throw "mount point did not appear within 15s (requires WinFSP to be installed)"
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    $probePath = Join-Path $mountPath "_ready_probe"
     while ($true) {
         try {
             New-Item -ItemType Directory -Path $probePath -ErrorAction Stop | Out-Null
             Remove-Item -Path $probePath -ErrorAction Stop
             break
         } catch {
+            if ($mountProc.HasExited) {
+                throw "dfs mount process exited early (exit code $($mountProc.ExitCode)) - requires WinFSP to be installed - $_"
+            }
             if ((Get-Date) -gt $deadline) {
                 throw "mount did not become ready within 15s (requires WinFSP to be installed) - $_"
             }

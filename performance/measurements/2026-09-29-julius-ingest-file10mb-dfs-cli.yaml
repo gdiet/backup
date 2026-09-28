@@ -1,0 +1,20 @@
+date: 2026-09-29
+machine: julius
+environment: native-windows
+power_profile: power-saver             # overlay 961cc777-2547-4f9d-8174-7d86181b8a7a on top of the unchanged Balanced base scheme
+io_device: local-ssd
+dfs_build: 8ac866e224ee03d8a5300f333dba6b3901a09689 on rust
+operation: ingest-file-10mb
+location: dfs-cli
+tool: dfs ingest --repository <repo> <source-dir> /
+mode: sequential
+parallel_n:
+window_seconds:                   # n/a - single timed batch job, not a windowed loop, see the .md Notes
+scale: 30                         # pre-existing files ingested in the one recorded run
+content_size: 10485760
+result:
+  unit: bytes_per_second          # 314572800 bytes / 1.38s = ~217.1 MiB/s; also 21.7 files/s
+  mean: 227608986                 # bytes/s (217.1 MiB/s * 1048576)
+  range: [227608986, 227608986]
+  n: 1
+  discarded_warmup_run: false

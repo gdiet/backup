@@ -48,20 +48,41 @@ motivated the switch is recorded in
 A full 5-runs-of-20-seconds run on native Windows has not been done for any script yet; treat the
 first one as a final check, same as `dfs-mount-dir-create.ps1` below.
 
-`location: dfs-mount` - directory creation only so far (mounted DedupFS has no file-entry creation
-yet, same limitation as `db-direct` below):
+`location: dfs-mount`:
 
 - `dfs-mount-dir-create.ps1` - builds `dfs`, creates a repository, mounts it read-write, and times
-  directory creation against the mounted path. Windows only, via WinFSP.
+  directory creation against the mounted path. Windows only, via WinFSP. First real run
+  (2026-09-29, `julius`) found and fixed a real bug in its own readiness probe - `New-Item
+  -ItemType Directory` silently creates a missing *parent* directory too, so a probe that ran
+  before the mountpoint itself existed could create the mountpoint as a plain native directory and
+  "succeed" against that instead of the real mount, with no error anywhere. Fixed by waiting for
+  the mountpoint to exist first; see the script's own header comment.
 - `dfs-mount-dir-create.sh` - the same workload via real libfuse3, for WSL2/native Linux. `3327`'s
   WSL2 has confirmed `/dev/fuse` access and validated this script directly (one real bug found and
   fixed on the first run - see the script's own header); `julius`'s WSL2 has not been checked yet.
+  Bash `mkdir` (unlike PowerShell's `New-Item`) does not create missing parents on its own, so this
+  script was never at risk of the `.ps1` side's readiness-probe bug above.
+- `dfs-mount-file10mb-create.ps1` / `dfs-mount-file10mb-read.ps1` - 10 MB file creation and
+  read-back against a mounted repository, Windows only via WinFSP. Same content scheme and
+  20-subdirectory spread as `file10mb-create.ps1`/`file10mb-read.ps1`'s native versions, so the
+  numbers are directly comparable. The create script shares (and received the same fix for)
+  `dfs-mount-dir-create.ps1`'s readiness-probe bug above; the read script's own readiness check
+  (wait for a non-empty directory listing) never calls `New-Item` and was never at risk of it.
+
+`location: dfs-cli`:
+
+- `ingest-file10mb.ps1` - generates 30 pre-existing, uniquely-content 10 MB files natively (same
+  content scheme as `file10mb-create.ps1`, generation itself not timed), then times a single `dfs
+  ingest` call importing them into a fresh repository. Ingest is a one-shot batch job, not a
+  request/response loop, so this records one timed run rather than the usual 5-runs-of-~20-seconds
+  shape - see the measurement protocol's Notes for why.
 
 `location: db-direct` - there is no script here - it is a Rust benchmark instead, since
 `db-direct` means calling `db::Repository`'s methods directly, not shelling out to anything. See
-`../../crates/db/examples/db_bench.rs` (directory creation only so far); run it with
-`cargo run --release -p db --example db_bench`. It prints the same
-run/count/elapsed/ops-per-second shape as the scripts here.
+`../../crates/db/examples/db_bench.rs` (directory creation only so far, since `db::Repository` has
+no file-entry creation reachable without going through `crates/store` and the settle pipeline
+`dfs-mount`/`dfs-cli` both use); run it with `cargo run --release -p db --example db_bench`. It
+prints the same run/count/elapsed/ops-per-second shape as the scripts here.
 
 ## Running one
 
@@ -74,8 +95,8 @@ run/count/elapsed/ops-per-second shape as the scripts here.
    both `powercfg /getactivescheme`'s base scheme *and* the separate power-mode overlay - see
    `../methodology.md`'s "Power profile" note, `powercfg` alone does not show the overlay), `IO
    device`, `Isolation`. `DedupFS build` is not applicable for the `native` scripts (no DedupFS
-   code is exercised) - for `dfs-mount-dir-create.ps1`, record the git commit the built `dfs.exe`
-   came from.
+   code is exercised) - for any `dfs-mount`/`dfs-cli` script, record the git commit (and branch)
+   the built `dfs.exe` came from.
 4. Turn the output into a `../measurements/<date>-<machine>-<slug>.md` + `.yaml` pair, following
    `../methodology.md`'s recording template and sidecar schema. `Tool` is named in each script's
    header comment.

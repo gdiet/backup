@@ -15,6 +15,7 @@ operation gets too wide or long to read at a glance.
 |---|---|---|---|---|---|---|---|
 | julius | native Windows | best performance* | local SSD | native | sequential | 821.9 (763.4-857.8) | [2026-08-27](measurements/2026-08-27-julius-dir-create-native.md) |
 | julius | native Windows | power saver | local SSD | native | sequential | 929.1 (879.5-959.8) | [2026-08-27](measurements/2026-08-27-julius-dir-create-native-powersaver.md) |
+| julius | native Windows | power saver | local SSD | dfs-mount | sequential | 315.9 (233.8-344.3) | [2026-09-29](measurements/2026-09-29-julius-dir-create-dfs-mount.md) |
 | julius | WSL2, Debian 12 | best performance* | local SSD | native | sequential | 408.0 (395-412) | [2026-08-27](measurements/2026-08-27-julius-dir-create-wsl2.md) |
 | julius | WSL2, Debian 12 | power saver | local SSD | native | sequential | 417.4 (412-423) | [2026-08-27](measurements/2026-08-27-julius-dir-create-wsl2-powersaver.md) |
 | 3327 | WSL2, Ubuntu 24.04 | best performance (custom base scheme) | local SSD | native | sequential | 984.6 (818-1048) | [2026-08-28](measurements/2026-08-28-3327-dir-create-wsl2.md) |
@@ -25,6 +26,14 @@ operation gets too wide or long to read at a glance.
 The `db-direct` row is this project's first measurement at any location other than `native` - see
 that protocol's Notes for a real, monotonic scale-dependent slowdown across its 5 runs (not noise),
 not yet root-caused.
+
+The `dfs-mount` row is this project's first *validated* measurement through a real WinFSP mount -
+its own protocol's Notes document a real bug this run found and fixed first (`dfs-mount-dir-
+create.ps1`'s readiness probe could silently create the mountpoint as a plain native directory and
+measure NTFS instead of DedupFS with no error at all; a first, invalid run before the fix landed at
+~623-635 ops/s, suspiciously close to native's own 929.1 ops/s above). After the fix, dfs-mount
+(315.9 ops/s mean) is roughly 2.9x slower than native Windows under the same Power-Saver overlay -
+a real, substantial gap, though only one 5-run measurement so far on a non-isolated machine.
 
 ## Zero-byte file creation
 
@@ -112,6 +121,7 @@ than filesystem-bound.
 | julius | native Windows | power saver | 30 KB | local SSD | native | sequential | 209.5 (202.2-236.3) | [2026-08-28](measurements/2026-08-28-julius-file30kb-create-native.md) |
 | julius | WSL2, Debian 12 | power saver | 30 KB | local SSD | native | sequential | 93.6 (91-96) | [2026-08-28](measurements/2026-08-28-julius-file30kb-create-wsl2.md) |
 | julius | native Windows | power saver | 10 MB | local SSD | native | sequential | 26.4 (21.2-31.3) | [2026-08-28](measurements/2026-08-28-julius-file10mb-create-native.md) |
+| julius | native Windows | power saver | 10 MB | local SSD | dfs-mount | sequential | 14.46 / ~144.6 MB/s (10.6-23.2) | [2026-09-29](measurements/2026-09-29-julius-file10mb-create-dfs-mount.md) |
 | julius | WSL2, Debian 12 | power saver | 10 MB | local SSD | native | sequential | 19.6 (18-21) | [2026-08-28](measurements/2026-08-28-julius-file10mb-create-wsl2.md) |
 | julius | native Windows | power saver | 10 MB | USB2 stick | native | sequential | 1.05 (0.95-1.12) | [2026-08-28](measurements/2026-08-28-julius-file10mb-create-usb.md) |
 | 3327 | native Windows | power saver (custom base scheme) | 100 B | local NVMe SSD | native | sequential | 476.5 (453.4-515.2) | [2026-08-28](measurements/2026-08-28-3327-file100b-create-native.md) |
@@ -163,6 +173,7 @@ stick's tiny ~4 GB capacity required a free-space check and a throughput probe b
 | julius | native Windows | power saver | 10 MB | local SSD | native | sequential | 26.3 (25.2-26.7)\*\* | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-native.md) |
 | julius | WSL2, Debian 12 | power saver | 10 MB | local SSD | native | sequential | 35.0 (30-37)\*\* | [2026-08-28](measurements/2026-08-28-julius-file10mb-read-wsl2.md) |
 | julius | native Windows | (not captured) | 10 MB | local SSD | native | sequential | 20.4 (17.8-21.3) | [2026-09-01](measurements/2026-09-01-julius-file10mb-read-native.md) |
+| julius | native Windows | power saver | 10 MB | local SSD | dfs-mount | sequential | 15.2 / ~152 MB/s (15.0-15.5) | [2026-09-29](measurements/2026-09-29-julius-file10mb-read-dfs-mount.md) |
 | julius | WSL2, Debian 12 | (not captured) | 10 MB | local SSD | native | sequential | 17.7 (5.85-29.45) | [2026-09-01](measurements/2026-09-01-julius-file10mb-read-wsl2.md) |
 | 3327 | native Windows | power saver (custom base scheme) | 100 B | local NVMe SSD | native | sequential | 1562.0 (1144.4-2076.0) | [2026-08-28](measurements/2026-08-28-3327-file100b-read-native.md) |
 | 3327 | WSL2, Ubuntu 24.04 | power saver (custom base scheme) | 100 B | local SSD | native | sequential | 958.4 (901-1019) | [2026-08-28](measurements/2026-08-28-3327-file100b-read-wsl2.md) |
@@ -206,3 +217,29 @@ page-cache-warm from the previous run - see that protocol's Notes) - the fix (ps
 indexing) has since been made and confirmed on `julius` (see the `2026-09-01` rows in the table
 above), but `3327` itself has not yet been re-run with it; treat the 92.8 ops/s figure and its wide
 range (64-118) as provisional until it is.
+
+`julius`'s dfs-mount 10 MB read (15.2 ops/s, ~152 MB/s) breaks the "reads faster than creates"
+pattern every native-Windows/WSL2 pair above shows: it lands essentially level with (very slightly
+below) dfs-mount's own 10 MB create result (14.46 ops/s) rather than several times ahead of it - see
+that protocol's own Notes for a plausible explanation (chunk-scattered store reads not warming the
+OS page cache the same contiguous way a plain NTFS file read does). Against native Windows's own
+10 MB read (20.4 ops/s corrected), dfs-mount read is ~1.3x slower - a much smaller gap than the
+~1.8x create-side gap, so the mount layer's overhead is not uniform across operations even on the
+same machine and file size.
+
+## Ingest
+
+| Machine | Environment | Power mode | Size | IO device | Location | Mode | Throughput | Protocol |
+|---|---|---|---|---|---|---|---|---|
+| julius | native Windows | power saver | 10 MB x 30 | local SSD | dfs-cli | sequential | 21.7 files/s, 217.1 MB/s (single run, N=1) | [2026-09-29](measurements/2026-09-29-julius-ingest-file10mb-dfs-cli.md) |
+
+First measurement of `dfs ingest` at any scale. A single timed batch import of 30 pre-existing,
+uniquely-content 10 MB files (300 MB total) - not the usual 5-runs-of-~20-seconds shape, since
+ingest is a one-shot batch job over fixed input rather than a repeatable request/response loop (see
+that protocol's Notes for why, and what a proper multi-run protocol would need). At 217.1 MB/s,
+ingest lands faster than the same day's dfs-mount 10 MB create (~144.6 MB/s) and not far behind
+native Windows's own 10 MB create baseline (~264 MB/s) - plausibly DESIGN-INGEST-001's cross-file
+worker-pool parallelism, absent from the single-threaded PowerShell writer the mount measurements
+use. Only one data point at a small, fully-cacheable scale - not yet informative about a
+multi-terabyte, page-cache-cold migration run; see the separate `rust-migration-cdc-bitwidth-
+compare` branch for that still-pending investigation.

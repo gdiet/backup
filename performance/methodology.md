@@ -200,10 +200,13 @@ Where a workload above can be measured:
 - Natively on the host filesystem (NTFS, ext4, FAT32, ...) - the baseline everything else is
   compared against.
 - Through a mounted DedupFS - also varies by which physical device the repository itself lives on,
-  independently of where the mount's client-side operations originate. Directory creation has a
-  script today (`../scripts/dfs-mount-dir-create.ps1`, Windows/WinFSP only); other operations
-  mirror `db-direct`'s limits, since the mount ultimately calls the same `db::Repository` methods.
-- Through the `dfs` CLI tools, as the relevant commands come into existence.
+  independently of where the mount's client-side operations originate. Directory creation and 10 MB
+  file creation/read each have a script today (`../scripts/dfs-mount-dir-create.ps1`,
+  `../scripts/dfs-mount-file10mb-{create,read}.ps1`, Windows/WinFSP only).
+- Through the `dfs` CLI tools, as the relevant commands come into existence. `dfs ingest` has a
+  script today (`../scripts/ingest-file10mb.ps1`) - a one-shot batch job rather than a windowed
+  request/response loop, so it does not follow the usual 5-runs-of-~20-seconds shape; see that
+  script's own measurement protocol.
 - Directly against the DedupFS database, via a small Rust benchmark calling `db::Repository`'s
   methods with no mount or CLI layer in between - a ceiling any higher layer cannot exceed, since
   it still goes through the same calls underneath. Only meaningful for directories and zero-byte
