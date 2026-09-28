@@ -46,8 +46,8 @@ directory, its descendants), rather than leaving that entry's storage for a late
 so the storage a purged entry held becomes eligible for reuse as soon as the command returns, not
 only its `tree_entries` row gone. This keeps an irreversible removal from ever being this command's
 ordinary, unmarked behavior just because a passed-in path happened to resolve under `[deleted]` -
-such a path can otherwise reach the command unremarkably, e.g. pasted from a `dfs list
---show-deleted` line.
+such a path can otherwise reach the command unremarkably, e.g. pasted from a `dfs list`-shown
+`[show-deleted]` line (REQ-CLI-007).
 
 Rationale: a mount session is not always convenient for a one-off or scripted deletion - a headless
 host, an automation script. REQ-TREE-008 keeps the mount's own delete non-cascading, matching
@@ -111,22 +111,20 @@ storage), rather than through a system installer; it satisfies REQ-OPERABILITY-0
 "reasonable defaults" principle for this specific, recurring parameter.
 
 ### REQ-CLI-007: List soft-deleted entries without mounting
-Status: agreed
+Status: draft
 Importance: should
 
-`dfs list` reveals REQ-TREE-009's `[deleted]` addressing segment (in [`tree.md`](tree.md)) as part
-of an ordinary directory listing when a caller passes `--show-deleted`; without the flag, a listing
-never shows it, so a script parsing plain `dfs list` output is never surprised by an extra entry
-the moment some history exists somewhere in that directory. The listing clearly distinguishes the
-segment from a real, identically-named directory - REQ-TREE-009 lets a real entry win that name, so
-the two must never be shown indistinguishably.
+Draft, not yet agreed - see REQ-MOUNT-004's own, matching "Open question" note, which applies here
+identically.
 
-Once a caller names `[deleted]` explicitly as part of the path given to `dfs list` (or `dfs
-restore`), that request works without needing `--show-deleted` too - naming the reserved segment is
-already exactly as explicit a request as the flag would be, and requiring both would only add
-friction, not clarity. This is the CLI counterpart to REQ-MOUNT-004's deleted-entry browsing, using
-REQ-TREE-009's own addressing directly instead of a separate, CLI-specific mechanism - for a caller
-that does not want to mount at all.
+`dfs list`, like the mount (REQ-MOUNT-004 in [`mount.md`](mount.md)), reaches REQ-TREE-009's
+`[deleted]` addressing (in [`tree.md`](tree.md)) only through a dedicated `[show-deleted]` root
+entry, never inline within an ordinary directory listing - `dfs list /` shows only the live tree,
+plus `[show-deleted]` itself as one ordinary entry within it, discoverable without prior knowledge
+the same way it would be through the mount. `dfs restore` and `dfs del --purge`'s own soft-deleted
+target (REQ-CLI-003) use this same addressing; `[purge-deleted]` (REQ-MOUNT-007's own second,
+purge-capable root) has no CLI counterpart - none of these commands mutate through path choice alone,
+`dfs del --purge`'s own `--purge` flag already decides that.
 
 Whether a repository-wide variant (not scoped to one location, listing every soft-deleted entry
 anywhere) is still worth having, now that a caller can reach any location's own deletion history
@@ -136,7 +134,10 @@ wide deleted listing" in [`../open-questions.md`](../open-questions.md).
 Rationale: REQ-RESTORE-002 and REQ-CLI-003's `--purge` case both act on a specific soft-deleted
 entry, but neither discovers it. Reusing REQ-TREE-009's own addressing here - rather than a bespoke
 CLI-only mechanism that also invents its own way to name a chosen result - means a caller learns one
-addressing scheme and reuses it unchanged across `dfs list`, `dfs restore`, and `dfs del --purge`.
-Off-by-default matches REQ-MOUNT-004's own reasoning for the identical concern: a generic script
-parsing `dfs list`'s output should not see an unannounced extra row just because a deletion
-happened somewhere in that directory at some point.
+addressing scheme and reuses it unchanged across `dfs list`, `dfs restore`, `dfs del --purge`, and
+the mount alike. Keeping it out of an ordinary listing by default, reachable only through one
+dedicated entry, matches REQ-MOUNT-004's own reasoning for the identical concern: a generic script
+parsing `dfs list`'s output should not see an unannounced extra row just because a deletion happened
+somewhere in that directory at some point - and unlike an earlier, flag-gated design (`dfs list
+--show-deleted`), this needs no separate option a caller could forget or a script could omit by
+accident.

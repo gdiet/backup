@@ -133,6 +133,10 @@ segment name, `[deleted]`, directly beneath it - addressable the same way as an 
 child, without a separate lookup step or an opaque identifier standing in for a path. This is the
 addressing REQ-RESTORE-002's direct restore and REQ-CLI-003's `--purge` case both mean by "a
 soft-deleted entry's history-entry identity" - one convention, not two independently designed ones.
+This rule applies at every level, not only directly beneath a still-live directory: a directory
+reached through `[deleted]` (itself soft-deleted) has its own `[deleted]` segment for its own
+children, exactly the same way - "soft-deleted" is a property of the specific entry being addressed,
+never of the path that led to it.
 
 If a live entry already occupies that exact name at that location, the live entry always takes
 precedence: `[deleted]` continues to name it, as any other live name would, and that location's
@@ -141,19 +145,29 @@ renamed or removed. Nothing about the soft-deleted entries themselves is lost - 
 specific path-based route to them is unavailable at that location, for as long as the collision
 lasts.
 
-Within `[deleted]`, more than one soft-deleted entry can share the same original name (REQ-TREE-004
-- delete, recreate, delete again) - each is disambiguated with a deletion-timestamp suffix before
-its extension (e.g. `photo [2026-08-22_14-04-14].jpg`; `.env [2026-08-22_14-04-14]` for a dot-file,
-which has no splittable extension). If that timestamp suffix alone still does not tell two entries
-apart - either because they were deleted within the same second, or because a length constraint
-the calling context imposes forces both down to the same truncated form - the entry's own id is
-appended as a further suffix instead of replacing the timestamp outright (e.g.
-`photo [2026-08-22_14-04-14] [42].jpg`), so the timestamp's own information stays visible even
-then; the id alone is already enough to make the name unique, but that is not a reason to also
-lose the timestamp. The base name is truncated - never either bracketed suffix, the parts actually
-meant to stay unique and informative - if the combination does not otherwise fit. An entry whose
-bare name is not shared by any other soft-deleted entry at that same location is shown as-is, no
-suffix needed.
+`[deleted]` itself shows at most one entry per distinct original name: whichever of that name's
+soft-deleted entries (REQ-TREE-004 - a name can be deleted, recreated, and deleted again, each kept
+as its own independent history entry) was deleted most recently. It is shown under its own,
+unmodified name - no suffix, since at most one entry per name ever occupies this slot, so it is
+already unambiguous by construction.
+
+`[deleted]/[all]` shows every soft-deleted entry at that location, not only the most recent one per
+name - REQ-TREE-004's full, unfiltered history. More than one entry can share the same original name
+there; each is disambiguated with a deletion-timestamp suffix before its extension (e.g. `photo
+[2026-08-22_14-04-14].jpg`; `.env [2026-08-22_14-04-14]` for a dot-file, which has no splittable
+extension). If that timestamp suffix alone still does not tell two entries apart - either because
+they were deleted within the same second, or because a length constraint the calling context imposes
+forces both down to the same truncated form - the entry's own id is appended as a further suffix
+instead of replacing the timestamp outright (e.g. `photo [2026-08-22_14-04-14] [42].jpg`), so the
+timestamp's own information stays visible even then; the id alone is already enough to make the name
+unique, but that is not a reason to also lose the timestamp. The base name is truncated - never
+either bracketed suffix, the parts actually meant to stay unique and informative - if the combination
+does not otherwise fit. An entry whose bare name is not shared by any other soft-deleted entry at
+that same location is shown as-is within `[all]` too, no suffix needed.
+
+`[deleted]/[all]/[by-time]` shows the same entries as `[deleted]/[all]` - a second presentation of
+the same data, not a different one - with the timestamp always prefixed instead of conditionally
+suffixed, for chronological browsing.
 
 Rationale: REQ-MOUNT-004/008 in [`mount.md`](mount.md) needed exactly this same addressing already,
 to let a mounted file manager browse and disambiguate a directory's deletion history in place;
@@ -166,3 +180,18 @@ winning a name collision, rather than the reserved segment shadowing it, follows
 REQ-MOUNT-004's own reasoning for the mount case: a synthetic, addressing-only feature must never
 make real, user-created data invisible or unreachable, even in the rare case its owner happened to
 pick this exact reserved name themselves.
+
+Showing only the most recently deleted version by default, under its unmodified name, exists for one
+concrete reason: recovering a deletion is overwhelmingly most often "undo the last mistake", not "dig
+through history" - and an ordinary recovery gesture (drag, cut-and-paste, copy) that ends up naming
+the recovered entry after whatever the source happened to display would otherwise leave a stray
+timestamp baked into the restored name, for the single most common case. Because the source name is
+already the true name, this holds regardless of which operation performs the recovery - a move and a
+copy behave identically here, with no operation-specific logic needed. A deletion timestamp is also
+more informative at a glance than an opaque id, which is why `[all]`'s own suffix leads with it, and
+sorting by name only gives a meaningful chronological order when the timestamp is always present and
+at the start - which conflicts with keeping an unambiguous entry's original name intact within
+`[all]` itself. Offering both - suffix-only-when-needed within `[all]` for recognizability,
+always-prefixed under `[all]/[by-time]` for chronological browsing - serves both needs rather than
+picking one purpose for a single view to serve badly. `[all]`/`[all]/[by-time]` keep REQ-TREE-004's
+full, disambiguated history one step away for whoever wants it.
