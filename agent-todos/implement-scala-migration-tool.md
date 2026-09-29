@@ -130,9 +130,8 @@ Not blocking, but real gaps a later session should know about:
   `crate::restore`'s own two independent opt-ins) - a single incomplete read currently fails the
   whole run outright (`MigrateContentError::IncompleteOldData`), which is the safer default but not
   the only one a real operator might eventually want.
-- `migration/from-scala.md` currently only covers the byte-store compatibility question - it needs
-  the actual migration steps, prerequisites, and rollback/fallback guidance filled in, matching what
-  actually got built rather than this plan.
+- `migration/from-scala.md` is written (prerequisites, running, choosing the chunk size, checking,
+  interruptions, going back) - done, see the commit that added it.
 
 ## Real-data validation (done, 2026-09-29)
 
