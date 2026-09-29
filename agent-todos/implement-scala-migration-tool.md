@@ -53,9 +53,9 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
 ## Suggested order
 
 1. The statement-boundary splitter and SQL-delegated row import (DESIGN-MIGRATION-002), producing
-   the ephemeral working structure DESIGN-MIGRATION-001 describes. Verify against the real sample
-   export above before moving on - its confirmed row counts make this a cheap, precise correctness
-   check.
+   the durable, once-built metadata import DESIGN-MIGRATION-001 describes (including its completion
+   marker). Verify against the real sample export above before moving on - its confirmed row counts
+   make this a cheap, precise correctness check.
 2. Decide phase 2's durable progress record shape (the open question in the design doc).
 3. Phase 2's walk-and-migrate logic against the current `db::Repository`/`crates/store` API,
    parameterized over one or more `--cdc-target-size-bits` values at once (DESIGN-MIGRATION-003).
