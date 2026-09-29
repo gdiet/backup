@@ -180,7 +180,23 @@ fn meta_dir_for(repository: &Path, bits: u32, single: bool) -> PathBuf {
     }
 }
 
-pub fn run(repository: &Path, script: &Path, staging: &Path, cdc_target_size_bits: &[u32]) {
+/// `--staging`'s default location when not given explicitly: inside the repository being adopted,
+/// alongside its `data/` directory - the operator does not need to think about where to put a file
+/// that is, by design, removed again automatically once every requested target size has been fully
+/// migrated (DESIGN-MIGRATION-001).
+fn default_staging_path(repository: &Path) -> PathBuf {
+    repository.join("migrate-staging.db")
+}
+
+pub fn run(repository: &Path, script: &Path, staging: Option<&Path>, cdc_target_size_bits: &[u32]) {
+    let default_staging;
+    let staging = match staging {
+        Some(path) => path,
+        None => {
+            default_staging = default_staging_path(repository);
+            &default_staging
+        }
+    };
     match try_run(repository, script, staging, cdc_target_size_bits) {
         Ok(message) => println!("{message}"),
         Err(message) => {
@@ -193,6 +209,15 @@ pub fn run(repository: &Path, script: &Path, staging: &Path, cdc_target_size_bit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_staging_path_lives_inside_the_repository() {
+        let repository = Path::new("/some/repo");
+        assert_eq!(
+            default_staging_path(repository),
+            Path::new("/some/repo/migrate-staging.db")
+        );
+    }
 
     const SAMPLE_SCRIPT: &str = r#"
 CREATE USER IF NOT EXISTS "SA" SALT 'x' HASH 'y' ADMIN;

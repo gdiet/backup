@@ -28,8 +28,10 @@ wholesale. Splitting migration into two phases follows directly from that size g
    migration queries against): built once per migration attempt, as an ordinary on-disk database
    next to the migration's own destination metadata database(s) rather than an in-memory one - the
    disk space it costs is trivial next to a multi-terabyte migration, and unlike an in-memory
-   structure it does not compete with phase 2's own chunk-buffer memory for RAM. Marked complete
-   only once its own import
+   structure it does not compete with phase 2's own chunk-buffer memory for RAM. By default, this
+   file lives inside the adopted repository itself (`migrate-staging.db`, alongside `data/`) - an
+   operator can still override the location, but does not need to think about it for an ordinary
+   run. Marked complete only once its own import
    transaction has fully committed (see "Detecting a reusable import" below), so a run interrupted
    partway through this phase never leaves behind something that merely looks complete. On any run -
    the first attempt or a retry after an interruption anywhere in phase 1 or phase 2 - an existing,

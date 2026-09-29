@@ -116,14 +116,15 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
 
 Not blocking, but real gaps a later session should know about:
 
-- No `--ram-budget-mb` handling (unlike most other `crates/cli` commands). Checked concretely rather
-  than left as a guess: `cdc::ChunkerConfig::max_chunk_size` bounds one in-progress chunk buffer to
+- **Decided against (YAGNI), not just deferred**: no `--ram-budget-mb` handling (unlike most other
+  `crates/cli` commands). Checked concretely rather than left as a guess:
+  `cdc::ChunkerConfig::max_chunk_size` bounds one in-progress chunk buffer to
   `base_size * (bits + 1)` regardless of file size (e.g. ~544 KB at 16 bits, ~10.5 MB at 20 bits) -
   the only structure that actually scales with input is one target's `chunk_ids: Vec<i64>` for the
   single old `dataId` currently being processed, bounded by that one file's own size divided by its
   average chunk size (e.g. a hypothetical 1 TB single file at 16 bits across three simultaneous
-  target sizes tops out around 150 MB). Real, but low priority for realistic `bits`/file sizes - only
-  a pathological choice (very small `bits`, or a single enormous file) would make this worth adding.
+  target sizes tops out around 150 MB). Only a pathological choice (very small `bits`, or a single
+  enormous file) would make this worth adding - not worth building for a case this unlikely.
 - No `--verify`/`--best-effort` style flags for a partially-missing old `data/` (unlike
   `crate::restore`'s own two independent opt-ins) - a single incomplete read currently fails the
   whole run outright (`MigrateContentError::IncompleteOldData`), which is the safer default but not
@@ -148,7 +149,11 @@ fixture itself) - not just synthetic unit-test fixtures:
   bits) / 181.65 MB (18 bits) / 206.57 MB (20 bits), logical size identical (286,953,278 bytes) at
   all three, as expected - finer chunking finds more sub-file duplication. Notably, even 18-bit CDC
   dedup alone beats the source's own whole-file dedup (Scala's own reported physical size was 251.88
-  MB) - CDC finds cross-file matches whole-file hashing structurally cannot.
+  MB) - CDC finds cross-file matches whole-file hashing structurally cannot. The metadata database
+  itself moves the opposite way, as expected (more, smaller chunks means more `chunks`/
+  `chunk_extents` rows): 798,720 bytes (16 bits) / 544,768 bytes (18 bits) / 487,424 bytes (20 bits) -
+  a few hundred KB of metadata difference against tens of MB of physical-storage difference, clearly
+  the right trade for this dataset.
 - `dfs reclaim` on a separately-migrated single-target-size copy freed exactly 65,175 bytes - the
   size of the one genuinely-unique soft-deleted file (`Schulferien 2027 Bayern.pdf`); the other two
   soft-deleted items (a whole duplicate directory and one of three identical tax-document copies)

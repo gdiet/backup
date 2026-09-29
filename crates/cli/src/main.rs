@@ -381,9 +381,11 @@ enum Commands {
         script: PathBuf,
         /// Where to keep the imported metadata. An ordinary file, persisted across runs rather
         /// than rebuilt each time (DESIGN-MIGRATION-001) - reused as-is on a later invocation
-        /// unless it is missing or was left behind by an interrupted import.
+        /// unless it is missing or was left behind by an interrupted import. Defaults to
+        /// `migrate-staging.db` inside `--repository` itself, removed automatically once every
+        /// requested target size has been fully migrated.
         #[arg(long)]
-        staging: PathBuf,
+        staging: Option<PathBuf>,
         /// The candidate content-defined-chunking target size(s), in bits, to migrate into - one
         /// destination metadata database per value (DESIGN-MIGRATION-003). Repeat this flag to
         /// compare more than one value from a single read of the source; migrating into more than
@@ -675,7 +677,12 @@ fn main() {
             staging,
             cdc_target_size_bits,
         } => {
-            migrate_scala_repo::run(&repository, &script, &staging, &cdc_target_size_bits);
+            migrate_scala_repo::run(
+                &repository,
+                &script,
+                staging.as_deref(),
+                &cdc_target_size_bits,
+            );
             // Only reached once migrate_scala_repo::run has actually succeeded (it exits the
             // process on failure) - meta/ may not exist yet beforehand (or ever, if more than one
             // target size was requested), the same reasoning as Commands::CreateRepo above.
