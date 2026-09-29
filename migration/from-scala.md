@@ -11,7 +11,8 @@ existing Scala repository's `data/` directory becomes this implementation's `dat
 unchanged - migration only ever reads those bytes to derive new metadata (new content-defined
 chunk boundaries, new BLAKE3 hashes), per REQ-MIGRATION-002 in
 [`../requirements/functional/repository-migration.md`](../requirements/functional/repository-migration.md).
-Not yet implemented, and not yet verified end to end against a real Scala repository's `data/`
-directory - DESIGN-STORE-001 is still `Status: draft`.
+DESIGN-STORE-001 itself is `Status: decided`, but the migration process described here is not yet
+implemented, and this compatibility has not yet been verified end to end against a real Scala
+repository's `data/` directory on this branch.
 
 <!-- Remaining steps, prerequisites, metadata-migration specifics, rollback/fallback guidance. -->
