@@ -1,6 +1,6 @@
 # Migrating An Existing Scala Repository
 
-How the actual migration tool (REQ-MIGRATION-001/002/003/004 in
+How the actual migration tool (REQ-MIGRATION-001/002/003/004/005 in
 [`../../requirements/functional/repository-migration.md`](../../requirements/functional/repository-migration.md),
 concrete path in [`../../migration/from-scala.md`](../../migration/from-scala.md)) reads the old
 system's own SQL export and turns it into one or more new metadata databases against the existing
@@ -8,10 +8,10 @@ repository's own, unchanged byte store. Not yet implemented - written up as a st
 coding begins, so the decisions already made do not need re-deriving in a later session.
 
 There is exactly one repository throughout: the existing one, adopted in place. Its `data/`
-directory (REQ-MIGRATION-002) is read from, never duplicated, never written to, and never moved -
-migrating into more than one `--cdc-target-size-bits` value (DESIGN-MIGRATION-003) means more than
-one metadata database ends up next to that same, single `data/` directory, not more than one
-repository each with its own copy.
+directory (REQ-MIGRATION-002) is read from, never duplicated, never written to, and never moved
+(REQ-MIGRATION-005) - migrating into more than one `--cdc-target-size-bits` value
+(DESIGN-MIGRATION-003) means more than one metadata database ends up next to that same, single
+`data/` directory, not more than one repository each with its own copy.
 
 ## DESIGN-MIGRATION-001: Two phases - a durable, built-once metadata import, then a resumable content migration
 Status: decided
@@ -158,6 +158,22 @@ first one or two production releases that include it at all; an operator migrati
 an older release, migrates there, then upgrades normally). Both functions' own doc comments say so
 directly, pointing back at this entry, so removing them later does not need rediscovering why they
 exist first.
+
+## Recording a migrated chunk at its existing position
+
+REQ-MIGRATION-005 means phase 2 never writes bytes anywhere - a chunk's content already sits at a
+known position within `data/` (translated from the old system's own record of where it stored that
+content). What phase 2 needs from `db` is therefore not "allocate space and write metadata for a
+new chunk" (`crates/db/src/content.rs`'s existing `reserve_and_insert_chunk`, which always calls
+`allocation::reserve` to find free space) but "record metadata for a chunk whose bytes already
+exist at this caller-supplied position" - a distinct operation `db` does not yet expose.
+
+This composes safely with the ordinary allocator with no extra bookkeeping: `allocation::reserve`
+(`crates/db/src/allocation.rs`) derives free space entirely by scanning `chunk_extents` on every
+call rather than tracking a separate high-water mark or free-list, so once migration's chunks are
+recorded there, an ordinary future write through the adopted repository automatically treats those
+ranges as occupied - no separate step to reconcile the allocator's own state against what migration
+already claimed.
 
 ## Open question
 

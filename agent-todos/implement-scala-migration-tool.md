@@ -32,6 +32,14 @@ exactly the gaps this plan exists to close). Check it out read-only via the `loc
 skill (`git worktree add .local/rust-1st-attempt rust-1st-attempt`) and look at
 `cli/src/migrate_scala_repo.rs`, in particular:
 
+- Its `db::resolve_content`/`ChunkRef::New { extents, .. }` design (in that tag's `db/src/backup.rs`
+  and used from `cli/src/migrate_scala_repo.rs`'s `chunk_and_store`/`resolve_chunk`): lets a caller
+  supply a chunk's byte extents directly instead of the ordinary path (allocate free space, then
+  write there) - exactly what "recording a migrated chunk at its existing position" in
+  `docs/design/scala-migration-tool.md` needs, since migration never writes to `data/` at all
+  (REQ-MIGRATION-005). This project's own `crates/db/src/content.rs` does not yet have an equivalent
+  to that split - its `reserve_and_insert_chunk` always calls `allocation::reserve` itself - so this
+  needs a fresh, schema-appropriate implementation of the same idea, not a copy of the old one.
 - The `script_import` module's statement-boundary splitter (`iter_statements`/`strip_line_comments`)
   - quote-aware, handles the export's actual comment/escaping shape correctly (verified this session
     against a real ~550 MB export). Worth reusing the *approach* even though DESIGN-MIGRATION-002

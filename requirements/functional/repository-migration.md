@@ -51,3 +51,17 @@ Rationale: choosing a target size for a large, one-time migration benefits from 
 resulting deduplication ratio across a few candidate values on the operator's own real data before
 committing to one — REQ-MIGRATION-002's own "no wholesale recopy" concern applies just as much to
 reading the same multi-terabyte source repeatedly for this comparison as it does to copying it.
+
+### REQ-MIGRATION-005: Never write to the predecessor's stored byte content
+Status: agreed
+Importance: must
+
+Migration only ever reads the predecessor repository's stored byte content — it never writes,
+modifies, or moves a single byte of it, not even to fill an unused gap. Only the new metadata
+database(s) migration creates are written to.
+
+Rationale: adopting a repository in place (REQ-MIGRATION-002) means its stored byte content is not
+a disposable copy — it is the operator's original data, the same bytes the predecessor
+implementation still depends on until migration is confirmed successful. A write to it, however
+small or well-intentioned, risks corrupting that original data with no independent copy to recover
+from.
