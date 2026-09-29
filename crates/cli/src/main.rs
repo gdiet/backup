@@ -13,12 +13,14 @@ mod find;
 mod ignore_rules;
 mod ingest;
 mod list;
+mod migrate_scala_repo;
 mod mount;
 mod pending_files;
 mod ram_budget;
 mod reclaim;
 mod repo_path;
 mod restore;
+mod scala_import;
 mod settle;
 mod settle_pool;
 mod stats;
@@ -357,6 +359,22 @@ enum Commands {
         #[arg(long)]
         repository: Option<PathBuf>,
     },
+    // REQ-MIGRATION-001/002/003/004.
+    /// Imports a Scala-DedupFS `fsc db-backup` SQL export's metadata into a small, durable staging
+    /// database - the first phase of the planned Scala-repository migration tool
+    /// (docs/design/scala-migration-tool.md). Phase 2 (the actual content migration) is not
+    /// implemented yet; this only builds or reuses the staging database and reports its counts.
+    MigrateScalaRepo {
+        /// Path to the H2 SQL script export produced by the Scala tool's `fsc db-backup` command -
+        /// either the zipped script as produced directly, or an already-unzipped `.sql` file.
+        #[arg(long)]
+        script: PathBuf,
+        /// Where to keep the imported metadata. An ordinary file, persisted across runs rather
+        /// than rebuilt each time (DESIGN-MIGRATION-001) - reused as-is on a later invocation
+        /// unless it is missing or was left behind by an interrupted import.
+        #[arg(long)]
+        staging: PathBuf,
+    },
 }
 
 #[derive(Parser)]
@@ -633,6 +651,9 @@ fn main() {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             db_compact::run(&repository, default_path_used);
+        }
+        Commands::MigrateScalaRepo { script, staging } => {
+            migrate_scala_repo::run(&script, &staging);
         }
     }
 }

@@ -52,10 +52,19 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
 
 ## Suggested order
 
-1. The statement-boundary splitter and SQL-delegated row import (DESIGN-MIGRATION-002), producing
-   the durable, once-built metadata import DESIGN-MIGRATION-001 describes (including its completion
-   marker). Verify against the real sample export above before moving on - its confirmed row counts
-   make this a cheap, precise correctness check.
+1. **Done** (`crates/cli/src/scala_import.rs`, wired up as `dfs migrate-scala-repo` in
+   `crates/cli/src/migrate_scala_repo.rs`): the statement-boundary splitter and SQL-delegated row
+   import (DESIGN-MIGRATION-002), producing the durable, once-built metadata import
+   DESIGN-MIGRATION-001 describes (including its completion marker). Verified against the real
+   sample export above - exact row counts match. One real finding along the way, now itself part of
+   DESIGN-MIGRATION-002's own text: the source system's SQL export can emit standard SQL
+   `U&'...'`-style Unicode-escape string literals for a stored name with a character its export
+   apparently cannot represent directly - a literal form the SQL engine used here does not support
+   at all, needing one small, targeted rewrite before execution (everything else about a kept
+   statement stays untouched). The synthetic test fixtures in `scala_import.rs` did not happen to
+   include this case; only the real-sample-export test caught it. `dfs migrate-scala-repo --script
+   <path> --staging <path>` is usable today to build/reuse the staging database and report its
+   counts - phase 2 (below) is what actually migrates content.
 2. Decide phase 2's durable progress record shape (the open question in the design doc).
 3. Phase 2's walk-and-migrate logic against the current `db::Repository`/`crates/store` API,
    parameterized over one or more `--cdc-target-size-bits` values at once (DESIGN-MIGRATION-003).

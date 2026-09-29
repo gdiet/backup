@@ -72,7 +72,7 @@ step of the metadata import to be individually safe to replay in isolation, a re
 it can work (see DESIGN-MIGRATION-002) for a cost that was never the actual bottleneck.
 
 ## DESIGN-MIGRATION-002: Delegate the export's row-data parsing to SQL execution; hand-parse only its statement boundaries
-Status: decided
+Status: implemented (crates/cli/src/scala_import.rs)
 
 The old system's SQL export (an `fsc db-backup`-produced script, see `migration/from-scala.md`)
 mixes schema-definition statements - in that source system's own SQL dialect, not portable as-is -
@@ -92,6 +92,16 @@ schema defined for this purpose with matching table/column names, rather than ha
 time. A hand-written value parser duplicating that part of SQL's own grammar was considered and
 rejected: an SQL engine's own parser already handles it correctly, with no additional surface for
 this migration to get wrong.
+
+One narrow exception, found against the same real production export: the source system's own SQL
+dialect can emit a standard SQL Unicode-escape string literal (`U&'...'`, with `\XXXX`/`\+XXXXXX`
+codepoint escapes) for a stored name containing a character its export apparently cannot represent
+directly - a literal form this migration's own SQL engine does not support at all. Recognizing and
+rewriting only that one literal form into an equivalent plain string literal, leaving every other
+part of a kept statement's value syntax completely untouched, was accepted as the one deliberate,
+narrow departure from "unmodified" this decision needs - the alternative (dropping SQL-engine
+delegation entirely over one literal form) would have discarded this decision's whole point to
+avoid a single, well-contained exception.
 
 ## DESIGN-MIGRATION-003: One read of the source, several `--cdc-target-size-bits` values, one output repository per value
 Status: decided
