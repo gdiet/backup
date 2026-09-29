@@ -15,7 +15,6 @@ mod ingest;
 mod list;
 mod migrate_content;
 mod migrate_scala_repo;
-mod migration_progress;
 mod mount;
 mod pending_files;
 mod ram_budget;

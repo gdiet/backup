@@ -45,10 +45,10 @@ wholesale. Splitting migration into two phases follows directly from that size g
    re-chunked, and under which new identifier - so a resumed run skips content it already migrated
    instead of re-reading and re-hashing it.
 
-Both the metadata import and phase 2's own progress record are removed only once the entire
-migration - every target size requested (DESIGN-MIGRATION-003) - has completed successfully; an
-interrupted attempt leaves both in place, specifically so a resume has nothing left to redo beyond
-wherever it actually stopped.
+Both the metadata import and phase 2's own progress record (DESIGN-MIGRATION-005) are removed only
+once the entire migration - every target size requested (DESIGN-MIGRATION-003) - has completed
+successfully; an interrupted attempt leaves both in place, specifically so a resume has nothing left
+to redo beyond wherever it actually stopped.
 
 ### Detecting a reusable import
 
@@ -194,8 +194,8 @@ recorded there, an ordinary future write through the adopted repository automati
 ranges as occupied - no separate step to reconcile the allocator's own state against what migration
 already claimed.
 
-## DESIGN-MIGRATION-005: A durable progress record, one file per destination metadata database
-Status: implemented (`crates/cli/src/migration_progress.rs`)
+## DESIGN-MIGRATION-005: The progress record lives in each destination, written in the same transaction
+Status: implemented (`crates/db/src/migration.rs`, `Repository::migration_*`)
 
 Phase 2 (DESIGN-MIGRATION-001) needs to skip already-migrated content and tree structure on a
 resume rather than redo it - REQ-MIGRATION-003 exists specifically so an interruption near the end
@@ -213,17 +213,41 @@ on its own:
   same name at the same location (one live, others historically deleted), which makes name-based
   matching ambiguous.
 
-The progress record is therefore a small, separate SQLite file - one per destination metadata
-database, sitting alongside it, not merged into the destination's own schema (`db::Repository`'s
-schema stays exactly what an ordinary repository has, with nothing migration-specific mixed into
-it) - holding two tables: `content_cache(old_data_id, content_id)` and `migrated(old_tree_id,
-new_id)`. Removed along with the destination's own staging import once that target size's migration
-completes successfully (DESIGN-MIGRATION-001); left in place after an interrupted run, so a resume
-has exactly the remaining, not-yet-migrated content and tree structure left to do.
+Both facts are kept in two tables, `migration_content_cache(old_data_id, content_id)` and
+`migration_migrated(old_tree_id, new_id)`, inside the destination database file itself. Every
+migrated entry and the record that it has been migrated are written by the same transaction, so a
+kill or a power loss can never leave the one without the other. The tables are created when a
+migration starts and dropped again once it has finished, so a finished repository carries nothing
+of them; they are not part of `db`'s own schema migrations. Like the other `db` additions of this
+tool, the `Repository::migration_*` methods are temporary and are removed together with it
+(DESIGN-MIGRATION-004).
+
+The migration writes in batches. `Repository::migration_begin_batch` opens one transaction that
+stays open across many calls, and every mutating call inside it runs in a savepoint, so a failing
+call is undone without ending the batch. The migration commits a batch whenever it has grown past a
+fixed number of operations, and only at points where every entry written so far has its progress
+record in the same batch. Chunk rows written for a content that is not finished yet are safe to
+commit earlier, because registering a chunk again after a resume finds it by its hash. If a run
+fails, every destination rolls back to its last commit, and the next run resumes from there.
+
+A destination whose tables are gone while its tree holds more than the root entry has been fully
+migrated by an earlier run. A later run recognizes that state and leaves the destination alone
+instead of migrating it a second time.
+
+### Rejected: a separate progress file next to each destination
+
+The progress record was first kept in its own small SQLite file, to keep the destination's schema
+free of anything migration-specific. That design cannot be made safe. The destination and the
+progress file are two independent commits, so a kill between the two leaves an entry the progress
+record does not know about. The resume then tries to insert it again: for a live entry that fails
+with a uniqueness error on every attempt until someone cleans up by hand, and for a soft-deleted
+entry it silently adds a duplicate history row. It was also slow, since a separate file with its
+own commit per entry is the dominant cost of a migration. Dropping the tables at the end keeps the
+finished schema just as clean.
 
 ### Rejected: no content memoization, a resume just re-migrates everything
 
-Skipping this file entirely and letting an interrupted phase 2 simply restart from the beginning was
+Skipping the progress tables entirely and letting an interrupted phase 2 simply restart from the beginning was
 considered. It is safe - re-chunking and re-hashing already-migrated content is idempotent, and the
 ordinary chunk/content dedup lookups prevent it from ever being written twice - and it satisfies
 REQ-MIGRATION-003's literal wording ("re-run from scratch without manual cleanup"). It was rejected

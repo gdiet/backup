@@ -6,8 +6,10 @@
 //! migrated chunk's bytes are never written anywhere - they already exist at a known position in
 //! the old, shared `data/` directory (REQ-MIGRATION-005) - only recorded there via
 //! `db::Repository::register_existing_chunk` (DESIGN-MIGRATION-006). `db::Repository::
-//! insert_migrated_entry` (DESIGN-MIGRATION-007) recreates each tree entry, and
-//! `crate::migration_progress` (DESIGN-MIGRATION-005) makes the whole walk resumable.
+//! insert_migrated_entry` (DESIGN-MIGRATION-007) recreates each tree entry. What has been migrated
+//! is recorded in progress tables inside each destination itself, written in the same batch
+//! transaction as the entries they describe (DESIGN-MIGRATION-005) - so the walk is resumable and a
+//! hard kill can never leave an entry without its record.
 //!
 //! The staging tree is walked, and the old bytes are read, on one thread. Everything that differs
 //! per destination - chunking and hashing a read window, the `db` commits behind it, creating a
@@ -21,7 +23,6 @@ use std::thread;
 use cdc::{Chunker, ChunkerConfig, ConfiguredChunker};
 use rusqlite::Connection;
 
-use crate::migration_progress::{ProgressError, ProgressRecord};
 use crate::scala_import::{self, ImportError, StagingTreeEntry};
 use crate::settle::HASH_WIDTH;
 
@@ -34,11 +35,14 @@ const OLD_ROOT_ID: i64 = 0;
 /// memory at once, the same reasoning as `crate::settle`'s own read window (a different constant
 /// since the two are otherwise unrelated).
 const READ_WINDOW: usize = 4 * 1024 * 1024;
+/// A target's batch transaction is committed once it has run this many write operations - large
+/// enough that commits stop mattering for speed, small enough that a failed run loses little and
+/// the write-ahead log stays small.
+const BATCH_OPS: u64 = 5000;
 
 #[derive(Debug)]
 pub enum MigrateContentError {
     Staging(ImportError),
-    Progress(ProgressError),
     Db(db::Error),
     Read(io::Error),
     /// The old data store had missing or short bytes for this old `dataId` - a real content
@@ -51,7 +55,6 @@ impl fmt::Display for MigrateContentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MigrateContentError::Staging(err) => write!(f, "{err}"),
-            MigrateContentError::Progress(err) => write!(f, "{err}"),
             MigrateContentError::Db(err) => write!(f, "{err}"),
             MigrateContentError::Read(err) => write!(f, "{err}"),
             MigrateContentError::IncompleteOldData(data_id) => write!(
@@ -71,24 +74,15 @@ impl From<ImportError> for MigrateContentError {
     }
 }
 
-impl From<ProgressError> for MigrateContentError {
-    fn from(err: ProgressError) -> Self {
-        MigrateContentError::Progress(err)
-    }
-}
-
 impl From<db::Error> for MigrateContentError {
     fn from(err: db::Error) -> Self {
         MigrateContentError::Db(err)
     }
 }
 
-/// One destination this migration writes into: its own repository (adopted against the shared
-/// `data/` - see `crate::migrate_scala_repo`) and its own progress record.
-pub struct Target<'a> {
-    pub repo: &'a db::Repository,
-    pub progress: &'a ProgressRecord,
-}
+/// One destination this migration writes into: its own repository, adopted against the shared
+/// `data/` (see `crate::migrate_scala_repo`), with its migration progress tables prepared.
+pub type Target<'a> = &'a db::Repository;
 
 /// Runs `work` for every item on its own scoped thread and returns the results in item order. With
 /// a single item it runs inline instead, so a one-target migration pays no thread overhead. Every
@@ -151,11 +145,47 @@ pub struct MigrationStats {
     pub contents_migrated: u64,
 }
 
-/// Migrates the whole staging tree into every one of `targets`.
+/// Migrates the whole staging tree into every one of `targets`, each of which must already have its
+/// migration progress tables prepared (`db::Repository::migration_prepare`).
+///
+/// Every target runs inside one batch transaction at a time (`db::Repository::migration_begin_batch`),
+/// committed whenever it has grown past [`BATCH_OPS`] and once more at the end - always at a point
+/// where every entry and content written so far has its progress record in the same batch. If the
+/// migration fails, every target rolls back to its last commit, so what is on disk is always such a
+/// consistent state and the next run resumes from it.
 pub fn migrate(
     staging: &Connection,
     old_store: &store::ByteStore,
     targets: &[Target],
+) -> Result<MigrationStats, MigrateContentError> {
+    migrate_in_batches(staging, old_store, targets, BATCH_OPS)
+}
+
+/// [`migrate`] with the batch size chosen by the caller - tests use a tiny one to get many commits
+/// out of a small fixture.
+fn migrate_in_batches(
+    staging: &Connection,
+    old_store: &store::ByteStore,
+    targets: &[Target],
+    batch_ops: u64,
+) -> Result<MigrationStats, MigrateContentError> {
+    let begun = parallel_map(targets, |_, repo| repo.migration_begin_batch());
+    if let Some(err) = begun.into_iter().find_map(Result::err) {
+        roll_back_all(targets);
+        return Err(err.into());
+    }
+    let result = walk_and_commit(staging, old_store, targets, batch_ops);
+    if result.is_err() {
+        roll_back_all(targets);
+    }
+    result
+}
+
+fn walk_and_commit(
+    staging: &Connection,
+    old_store: &store::ByteStore,
+    targets: &[Target],
+    batch_ops: u64,
 ) -> Result<MigrationStats, MigrateContentError> {
     let mut stats = MigrationStats::default();
     let new_root_ids = vec![0i64; targets.len()];
@@ -165,9 +195,31 @@ pub fn migrate(
         targets,
         OLD_ROOT_ID,
         &new_root_ids,
+        batch_ops,
         &mut stats,
     )?;
+    for result in parallel_map(targets, |_, repo| repo.migration_commit_batch()) {
+        result?;
+    }
     Ok(stats)
+}
+
+/// Best effort: a target whose batch is not open (already committed, or never begun) just reports
+/// an error here, which there is nothing useful to do about.
+fn roll_back_all(targets: &[Target]) {
+    for result in parallel_map(targets, |_, repo| repo.migration_rollback_batch()) {
+        let _ = result;
+    }
+}
+
+/// Ends a target's current batch and starts the next one once it has grown past `batch_ops`.
+/// Only called at points where everything written so far is consistent with its progress records.
+fn commit_if_due(repo: &db::Repository, batch_ops: u64) -> Result<(), db::Error> {
+    if repo.migration_batch_ops()? >= batch_ops {
+        repo.migration_commit_batch()?;
+        repo.migration_begin_batch()?;
+    }
+    Ok(())
 }
 
 /// Migrates every child of `old_parent_id`, recursing into each directory. `new_parent_ids` gives
@@ -180,6 +232,7 @@ fn walk_children(
     targets: &[Target],
     old_parent_id: i64,
     new_parent_ids: &[i64],
+    batch_ops: u64,
     stats: &mut MigrationStats,
 ) -> Result<(), MigrateContentError> {
     for child in scala_import::staging_children(staging, old_parent_id)? {
@@ -188,7 +241,15 @@ fn walk_children(
             // itself.
             continue;
         }
-        migrate_entry(staging, old_store, targets, &child, new_parent_ids, stats)?;
+        migrate_entry(
+            staging,
+            old_store,
+            targets,
+            &child,
+            new_parent_ids,
+            batch_ops,
+            stats,
+        )?;
     }
     Ok(())
 }
@@ -201,11 +262,12 @@ fn migrate_entry(
     targets: &[Target],
     child: &StagingTreeEntry,
     new_parent_ids: &[i64],
+    batch_ops: u64,
     stats: &mut MigrationStats,
 ) -> Result<(), MigrateContentError> {
     let content_ids: Vec<Option<i64>> = match child.data_id {
         None => vec![None; targets.len()],
-        Some(data_id) => resolve_content(staging, old_store, targets, data_id, stats)?
+        Some(data_id) => resolve_content(staging, old_store, targets, data_id, batch_ops, stats)?
             .into_iter()
             .map(Some)
             .collect(),
@@ -214,17 +276,18 @@ fn migrate_entry(
     let results = parallel_map(
         targets,
         |i, target| -> Result<(i64, bool), MigrateContentError> {
-            match target.progress.migrated_id(child.id)? {
+            match target.migration_migrated_id(child.id)? {
                 Some(id) => Ok((id, false)),
                 None => {
-                    let id = target.repo.insert_migrated_entry(
+                    let id = target.insert_migrated_entry(
                         new_parent_ids[i],
                         &child.name,
                         child.time,
                         child.deleted_at,
                         content_ids[i],
                     )?;
-                    target.progress.record_migrated(child.id, id)?;
+                    target.migration_record_migrated(child.id, id)?;
+                    commit_if_due(target, batch_ops)?;
                     Ok((id, true))
                 }
             }
@@ -240,7 +303,9 @@ fn migrate_entry(
     }
 
     if child.data_id.is_none() {
-        walk_children(staging, old_store, targets, child.id, &new_ids, stats)?;
+        walk_children(
+            staging, old_store, targets, child.id, &new_ids, batch_ops, stats,
+        )?;
     }
     Ok(())
 }
@@ -254,12 +319,13 @@ fn resolve_content(
     old_store: &store::ByteStore,
     targets: &[Target],
     data_id: i64,
+    batch_ops: u64,
     stats: &mut MigrationStats,
 ) -> Result<Vec<i64>, MigrateContentError> {
     let mut content_ids: Vec<Option<i64>> = Vec::with_capacity(targets.len());
     let mut pending = Vec::new();
     for (i, target) in targets.iter().enumerate() {
-        match target.progress.cached_content(data_id)? {
+        match target.migration_cached_content(data_id)? {
             Some(id) => content_ids.push(Some(id)),
             None => {
                 content_ids.push(None);
@@ -277,8 +343,8 @@ fn resolve_content(
 
     if data_id == -1 {
         for &i in &pending {
-            let content_id = empty_content_id(targets[i].repo)?;
-            targets[i].progress.record_content(data_id, content_id)?;
+            let content_id = empty_content_id(targets[i])?;
+            targets[i].migration_record_content(data_id, content_id)?;
             content_ids[i] = Some(content_id);
         }
         return Ok(content_ids
@@ -292,7 +358,7 @@ fn resolve_content(
 
     let mut settlers: Vec<(usize, MigrationSettler)> = pending
         .iter()
-        .map(|&i| (i, MigrationSettler::new(targets[i].repo, &parts)))
+        .map(|&i| (i, MigrationSettler::new(targets[i], &parts)))
         .collect();
 
     let mut read_buf = vec![0u8; READ_WINDOW];
@@ -307,7 +373,17 @@ fn resolve_content(
                 return Err(MigrateContentError::IncompleteOldData(data_id));
             }
             let window = &read_buf[..n];
-            for result in parallel_map_mut(&mut settlers, |_, (_, settler)| settler.feed(window)) {
+            let fed = parallel_map_mut(
+                &mut settlers,
+                |_, (_, settler)| -> Result<(), MigrateContentError> {
+                    settler.feed(window)?;
+                    // Only chunks are pending here, and re-registering a chunk after a resume finds it
+                    // again by hash - so committing in the middle of a long file is safe.
+                    commit_if_due(settler.repo, batch_ops)?;
+                    Ok(())
+                },
+            );
+            for result in fed {
                 result?;
             }
             pos += n as u64;
@@ -321,7 +397,8 @@ fn resolve_content(
         &mut settlers,
         |_, (i, settler)| -> Result<i64, MigrateContentError> {
             let content_id = settler.finish(total_len)?;
-            targets[*i].progress.record_content(data_id, content_id)?;
+            targets[*i].migration_record_content(data_id, content_id)?;
+            commit_if_due(targets[*i], batch_ops)?;
             Ok(content_id)
         },
     );
@@ -542,11 +619,9 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
             db::RepositorySettings::new(bits, 1_700_000_000_000),
         )
         .unwrap();
-        db::open_repository(&repo_root).unwrap()
-    }
-
-    fn new_progress(dir: &tempfile::TempDir, name: &str) -> ProgressRecord {
-        ProgressRecord::open_or_create(&dir.path().join(name)).unwrap()
+        let repo = db::open_repository(&repo_root).unwrap();
+        repo.migration_prepare().unwrap();
+        repo
     }
 
     #[test]
@@ -554,11 +629,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let dir = tempfile::tempdir().unwrap();
         let (staging, old_store) = build_source(&dir);
         let repo = new_repo(&dir, "dest", 12);
-        let progress = new_progress(&dir, "progress.db");
-        let targets = [Target {
-            repo: &repo,
-            progress: &progress,
-        }];
+        let targets = [&repo];
 
         let stats = migrate(&staging, &old_store, &targets).unwrap();
         assert_eq!(
@@ -601,16 +672,104 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         assert_eq!(gone.entry.content_id, file_entry.content_id);
     }
 
+    /// The regression this batch design exists for: a migration that fails partway (standing in for
+    /// a kill or a power loss - what is on disk afterwards is whatever was last committed) must leave
+    /// every migrated entry and its progress record together, or neither - and resuming must then
+    /// finish the job without duplicating or failing on anything already there.
+    #[test]
+    fn a_failed_migration_leaves_entries_and_progress_records_consistent_and_resumes_cleanly() {
+        // Batch sizes from "commit after every entry" to "commit rarely", so both a commit landing
+        // right between an entry's two writes (if that were possible) and a lost uncommitted tail get
+        // exercised.
+        for batch_ops in [1u64, 2, 3, 5] {
+            let dir = tempfile::tempdir().unwrap();
+            let old_store = store::ByteStore::new(dir.path().join("old-data"), false);
+            // Six readable files (dataIds 11-16) and a seventh (dataId 17) whose bytes do not exist
+            // yet, so the run fails when it reaches it, after several batches were committed.
+            let mut tree = String::from("(0, 0, '', 1000, 0, NULL), (1, 0, 'd', 1001, 0, NULL)");
+            let mut data = String::new();
+            for k in 1..=7i64 {
+                tree.push_str(&format!(
+                    ", ({}, 1, 'f{k}', {}, 0, {})",
+                    k + 1,
+                    1001 + k,
+                    10 + k
+                ));
+                data.push_str(&format!(
+                    "{}({}, 1, 10, {}, {}, X'00')",
+                    if k == 1 { "" } else { ", " },
+                    10 + k,
+                    k * 100,
+                    k * 100 + 10
+                ));
+                if k < 7 {
+                    old_store
+                        .write(k as u64 * 100, format!("content-{}", 10 + k).as_bytes())
+                        .unwrap();
+                }
+            }
+            let script = format!(
+                "INSERT INTO \"PUBLIC\".\"TREEENTRIES\" VALUES {tree};\n\
+                 INSERT INTO \"PUBLIC\".\"DATAENTRIES\" VALUES {data};"
+            );
+            let staging_path = dir.path().join("staging.db");
+            scala_import::import(&script, &staging_path).unwrap();
+            let staging = scala_import::open(&staging_path).unwrap();
+
+            let repo = new_repo(&dir, "dest", 12);
+            let targets = [&repo];
+            let err = migrate_in_batches(&staging, &old_store, &targets, batch_ops)
+                .expect_err("the seventh file's bytes are missing");
+            assert!(
+                matches!(err, MigrateContentError::IncompleteOldData(17)),
+                "batch size {batch_ops}: {err}"
+            );
+
+            let path_of = |old_id: i64| match old_id {
+                1 => "/d".to_string(),
+                n => format!("/d/f{}", n - 1),
+            };
+            let mut already_migrated = 0;
+            for old_id in 1..=8 {
+                let record = repo.migration_migrated_id(old_id).unwrap();
+                let entry = repo.resolve_path(&path_of(old_id)).unwrap().map(|e| e.id);
+                assert_eq!(
+                    record, entry,
+                    "batch size {batch_ops}, old entry {old_id}: record and entry must agree"
+                );
+                already_migrated += i64::from(record.is_some());
+            }
+            assert!(
+                (2..8).contains(&already_migrated),
+                "batch size {batch_ops}: expected a partly migrated state, got {already_migrated}"
+            );
+
+            old_store.write(700, b"content-17").unwrap();
+            let stats = migrate_in_batches(&staging, &old_store, &targets, batch_ops)
+                .unwrap_or_else(|err| panic!("batch size {batch_ops}: resume failed: {err}"));
+            assert_eq!(
+                stats.tree_entries_created,
+                8 - already_migrated as u64,
+                "batch size {batch_ops}: resume must create exactly what was missing"
+            );
+            let dir_id = repo.resolve_path("/d").unwrap().unwrap().id;
+            assert_eq!(repo.list_children(dir_id).unwrap().len(), 7);
+            for k in 1..=7 {
+                assert_eq!(
+                    read_back(&repo, &old_store, &format!("/d/f{k}")),
+                    format!("content-{}", 10 + k).into_bytes(),
+                    "batch size {batch_ops}, file f{k}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn migrate_run_twice_creates_nothing_new_the_second_time() {
         let dir = tempfile::tempdir().unwrap();
         let (staging, old_store) = build_source(&dir);
         let repo = new_repo(&dir, "dest", 12);
-        let progress = new_progress(&dir, "progress.db");
-        let targets = [Target {
-            repo: &repo,
-            progress: &progress,
-        }];
+        let targets = [&repo];
 
         let first = migrate(&staging, &old_store, &targets).unwrap();
         assert!(first.tree_entries_created > 0);
@@ -625,18 +784,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let (staging, old_store) = build_source(&dir);
         let repo_a = new_repo(&dir, "dest-a", 12);
         let repo_b = new_repo(&dir, "dest-b", 16);
-        let progress_a = new_progress(&dir, "progress-a.db");
-        let progress_b = new_progress(&dir, "progress-b.db");
-        let targets = [
-            Target {
-                repo: &repo_a,
-                progress: &progress_a,
-            },
-            Target {
-                repo: &repo_b,
-                progress: &progress_b,
-            },
-        ];
+        let targets = [&repo_a, &repo_b];
 
         let stats = migrate(&staging, &old_store, &targets).unwrap();
         // Still exactly one read of dataId 100 (plus one for the -1 empty-file case), even though
@@ -708,16 +856,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
             new_repo(&dir, "dest-16", 16),
             new_repo(&dir, "dest-18", 18),
         ];
-        let progress = [
-            new_progress(&dir, "progress-14.db"),
-            new_progress(&dir, "progress-16.db"),
-            new_progress(&dir, "progress-18.db"),
-        ];
-        let targets: Vec<Target> = repos
-            .iter()
-            .zip(&progress)
-            .map(|(repo, progress)| Target { repo, progress })
-            .collect();
+        let targets: Vec<Target> = repos.iter().collect();
 
         let stats = migrate(&staging, &old_store, &targets).unwrap();
         assert_eq!(stats.contents_migrated, 1);

@@ -5,8 +5,8 @@
 //! destination metadata database per requested `--cdc-target-size-bits` value against the existing
 //! repository's own, unchanged `data/` directory (DESIGN-MIGRATION-004), then migrates the actual
 //! tree and content into every destination via `crate::migrate_content`. Once every destination has
-//! been fully migrated, the staging import and each destination's own progress record
-//! (DESIGN-MIGRATION-005) are removed - neither is needed again after that point.
+//! been fully migrated, the staging import is removed, and so are the progress tables each
+//! destination kept while it was being migrated (DESIGN-MIGRATION-005) - neither is needed again.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::create_repo;
 use crate::migrate_content;
-use crate::migration_progress;
 use crate::scala_import;
 
 fn try_run(
@@ -114,50 +113,51 @@ fn try_run(
     // REQ-MIGRATION-005: only ever read from the shared data/, never written to - the read-only
     // flag below enforces that even against a coding mistake, not just by omission.
     let old_store = store::ByteStore::new(db::data_dir(repository), true);
-    let mut progress: Vec<(PathBuf, migration_progress::ProgressRecord)> = Vec::new();
-    for (meta_dir, _) in &destinations {
-        let progress_path = meta_dir.with_extension("progress");
-        let progress_conn = migration_progress::ProgressRecord::open_or_create(&progress_path)
-            .map_err(|err| {
-                format!(
-                    "error: failed to open progress record '{}': {err}",
-                    progress_path.display()
-                )
-            })?;
-        progress.push((progress_path, progress_conn));
-    }
 
-    let migration_stats = {
-        let targets: Vec<migrate_content::Target> = destinations
-            .iter()
-            .zip(progress.iter())
-            .map(|((_, repo), (_, progress_conn))| migrate_content::Target {
-                repo,
-                progress: progress_conn,
-            })
-            .collect();
-        migrate_content::migrate(&conn, &old_store, &targets)
-            .map_err(|err| format!("error: {err}"))?
-    };
-    message.push_str(&format!(
-        "\nMigrated content: {} new tree entries, {} distinct old contents re-chunked.",
-        migration_stats.tree_entries_created, migration_stats.contents_migrated
-    ));
-
-    // migrate_content::migrate only ever returns Ok once every destination's whole tree has been
-    // walked successfully (it never returns early for a subset of targets) - so reaching here means
-    // every destination is now fully migrated, and both the staging import and each destination's
-    // own progress record can be removed (DESIGN-MIGRATION-001/005). Best-effort: a cleanup failure
-    // does not undo an otherwise-successful migration, only leaves a harmless stale file behind.
-    for (progress_path, progress_conn) in progress {
-        drop(progress_conn);
-        if let Err(err) = migration_progress::remove(&progress_path) {
+    // A destination an earlier run already migrated completely (its progress tables are gone, its
+    // tree is not empty) is left alone; every other one gets its progress tables and is migrated.
+    let mut pending: Vec<&db::Repository> = Vec::new();
+    for (meta_dir, repo) in &destinations {
+        let needs_migration = repo.migration_prepare().map_err(|err| {
+            format!(
+                "error: failed to prepare '{}' for migration: {err}",
+                meta_dir.display()
+            )
+        })?;
+        if needs_migration {
+            pending.push(repo);
+        } else {
             message.push_str(&format!(
-                "\nWarning: failed to remove progress record '{}': {err}",
-                progress_path.display()
+                "\n'{}' was already fully migrated by an earlier run - left as it is.",
+                meta_dir.display()
             ));
         }
     }
+
+    if !pending.is_empty() {
+        let migration_stats = migrate_content::migrate(&conn, &old_store, &pending)
+            .map_err(|err| format!("error: {err}"))?;
+        message.push_str(&format!(
+            "\nMigrated content: {} new tree entries, {} distinct old contents re-chunked.",
+            migration_stats.tree_entries_created, migration_stats.contents_migrated
+        ));
+
+        // migrate_content::migrate only ever returns Ok once every pending destination's whole
+        // tree has been walked and committed - so reaching here means each is fully migrated, and
+        // its progress tables can go (DESIGN-MIGRATION-005). Best-effort: a failure here does not
+        // undo an otherwise-successful migration, and a later run just finds nothing left to do
+        // and drops them then.
+        for repo in &pending {
+            if let Err(err) = repo.migration_finish() {
+                message.push_str(&format!(
+                    "\nWarning: failed to drop a destination's migration progress tables: {err}"
+                ));
+            }
+        }
+    }
+
+    // Every destination is fully migrated now, so the staging import is not needed again
+    // (DESIGN-MIGRATION-001) - removed best-effort for the same reason.
     drop(conn);
     if let Err(err) = std::fs::remove_file(staging) {
         message.push_str(&format!(

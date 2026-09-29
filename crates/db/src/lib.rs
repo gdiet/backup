@@ -13,6 +13,7 @@ mod allocation;
 mod connection;
 mod content;
 mod lock;
+mod migration;
 mod migrations;
 mod name_cache;
 mod settings;
@@ -310,6 +311,9 @@ impl From<rusqlite_migration::Error> for Error {
 struct Locked {
     conn: Connection,
     name_cache: name_cache::NameCache,
+    /// How many write operations have run inside the currently open migration batch (see
+    /// [`Repository::migration_begin_batch`]) - temporary, migration tool only.
+    batch_ops: u64,
 }
 
 /// A handle to an existing, open repository.
@@ -352,7 +356,9 @@ impl Repository {
         f: impl FnOnce(&Connection, &mut name_cache::NameCache) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
-        let Locked { conn, name_cache } = &mut *locked;
+        let Locked {
+            conn, name_cache, ..
+        } = &mut *locked;
         f(conn, name_cache)
     }
 
@@ -373,10 +379,23 @@ impl Repository {
             return Err(Error::ReadOnlyRepository);
         }
         let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
-        let Locked { conn, name_cache } = &mut *locked;
-        let tx = conn.transaction()?;
-        let result = f(&tx, name_cache)?;
-        tx.commit()?;
+        let Locked {
+            conn,
+            name_cache,
+            batch_ops,
+        } = &mut *locked;
+        if conn.is_autocommit() {
+            let tx = conn.transaction()?;
+            let result = f(&tx, name_cache)?;
+            tx.commit()?;
+            return Ok(result);
+        }
+        // Only ever true inside a migration batch ([`Self::migration_begin_batch`]): an inner
+        // savepoint keeps this one operation all-or-nothing without ending the enclosing batch.
+        let savepoint = conn.savepoint()?;
+        let result = f(&savepoint, name_cache)?;
+        savepoint.commit()?;
+        *batch_ops += 1;
         Ok(result)
     }
 
@@ -636,6 +655,85 @@ impl Repository {
         self.with_transaction(|conn, _cache| content::insert_chunk_at(conn, length, hash, extents))
     }
 
+    /// Temporary, migration tool only (DESIGN-MIGRATION-005 in `docs/design/scala-migration-tool.md`;
+    /// removed together with it, like every other `migration_*` method here). Makes the migration's
+    /// progress tables exist in this database. Returns `false`, creating nothing, when this
+    /// database has already been fully migrated - see `migration::prepare`.
+    pub fn migration_prepare(&self) -> Result<bool, Error> {
+        self.with_transaction(|conn, _cache| migration::prepare(conn))
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Opens one transaction that stays open across
+    /// many following calls: every mutating method runs in a savepoint inside it (so a failing call
+    /// still leaves nothing half-done), and nothing becomes durable until
+    /// [`Self::migration_commit_batch`]. A migrated entry and its own progress record written in
+    /// the same batch therefore land together or not at all, whatever happens to the process.
+    pub fn migration_begin_batch(&self) -> Result<(), Error> {
+        if self.read_only {
+            return Err(Error::ReadOnlyRepository);
+        }
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        locked.conn.execute_batch("BEGIN")?;
+        locked.batch_ops = 0;
+        Ok(())
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Commits the batch [`Self::migration_begin_batch`]
+    /// opened.
+    pub fn migration_commit_batch(&self) -> Result<(), Error> {
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        locked.conn.execute_batch("COMMIT")?;
+        locked.batch_ops = 0;
+        Ok(())
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Abandons the batch [`Self::migration_begin_batch`]
+    /// opened, undoing everything since the last commit - what the caller does when a migration
+    /// fails partway, since the batch may end between an entry and its own progress record.
+    pub fn migration_rollback_batch(&self) -> Result<(), Error> {
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        locked.conn.execute_batch("ROLLBACK")?;
+        locked.batch_ops = 0;
+        Ok(())
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. How many mutating calls the currently open batch
+    /// has run so far - lets the caller bound a batch's size.
+    pub fn migration_batch_ops(&self) -> Result<u64, Error> {
+        Ok(self.locked.lock().map_err(|_| Error::Poisoned)?.batch_ops)
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. The `content_id` already recorded for
+    /// `old_data_id`, if any.
+    pub fn migration_cached_content(&self, old_data_id: i64) -> Result<Option<i64>, Error> {
+        self.with_connection(|conn, _cache| migration::cached_content(conn, old_data_id))
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Records `old_data_id`'s resolved `content_id`.
+    pub fn migration_record_content(&self, old_data_id: i64, content_id: i64) -> Result<(), Error> {
+        self.with_transaction(|conn, _cache| {
+            migration::record_content(conn, old_data_id, content_id)
+        })
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. The `new_id` already recorded for
+    /// `old_tree_id`, if any.
+    pub fn migration_migrated_id(&self, old_tree_id: i64) -> Result<Option<i64>, Error> {
+        self.with_connection(|conn, _cache| migration::migrated_id(conn, old_tree_id))
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Records `old_tree_id`'s recreated `new_id`.
+    pub fn migration_record_migrated(&self, old_tree_id: i64, new_id: i64) -> Result<(), Error> {
+        self.with_transaction(|conn, _cache| migration::record_migrated(conn, old_tree_id, new_id))
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Drops the progress tables once the migration has
+    /// finished, and gives their space back. No batch may be open.
+    pub fn migration_finish(&self) -> Result<(), Error> {
+        self.with_transaction(|conn, _cache| migration::finish(conn))?;
+        self.compact().map(|_| ())
+    }
+
     /// Finds or creates the whole-content `(length, hash)` row (DESIGN-METADATA-007's
     /// hash-of-chunk-hashes), linking `chunk_ids` (in order, from [`Self::find_chunk`]/
     /// [`Self::reserve_and_insert_chunk`]) if it did not already exist. Returns the content id.
@@ -867,6 +965,7 @@ pub fn open_repository_at(meta_dir: &Path) -> Result<Repository, Error> {
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            batch_ops: 0,
         }),
         read_only: false,
     })
@@ -903,6 +1002,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            batch_ops: 0,
         }),
         read_only: false,
     })
@@ -1012,6 +1112,7 @@ fn finish_read_only_open(repo_root: &Path, conn: Connection) -> Result<Repositor
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            batch_ops: 0,
         }),
         read_only: true,
     })

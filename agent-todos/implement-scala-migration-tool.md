@@ -84,9 +84,10 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
     an already-populated `repo_root` (tolerates non-empty, never touches `data/`) at a location
     other than the conventional `meta/` (needed once more than one target size is requested). Both
     functions are temporary by design - see DESIGN-MIGRATION-004's own removal note.
-2. **Done** (`crates/cli/src/migration_progress.rs`, DESIGN-MIGRATION-005): phase 2's durable
-   progress record - a small separate SQLite file per destination metadata database, holding
-   `content_cache(old_data_id, content_id)` and `migrated(old_tree_id, new_id)`.
+2. **Done** (`crates/db/src/migration.rs`, `Repository::migration_*`, DESIGN-MIGRATION-005): phase 2's
+   durable progress record - two tables inside each destination database (`migration_content_cache`,
+   `migration_migrated`), written in the same batch transaction as the entries they describe and
+   dropped when the migration has finished. Temporary, same removal plan as 1b.
 2b. **Done** (`crates/db/src/content.rs`'s `insert_chunk_at`, `Repository::register_existing_chunk`,
     DESIGN-MIGRATION-006): the `db`-API addition phase 2 needs to record a migrated chunk's
     `chunk_extents` at its own known, caller-supplied position instead of asking
@@ -101,15 +102,15 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
    2c above; for each distinct old `dataId`, reads the old bytes at most once and feeds them to every
    still-pending target's own chunker in lockstep (DESIGN-MIGRATION-003/REQ-MIGRATION-004), recording
    new chunks via 2b above (never writing bytes - REQ-MIGRATION-005) and consulting/updating the
-   progress record from step 2 throughout, so a resumed run only redoes whatever an interruption left
-   unfinished. `db::adopt_repository`/`open_repository_at`'s own naming-and-hint behavior
+   progress tables from step 2 throughout, in batch transactions, so a resumed run only redoes
+   whatever an interruption left unfinished - and always finds entry and record consistent. `db::adopt_repository`/`open_repository_at`'s own naming-and-hint behavior
    (DESIGN-MIGRATION-004) is unchanged from the previous increment. Once every destination has been
-   fully migrated in one call, the staging import and every destination's own progress record are
-   removed (DESIGN-MIGRATION-001) - best-effort, a cleanup failure does not undo an otherwise-
+   fully migrated in one call, the staging import is removed and every destination drops its
+   progress tables (DESIGN-MIGRATION-001) - best-effort, a cleanup failure does not undo an otherwise-
    successful migration. Covered by `crates/cli/src/migrate_content.rs`'s own tests (a full
-   tree/directory/soft-delete/empty-file/whole-file-dedup scenario, a resumability check whose own
-   regression-catching power was verified red/green per AGENTS.md's debugging discipline, and a
-   two-target fan-out check) plus `crates/cli/src/migrate_scala_repo.rs`'s own CLI-level tests
+   tree/directory/soft-delete/empty-file/whole-file-dedup scenario, a crash-consistency test that fails a migration partway at
+   several batch sizes, checks entry and progress record agree and resumes, verified red by moving
+   the commit point between the two writes; a re-run check; and a two-target fan-out check) plus `crates/cli/src/migrate_scala_repo.rs`'s own CLI-level tests
    (including a failed-phase-2-leaves-staging-in-place-for-reuse scenario).
 
 ## Remaining gaps

@@ -87,3 +87,34 @@ the same window would not fail but silently insert a duplicate history row. The 
 exists only re-runs a *completed* migration, which never exercises this. A power loss adds a second
 direction: with `synchronous=NORMAL` the destination can lose its last commits while the progress
 file (`FULL`) still claims them.
+
+## Done (2026-09-29, Windows/Claude Code Desktop session)
+
+Fixed both findings together with one design change (DESIGN-MIGRATION-005, now rewritten): the
+progress record moved out of its separate file into two tables inside each destination database,
+written in the same batch transaction as the entries they describe and dropped when the migration
+has finished. `db` gained temporary `Repository::migration_*` methods (`crates/db/src/migration.rs`):
+an open batch transaction across many calls (every mutating call runs in a savepoint inside it), the
+progress reads and writes, and a completion check that recognizes an already fully migrated
+destination. `crates/cli/src/migrate_content.rs` commits every 5000 operations and only at points
+where each entry has its record in the same batch; on failure every target rolls back to its last
+commit. The separate `crate::migration_progress` module is gone.
+
+Measured with the same method (release build, fresh copy of the real Scala test repository): one
+target at 18 bits 20.0 s -> 1.8 s, five targets (16-20 bits) 57.2 s -> 4.6 s (94.3 s at the very
+start of this series); physical sizes of all destinations identical to the earlier runs. The old
+per-window thread fan-out stays.
+
+Crash safety, verified two ways. `a_failed_migration_leaves_entries_and_progress_records_consistent_and_resumes_cleanly`
+fails a migration partway at batch sizes 1/2/3/5, checks that every entry and its record agree and
+that the resume creates exactly what was missing; verified red by moving the commit point between
+the entry and its record (the old bug's shape). On the real test repository the process was killed
+at ten points in time between 0.3 s and 3.0 s and resumed each time: all ten ended byte-identical in
+size to the uninterrupted run, with the soft-deleted entries intact - where the separate-file design
+had failed the resume in one of four earlier attempts.
+
+Real-scale estimate, rough: the test run is now dominated by work that scales with the data, and the
+source read no longer hides in the page cache at 2.23 TB, so it depends mostly on how fast the source
+disk reads. Scaling the five-target compute time (4.6 s for 252 MB) by the content ratio (~8870)
+gives roughly 11 hours, plus reading 2.23 TB at the disk's real speed (about 1.2 h at 500 MB/s, 6 h at
+100 MB/s) - so on the order of half a day instead of the earlier 5-day estimate.
