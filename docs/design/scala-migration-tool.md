@@ -3,9 +3,15 @@
 How the actual migration tool (REQ-MIGRATION-001/002/003/004 in
 [`../../requirements/functional/repository-migration.md`](../../requirements/functional/repository-migration.md),
 concrete path in [`../../migration/from-scala.md`](../../migration/from-scala.md)) reads the old
-system's own SQL export and turns it into one or more new repositories. Not yet implemented -
-written up as a starting point before coding begins, so the decisions already made do not need
-re-deriving in a later session.
+system's own SQL export and turns it into one or more new metadata databases against the existing
+repository's own, unchanged byte store. Not yet implemented - written up as a starting point before
+coding begins, so the decisions already made do not need re-deriving in a later session.
+
+There is exactly one repository throughout: the existing one, adopted in place. Its `data/`
+directory (REQ-MIGRATION-002) is read from, never duplicated, never written to, and never moved -
+migrating into more than one `--cdc-target-size-bits` value (DESIGN-MIGRATION-003) means more than
+one metadata database ends up next to that same, single `data/` directory, not more than one
+repository each with its own copy.
 
 ## DESIGN-MIGRATION-001: Two phases - a durable, built-once metadata import, then a resumable content migration
 Status: decided
@@ -20,9 +26,10 @@ wholesale. Splitting migration into two phases follows directly from that size g
 
 1. **Metadata import** (the export's tree/content bookkeeping, loaded into a working structure this
    migration queries against): built once per migration attempt, as an ordinary on-disk database
-   next to the destination repositories rather than an in-memory one - the disk space it costs is
-   trivial next to a multi-terabyte migration, and unlike an in-memory structure it does not compete
-   with phase 2's own chunk-buffer memory for RAM. Marked complete only once its own import
+   next to the migration's own destination metadata database(s) rather than an in-memory one - the
+   disk space it costs is trivial next to a multi-terabyte migration, and unlike an in-memory
+   structure it does not compete with phase 2's own chunk-buffer memory for RAM. Marked complete
+   only once its own import
    transaction has fully committed (see "Detecting a reusable import" below), so a run interrupted
    partway through this phase never leaves behind something that merely looks complete. On any run -
    the first attempt or a retry after an interruption anywhere in phase 1 or phase 2 - an existing,
@@ -103,25 +110,57 @@ narrow departure from "unmodified" this decision needs - the alternative (droppi
 delegation entirely over one literal form) would have discarded this decision's whole point to
 avoid a single, well-contained exception.
 
-## DESIGN-MIGRATION-003: One read of the source, several `--cdc-target-size-bits` values, one output repository per value
+## DESIGN-MIGRATION-003: One read of the source, several `--cdc-target-size-bits` values, one metadata database per value
 Status: decided
 
 REQ-MIGRATION-004: migrating the same source content at more than one candidate target chunk size
 does not need to read that content once per value compared. Reading a given piece of old content
 once and feeding it to as many independently configured chunkers as target sizes were requested -
-each producing its own chunk boundaries, hashes, and output repository - reads the source exactly
-as many times as REQ-MIGRATION-002 already implies for a single target size, regardless of how many
-values are actually being compared.
+each producing its own chunk boundaries, hashes, and destination metadata database - reads the
+source exactly as many times as REQ-MIGRATION-002 already implies for a single target size,
+regardless of how many values are actually being compared.
 
 This composes with DESIGN-MIGRATION-001's phase split unchanged: the metadata import has no
 target-size dependence at all (chunk boundaries are entirely a phase-2 concept), so it runs exactly
-once regardless of how many target sizes phase 2 then migrates into. Phase 2 opens one destination
-repository per requested value and, for each distinct old content reference it reads, updates every
-open destination's own progress tracking independently - one value's migration falling behind, or
-needing to resume, never blocks or restarts the others.
+once regardless of how many target sizes phase 2 then migrates into. Phase 2 creates one destination
+metadata database per requested value (DESIGN-MIGRATION-004) and, for each distinct old content
+reference it reads, updates every open destination's own progress tracking independently - one
+value's migration falling behind, or needing to resume, never blocks or restarts the others.
+
+## DESIGN-MIGRATION-004: Several metadata databases against one shared `data/`; the tool and its one `db`-API addition are temporary
+Status: implemented (crates/db/src/lib.rs's `adopt_repository`/`open_repository_at`)
+
+Adopting an existing repository in place (REQ-MIGRATION-002) means its `data/` directory is never
+duplicated - so migrating into several `--cdc-target-size-bits` values at once (DESIGN-MIGRATION-003)
+needs several metadata databases sitting next to that one, shared `data/`, not several repositories
+each expecting to own a `data/` of their own. `db::init_repository`/`open_repository` do not support
+this at all: both tie the metadata database and `data/` to the same `repo_root`, and `init_repository`
+additionally refuses a non-empty `repo_root` - exactly what an already-populated Scala repository
+root always is.
+
+Two temporary functions add just enough to cover this: `db::adopt_repository(repo_root, meta_dir,
+settings)` (like `init_repository`, but tolerates a non-empty `repo_root`, never creates or modifies
+`data/` - it must already exist, an error otherwise, never silently created empty - and writes its
+fresh metadata database at the given `meta_dir` rather than always `repo_root`'s own conventional
+location) and `db::open_repository_at(meta_dir)` (the equivalent open, without `open_repository`'s
+own repo_root-relative convention). Naming the result once created is left to the caller: migrating
+into exactly one target size writes it at `repo_root`'s own conventional `meta/` location, so it is
+immediately usable by every other command with no extra step; migrating into more than one writes
+each at its own distinguishable, non-conventional location (e.g. `meta-18bit/`) instead, since only
+one of them could ever occupy the conventional name - the tool prints an explicit reminder that
+picking one and renaming it to `meta/` (or passing it directly) is the operator's own next step
+before any other command can use it.
+
+Both functions, and the migration tool itself, are intended to be removed again - not a permanent
+extension of `db`'s own repository-layout conventions, only a stopgap for the small number of
+releases expected to actually need Scala-repository migration support (the developer's own plan: the
+first one or two production releases that include it at all; an operator migrating after that grabs
+an older release, migrates there, then upgrades normally). Both functions' own doc comments say so
+directly, pointing back at this entry, so removing them later does not need rediscovering why they
+exist first.
 
 ## Open question
 
 The exact shape of phase 2's own durable progress record (DESIGN-MIGRATION-001) - a dedicated small
-table alongside each destination repository's own metadata, or something inferred from the
-destination's own tree state - is not yet decided.
+table alongside each destination metadata database, or something inferred from its own tree state -
+is not yet decided.

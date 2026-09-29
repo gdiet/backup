@@ -67,6 +67,10 @@ pub enum Error {
     /// [`open_repository`] was called against a `repo_root` with no `meta/` subdirectory - nothing
     /// ever created a repository there.
     NoRepositoryHere(PathBuf),
+    /// [`adopt_repository`] was called against a `repo_root` with no `data/` directory already
+    /// there - the wrong path was given, or this is not actually an existing repository's own
+    /// byte store to adopt.
+    NoDataDirectory(PathBuf),
     /// [`open_repository_read_only`] found the repository's schema behind the version this code
     /// expects - a read-only connection cannot run the pending migration itself (no write
     /// permission), unlike [`open_repository`], which always migrates automatically
@@ -164,6 +168,14 @@ impl std::fmt::Display for Error {
                 write!(
                     f,
                     "no repository at {} (no meta/ directory)",
+                    path.display()
+                )
+            }
+            Error::NoDataDirectory(path) => {
+                write!(
+                    f,
+                    "no data/ directory at {} - expected an existing repository's own byte store \
+                     to already be there",
                     path.display()
                 )
             }
@@ -742,6 +754,89 @@ fn init_repository_contents(repo_root: &Path, settings: RepositorySettings) -> R
     Ok(())
 }
 
+/// Temporary - exists only to support the Scala-repository migration tool
+/// (DESIGN-MIGRATION-004 in `docs/design/scala-migration-tool.md`); remove this function,
+/// [`open_repository_at`], and the tool itself together once that tool is no longer needed.
+///
+/// Adds a fresh metadata database at `meta_dir`, next to an *already-existing* `data/` directory
+/// at `repo_root` (a Scala repository's own byte store, reused unchanged per REQ-MIGRATION-002 in
+/// `requirements/functional/repository-migration.md`). Unlike [`init_repository`], `repo_root` is
+/// expected to already hold real content and is never required to be empty, and `data/` itself is
+/// never created - a repository this adopts always already has one; a missing one means the wrong
+/// path was given, not something to paper over by creating an empty placeholder.
+///
+/// `meta_dir` need not be `repo_root`'s own conventional [`meta_dir`] location - migrating into
+/// more than one `--cdc-target-size-bits` value from the same `data/` needs more than one metadata
+/// database alongside it, at most one of which can occupy the conventional name at a time.
+pub fn adopt_repository(
+    repo_root: &Path,
+    meta_dir: &Path,
+    settings: RepositorySettings,
+) -> Result<(), Error> {
+    let existing_data_dir = data_dir(repo_root);
+    if !existing_data_dir.is_dir() {
+        return Err(Error::NoDataDirectory(existing_data_dir));
+    }
+    if meta_dir.exists() {
+        return Err(Error::RepositoryAlreadyExists(meta_dir.to_path_buf()));
+    }
+
+    // Staged next to meta_dir itself and only renamed into place once fully committed - same
+    // reasoning as init_repository_contents's own staging directory.
+    let staging_meta = meta_dir.with_extension("tmp");
+    if let Err(err) = adopt_repository_contents(&staging_meta, meta_dir, settings) {
+        let _ = fs::remove_dir_all(&staging_meta);
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn adopt_repository_contents(
+    staging_meta: &Path,
+    meta_dir: &Path,
+    settings: RepositorySettings,
+) -> Result<(), Error> {
+    fs::create_dir(staging_meta)?;
+    let mut conn = Connection::open(staging_meta.join(META_DB_FILE))?;
+    connection::configure_write_connection(&conn)?;
+    migrations::migrations().to_latest(&mut conn)?;
+    conn.execute(
+        "INSERT INTO repository_settings (id, cdc_target_size_bits, creation_time) VALUES (1, ?1, ?2)",
+        (settings.cdc_target_size_bits(), settings.creation_time_millis()),
+    )?;
+    drop(conn);
+
+    fs::rename(staging_meta, meta_dir)?;
+    Ok(())
+}
+
+/// Temporary, see [`adopt_repository`]. Opens a repository whose metadata database lives at an
+/// explicitly given `meta_dir`, rather than [`open_repository`]'s own repo_root-relative
+/// convention - the same reason [`adopt_repository`] needs `meta_dir` given explicitly. Otherwise
+/// identical: applies any pending schema migration automatically (DESIGN-METADATA-005), and the
+/// result is an ordinary read-write [`Repository`], indistinguishable from one [`open_repository`]
+/// itself returned.
+pub fn open_repository_at(meta_dir: &Path) -> Result<Repository, Error> {
+    if !meta_dir.is_dir() {
+        return Err(Error::NoRepositoryHere(meta_dir.to_path_buf()));
+    }
+
+    let db_path = meta_dir.join(META_DB_FILE);
+    let mut conn = Connection::open(&db_path)?;
+    connection::configure_write_connection(&conn)?;
+    migrations::migrations().to_latest(&mut conn)?;
+
+    let settings = read_settings(&conn)?;
+    Ok(Repository {
+        settings,
+        locked: Mutex::new(Locked {
+            conn,
+            name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+        }),
+        read_only: false,
+    })
+}
+
 /// Cheaply checks that `repo_root` looks like a repository - i.e. that [`open_repository`] against
 /// it would not immediately fail with `Error::NoRepositoryHere` - without opening a database
 /// connection or running migrations. For a caller that only needs this existence guard, not the
@@ -1123,6 +1218,109 @@ mod tests {
 
         let err = init_repository(&repo_root, settings()).unwrap_err();
         assert!(matches!(err, Error::RepositoryAlreadyExists(_)));
+    }
+
+    #[test]
+    fn adopt_repository_refuses_a_repo_root_with_no_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(&repo_root).unwrap();
+
+        let err = adopt_repository(&repo_root, &repo_root.join(META_DIR), settings()).unwrap_err();
+        assert!(matches!(err, Error::NoDataDirectory(_)));
+    }
+
+    #[test]
+    fn adopt_repository_never_touches_an_existing_non_empty_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(DATA_DIR)).unwrap();
+        fs::write(repo_root.join(DATA_DIR).join("0000000000"), b"old bytes").unwrap();
+        // A repo_root full of pre-existing content otherwise, unlike init_repository's own
+        // required-empty repo_root - adopt_repository must not refuse this.
+        fs::create_dir_all(repo_root.join("fsdb")).unwrap();
+
+        adopt_repository(&repo_root, &repo_root.join(META_DIR), settings())
+            .expect("a non-empty repo_root with a real data/ directory must be accepted");
+
+        assert_eq!(
+            fs::read(repo_root.join(DATA_DIR).join("0000000000")).unwrap(),
+            b"old bytes",
+            "the pre-existing data/ content must survive completely unchanged"
+        );
+        assert!(repo_root.join(META_DIR).join(META_DB_FILE).is_file());
+    }
+
+    #[test]
+    fn adopt_repository_accepts_a_meta_dir_other_than_the_conventional_location() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(DATA_DIR)).unwrap();
+        let custom_meta_dir = repo_root.join("meta-18bit");
+
+        adopt_repository(&repo_root, &custom_meta_dir, settings())
+            .expect("a non-conventional meta_dir must be accepted");
+
+        assert!(custom_meta_dir.join(META_DB_FILE).is_file());
+        assert!(
+            !repo_root.join(META_DIR).exists(),
+            "the conventional meta/ location must not be touched at all"
+        );
+    }
+
+    #[test]
+    fn adopt_repository_refuses_an_already_existing_meta_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(DATA_DIR)).unwrap();
+        adopt_repository(&repo_root, &repo_root.join(META_DIR), settings())
+            .expect("first adopt must succeed");
+
+        let err = adopt_repository(&repo_root, &repo_root.join(META_DIR), settings()).unwrap_err();
+        assert!(matches!(err, Error::RepositoryAlreadyExists(_)));
+    }
+
+    #[test]
+    fn adopt_repository_cleans_up_its_staging_directory_after_a_failed_attempt() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(DATA_DIR)).unwrap();
+        let meta_dir = repo_root.join(META_DIR);
+
+        // Same out-of-range-settings trick as init_repository's own equivalent test.
+        let err = adopt_repository(
+            &repo_root,
+            &meta_dir,
+            RepositorySettings::new(3, 1_700_000_000_000),
+        )
+        .expect_err("an out-of-range cdc_target_size_bits must fail via the CHECK constraint");
+        assert!(matches!(err, Error::Sqlite(_)), "got: {err:?}");
+        assert!(
+            !meta_dir.with_extension("tmp").exists(),
+            "a failed adopt_repository must clean up its own staging directory"
+        );
+        assert!(!meta_dir.exists());
+    }
+
+    #[test]
+    fn open_repository_at_fails_on_a_directory_that_was_never_created_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_repository_at(&dir.path().join("meta")).unwrap_err();
+        assert!(matches!(err, Error::NoRepositoryHere(_)));
+    }
+
+    #[test]
+    fn open_repository_at_reads_back_an_adopted_repositorys_own_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        fs::create_dir_all(repo_root.join(DATA_DIR)).unwrap();
+        let meta_dir = repo_root.join("meta-18bit");
+        let custom_settings = RepositorySettings::new(18, 1_700_000_000_000);
+        adopt_repository(&repo_root, &meta_dir, custom_settings).unwrap();
+
+        let repo =
+            open_repository_at(&meta_dir).expect("open of an adopted repository must succeed");
+        assert_eq!(repo.settings(), custom_settings);
     }
 
     #[test]

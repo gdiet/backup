@@ -5,16 +5,17 @@ it (requirements agreed, design decided) but did not start implementation, so a 
 concrete starting point instead of an empty branch.
 **Size**: large (confirm with the user before starting)
 **Opened**: 2026-09-29, by a Windows/Claude Code Desktop session
-**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001/002/003), REQ-MIGRATION-001
+**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001/002/003/004), REQ-MIGRATION-001
 through 004 in `requirements/functional/repository-migration.md`, branch `migration-tool`.
 
 ## What to build
 
-The three decisions in `docs/design/scala-migration-tool.md` describe the shape: a non-resumable
+The four decisions in `docs/design/scala-migration-tool.md` describe the shape: a non-resumable
 metadata-import phase (parses the old system's SQL export via a small hand-written statement
 splitter, delegating the actual row-data parsing to SQL execution against a scratch schema) feeding
 a resumable content-migration phase (reads each distinct old content reference once, re-chunks and
-re-hashes it, writes into one destination repository per requested `--cdc-target-size-bits` value).
+re-hashes it, writes into one metadata database per requested `--cdc-target-size-bits` value,
+sharing the one existing repository's own `data/` directory rather than each expecting its own).
 That file's own "Open question" section flags the one thing still undecided: the exact shape of
 phase 2's durable progress record.
 
@@ -62,12 +63,22 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
    apparently cannot represent directly - a literal form the SQL engine used here does not support
    at all, needing one small, targeted rewrite before execution (everything else about a kept
    statement stays untouched). The synthetic test fixtures in `scala_import.rs` did not happen to
-   include this case; only the real-sample-export test caught it. `dfs migrate-scala-repo --script
-   <path> --staging <path>` is usable today to build/reuse the staging database and report its
-   counts - phase 2 (below) is what actually migrates content.
+   include this case; only a manual run against the real sample export caught it (deliberately not
+   kept as a committed test - see `scala_import.rs`'s own comment on why not, right where that test
+   used to be). `dfs migrate-scala-repo --script <path> --staging <path>` is usable today to
+   build/reuse the staging database and report its counts - phase 2 (below) is what actually
+   migrates content.
+1b. **Done** (`crates/db/src/lib.rs`'s `adopt_repository`/`open_repository_at`,
+    DESIGN-MIGRATION-004): the `db`-API addition phase 2 needs to write a metadata database against
+    an already-populated `repo_root` (tolerates non-empty, never touches `data/`) at a location
+    other than the conventional `meta/` (needed once more than one target size is requested). Both
+    functions are temporary by design - see DESIGN-MIGRATION-004's own removal note - and not yet
+    wired into `migrate_scala_repo.rs`.
 2. Decide phase 2's durable progress record shape (the open question in the design doc).
-3. Phase 2's walk-and-migrate logic against the current `db::Repository`/`crates/store` API,
-   parameterized over one or more `--cdc-target-size-bits` values at once (DESIGN-MIGRATION-003).
+3. Phase 2's walk-and-migrate logic against `db::adopt_repository`/`open_repository_at` and
+   `crates/store`, parameterized over one or more `--cdc-target-size-bits` values at once
+   (DESIGN-MIGRATION-003) - including the naming-and-hint behavior DESIGN-MIGRATION-004 describes
+   for the single-vs-several-target-sizes case.
 4. The resume path that consults the progress record from step 2.
 5. A CLI entry point wiring the above together, matching this project's existing `crates/cli`
    conventions (argument parsing, error reporting, RAM-budget handling) rather than inventing new

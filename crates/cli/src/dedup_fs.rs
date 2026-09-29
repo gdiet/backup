@@ -194,6 +194,9 @@ fn to_errno(err: db::Error) -> Errno {
         db::Error::RepositoryAlreadyExists(_)
         | db::Error::TargetNotEmpty(_)
         | db::Error::NoRepositoryHere(_)
+        // Never actually reaches here: `adopt_repository`/`open_repository_at` exist only for the
+        // temporary migration tool (DESIGN-MIGRATION-004), never called from the mount.
+        | db::Error::NoDataDirectory(_)
         | db::Error::SchemaNeedsMigration(_)
         | db::Error::AssumedReadOnlyMediumWasUnnecessary(_)
         | db::Error::Poisoned
