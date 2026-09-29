@@ -13,7 +13,9 @@ mod find;
 mod ignore_rules;
 mod ingest;
 mod list;
+mod migrate_content;
 mod migrate_scala_repo;
+mod migration_progress;
 mod mount;
 mod pending_files;
 mod ram_budget;
@@ -361,11 +363,11 @@ enum Commands {
     },
     // REQ-MIGRATION-001 through 005.
     /// Adopts an existing Scala-DedupFS repository in place: imports its `fsc db-backup` SQL
-    /// export's metadata into a small, durable staging database, then adopts (or reuses) one
-    /// destination metadata database per `--cdc-target-size-bits` value against the repository's
-    /// own, unchanged `data/` directory (docs/design/scala-migration-tool.md). The actual content
-    /// migration is not implemented yet; this only sets up the staging and destination database(s)
-    /// and reports what it found.
+    /// export's metadata into a small, durable staging database, adopts (or reuses) one destination
+    /// metadata database per `--cdc-target-size-bits` value against the repository's own, unchanged
+    /// `data/` directory, then migrates the whole tree and content into every destination
+    /// (docs/design/scala-migration-tool.md). Safely resumable: an interrupted run picks up where
+    /// it left off on the next invocation with the same arguments.
     MigrateScalaRepo {
         /// The existing Scala-DedupFS repository to adopt in place. Its `data/` directory must
         /// already exist (REQ-MIGRATION-002) and is only ever read from, never written to

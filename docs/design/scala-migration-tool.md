@@ -4,8 +4,8 @@ How the actual migration tool (REQ-MIGRATION-001/002/003/004/005 in
 [`../../requirements/functional/repository-migration.md`](../../requirements/functional/repository-migration.md),
 concrete path in [`../../migration/from-scala.md`](../../migration/from-scala.md)) reads the old
 system's own SQL export and turns it into one or more new metadata databases against the existing
-repository's own, unchanged byte store. Not yet implemented - written up as a starting point before
-coding begins, so the decisions already made do not need re-deriving in a later session.
+repository's own, unchanged byte store, as `dfs migrate-scala-repo` (`crates/cli/src/
+migrate_scala_repo.rs`).
 
 There is exactly one repository throughout: the existing one, adopted in place. Its `data/`
 directory (REQ-MIGRATION-002) is read from, never duplicated, never written to, and never moved
@@ -14,7 +14,7 @@ directory (REQ-MIGRATION-002) is read from, never duplicated, never written to, 
 `data/` directory, not more than one repository each with its own copy.
 
 ## DESIGN-MIGRATION-001: Two phases - a durable, built-once metadata import, then a resumable content migration
-Status: decided
+Status: implemented (`crates/cli/src/scala_import.rs`, `crates/cli/src/migrate_content.rs`)
 
 The old system's own SQL export describes the whole tree's metadata, but not the byte content
 itself - parsing that export is orders of magnitude cheaper than reading the multi-terabyte content
@@ -111,7 +111,7 @@ delegation entirely over one literal form) would have discarded this decision's 
 avoid a single, well-contained exception.
 
 ## DESIGN-MIGRATION-003: One read of the source, several `--cdc-target-size-bits` values, one metadata database per value
-Status: decided
+Status: implemented (`crates/cli/src/migrate_content.rs`'s `resolve_content`)
 
 REQ-MIGRATION-004: migrating the same source content at more than one candidate target chunk size
 does not need to read that content once per value compared. Reading a given piece of old content
@@ -185,7 +185,7 @@ ranges as occupied - no separate step to reconcile the allocator's own state aga
 already claimed.
 
 ## DESIGN-MIGRATION-005: A durable progress record, one file per destination metadata database
-Status: decided
+Status: implemented (`crates/cli/src/migration_progress.rs`)
 
 Phase 2 (DESIGN-MIGRATION-001) needs to skip already-migrated content and tree structure on a
 resume rather than redo it - REQ-MIGRATION-003 exists specifically so an interruption near the end
@@ -221,3 +221,29 @@ because it defeats that requirement's own practical purpose for a migration larg
 resumability in the first place: an interruption shortly before completion would cost re-reading and
 re-hashing a multi-terabyte source's entire content again - the exact repeated-read cost
 REQ-MIGRATION-002/004 already go out of their way to avoid elsewhere in this same tool.
+
+## DESIGN-MIGRATION-007: Recreating a migrated tree entry
+Status: implemented (`crates/db/src/tree.rs`'s `insert_migrated_entry`,
+`Repository::insert_migrated_entry`)
+
+Phase 2 recreates the source's entire tree, live and soft-deleted entries alike
+(REQ-MIGRATION-001), walking it root-first (a parent is always migrated before its children, since
+a new child's `parent_id` must already exist). `db`'s existing entry-creating operations do not fit
+this: `mkdir`/`settle_file` each assume a *live-now* operation - they check for a colliding live
+child, soft-delete it if replacing a file, and bump the parent's own modification time as a side
+effect of "something changed just now" - none of which applies here. A migrated entry's `deleted_at`
+and `time` are themselves migrated values, already fixed by the source data; inserting a child must
+never overwrite its already-migrated parent's own `time` the way an ordinary structural change
+would.
+
+`Repository::insert_migrated_entry(parent_id, name, time_millis, deleted_at, content_id)` is a
+plain insert of exactly those columns, skipping every check above. This is safe specifically
+because of how phase 2 uses it, not in general: root-first ordering guarantees every parent already
+exists, and REQ-MIGRATION-001 means the source data's own invariants (at most one live entry per
+name) are trusted rather than re-derived. A genuine violation still fails loudly against
+`tree_entries_active_name_idx`, the same live-only uniqueness constraint `mkdir`/`settle_file`
+themselves rely on - this function does not weaken it, only skips checking it pre-emptively.
+
+Temporary, the same as `adopt_repository`/`open_repository_at` (DESIGN-MIGRATION-004) and
+`register_existing_chunk` (DESIGN-MIGRATION-006) - only the Scala-repository migration tool needs
+it, removed together with the tool itself.

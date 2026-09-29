@@ -1,20 +1,20 @@
 //! `dfs migrate-scala-repo` - REQ-MIGRATION-001 through 005 in
-//! `requirements/functional/repository-migration.md` (DESIGN-MIGRATION-001 through 004 in
+//! `requirements/functional/repository-migration.md` (DESIGN-MIGRATION-001 through 007 in
 //! `docs/design/scala-migration-tool.md`): imports a Scala-DedupFS `fsc db-backup` SQL export into
-//! a small, durable, queryable staging database via `crate::scala_import`, then adopts (or reuses)
-//! one destination metadata database per requested `--cdc-target-size-bits` value against the
-//! existing repository's own, unchanged `data/` directory (DESIGN-MIGRATION-004).
-//!
-//! The actual content migration (walking the imported tree, re-chunking and re-hashing each
-//! distinct old content reference, and writing the result into each destination -
-//! DESIGN-MIGRATION-006) is not implemented yet - this command only builds (or reuses) the staging
-//! database, sets up (or reuses) each destination, and reports what it found.
+//! a small, durable, queryable staging database via `crate::scala_import`, adopts (or reuses) one
+//! destination metadata database per requested `--cdc-target-size-bits` value against the existing
+//! repository's own, unchanged `data/` directory (DESIGN-MIGRATION-004), then migrates the actual
+//! tree and content into every destination via `crate::migrate_content`. Once every destination has
+//! been fully migrated, the staging import and each destination's own progress record
+//! (DESIGN-MIGRATION-005) are removed - neither is needed again after that point.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::create_repo;
+use crate::migrate_content;
+use crate::migration_progress;
 use crate::scala_import;
 
 fn try_run(
@@ -57,9 +57,10 @@ fn try_run(
     );
 
     let single = cdc_target_size_bits.len() == 1;
+    let mut destinations: Vec<(PathBuf, db::Repository)> = Vec::new();
     for &bits in cdc_target_size_bits {
         let meta_dir = meta_dir_for(repository, bits, single);
-        if meta_dir.is_dir() {
+        let repo = if meta_dir.is_dir() {
             let repo = db::open_repository_at(&meta_dir).map_err(|err| {
                 format!("error: failed to reopen '{}': {err}", meta_dir.display())
             })?;
@@ -76,6 +77,7 @@ fn try_run(
                 "\nReusing existing metadata database at '{}' (target size {bits} bits).",
                 meta_dir.display()
             ));
+            repo
         } else {
             let creation_time_millis = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -88,7 +90,14 @@ fn try_run(
                 "\nCreated metadata database at '{}' (target size {bits} bits).",
                 meta_dir.display()
             ));
-        }
+            db::open_repository_at(&meta_dir).map_err(|err| {
+                format!(
+                    "error: failed to open just-adopted '{}': {err}",
+                    meta_dir.display()
+                )
+            })?
+        };
+        destinations.push((meta_dir, repo));
     }
 
     if !single {
@@ -101,10 +110,60 @@ fn try_run(
         ));
     }
 
-    message.push_str(
-        "\nPhase 2's actual content migration (walking the tree and re-chunking content) is not \
-         implemented yet - see docs/design/scala-migration-tool.md.",
-    );
+    // REQ-MIGRATION-005: only ever read from the shared data/, never written to - the read-only
+    // flag below enforces that even against a coding mistake, not just by omission.
+    let old_store = store::ByteStore::new(db::data_dir(repository), true);
+    let mut progress: Vec<(PathBuf, rusqlite::Connection)> = Vec::new();
+    for (meta_dir, _) in &destinations {
+        let progress_path = meta_dir.with_extension("progress");
+        let progress_conn = migration_progress::open_or_create(&progress_path).map_err(|err| {
+            format!(
+                "error: failed to open progress record '{}': {err}",
+                progress_path.display()
+            )
+        })?;
+        progress.push((progress_path, progress_conn));
+    }
+
+    let migration_stats = {
+        let targets: Vec<migrate_content::Target> = destinations
+            .iter()
+            .zip(progress.iter())
+            .map(|((_, repo), (_, progress_conn))| migrate_content::Target {
+                repo,
+                progress: progress_conn,
+            })
+            .collect();
+        migrate_content::migrate(&conn, &old_store, &targets)
+            .map_err(|err| format!("error: {err}"))?
+    };
+    message.push_str(&format!(
+        "\nMigrated content: {} new tree entries, {} distinct old contents re-chunked.",
+        migration_stats.tree_entries_created, migration_stats.contents_migrated
+    ));
+
+    // migrate_content::migrate only ever returns Ok once every destination's whole tree has been
+    // walked successfully (it never returns early for a subset of targets) - so reaching here means
+    // every destination is now fully migrated, and both the staging import and each destination's
+    // own progress record can be removed (DESIGN-MIGRATION-001/005). Best-effort: a cleanup failure
+    // does not undo an otherwise-successful migration, only leaves a harmless stale file behind.
+    for (progress_path, progress_conn) in progress {
+        drop(progress_conn);
+        if let Err(err) = migration_progress::remove(&progress_path) {
+            message.push_str(&format!(
+                "\nWarning: failed to remove progress record '{}': {err}",
+                progress_path.display()
+            ));
+        }
+    }
+    drop(conn);
+    if let Err(err) = std::fs::remove_file(staging) {
+        message.push_str(&format!(
+            "\nWarning: failed to remove staging database '{}': {err}",
+            staging.display()
+        ));
+    }
+
     Ok(message)
 }
 
@@ -169,22 +228,51 @@ CREATE CACHED TABLE "PUBLIC"."DATAENTRIES"(
             message.contains("1 tree entries, 0 data entries"),
             "got: {message}"
         );
+        assert!(
+            !staging.exists(),
+            "a fully successful migration must remove the now-unneeded staging database"
+        );
     }
 
+    /// A script with one real content reference (`dataId` 5) whose bytes are never actually
+    /// written anywhere in this test's `data/` - phase 2 always fails reading it, which is exactly
+    /// what the reuse test below needs: a run that gets past phase 1 (durably building the staging
+    /// database) but never reaches the success-only cleanup that would remove it again.
+    const SCRIPT_WITH_UNREADABLE_CONTENT: &str = r#"
+CREATE CACHED TABLE "PUBLIC"."TREEENTRIES"(
+    "ID" BIGINT NOT NULL, "PARENTID" BIGINT NOT NULL, "NAME" CHARACTER VARYING(255) NOT NULL,
+    "TIME" BIGINT NOT NULL, "DELETED" BIGINT DEFAULT 0 NOT NULL, "DATAID" BIGINT DEFAULT NULL
+);
+INSERT INTO "PUBLIC"."TREEENTRIES" VALUES
+(0, 0, '', 1000, 0, NULL),
+(1, 0, 'b.txt', 1002, 0, 5);
+CREATE CACHED TABLE "PUBLIC"."DATAENTRIES"(
+    "ID" BIGINT NOT NULL, "SEQ" INTEGER NOT NULL, "LENGTH" BIGINT, "START" BIGINT NOT NULL,
+    "STOP" BIGINT NOT NULL, "HASH" BINARY(16)
+);
+INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
+(5, 1, 3, 100, 103, X'0102030405060708090a0b0c0d0e0f10');
+"#;
+
     #[test]
-    fn try_run_reuses_an_already_complete_staging_database_without_rereading_the_script() {
+    fn try_run_reuses_an_already_built_staging_database_without_rereading_the_script() {
         let (_dir, repository, script, staging) = setup();
-        try_run(&repository, &script, &staging, &[20]).unwrap();
+        std::fs::write(&script, SCRIPT_WITH_UNREADABLE_CONTENT).unwrap();
+
+        let first_error = try_run(&repository, &script, &staging, &[20])
+            .expect_err("phase 2 must fail - dataId 5's bytes do not actually exist");
+        assert!(first_error.contains("dataId 5"), "got: {first_error}");
+        assert!(
+            staging.exists(),
+            "a failed phase 2 must leave phase 1's staging database in place"
+        );
 
         // A script that no longer exists must not matter the second time - a genuinely reused
         // import never needs to read it again.
         std::fs::remove_file(&script).unwrap();
-        let message = try_run(&repository, &script, &staging, &[20]).unwrap();
-        assert!(message.starts_with("Reused"), "got: {message}");
-        assert!(
-            message.contains("1 tree entries, 0 data entries"),
-            "got: {message}"
-        );
+        let second_error = try_run(&repository, &script, &staging, &[20])
+            .expect_err("must still fail the same way");
+        assert!(second_error.contains("dataId 5"), "got: {second_error}");
     }
 
     #[test]

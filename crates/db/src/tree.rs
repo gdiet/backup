@@ -456,6 +456,43 @@ pub(crate) fn settle_file(
     Ok(id)
 }
 
+/// Inserts one `tree_entries` row exactly as given - `parent_id`, `name`, `time_millis`,
+/// `deleted_at`, `content_id` - none of [`mkdir`]/[`settle_file`]'s own liveness/collision
+/// bookkeeping, and no [`touch`] of `parent_id` (a migrated parent's own `time` is itself a
+/// migrated value, already inserted with its own row - a `touch` here would overwrite it with an
+/// unrelated bump). `content_id` is `None` for a directory, `Some` for a file (including an
+/// explicit zero-length one, since a live file always has a real, if empty, content) -
+/// DESIGN-MIGRATION-007 in `docs/design/scala-migration-tool.md`. Returns the new entry's id.
+///
+/// Safe without the checks above only because the caller (currently only the Scala-repository
+/// migration tool) inserts every entry root-first, and trusts the source data's own already-
+/// validated invariants (REQ-MIGRATION-001) rather than re-deriving them - a genuine violation
+/// (e.g. two live entries at the same `(parent_id, name)`) still fails loudly against
+/// `tree_entries_active_name_idx`, the same constraint [`mkdir`]/[`settle_file`] rely on.
+///
+/// Temporary - exists only for that migration tool; remove it together with the tool itself, see
+/// DESIGN-MIGRATION-007's own removal note.
+pub(crate) fn insert_migrated_entry(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+    deleted_at: Option<i64>,
+    content_id: Option<i64>,
+) -> Result<i64, Error> {
+    let kind = if content_id.is_some() {
+        KIND_FILE
+    } else {
+        KIND_DIR
+    };
+    conn.execute(
+        "INSERT INTO tree_entries (parent_id, name, time, deleted_at, content_id, kind) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![parent_id, name, time_millis, deleted_at, content_id, kind],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
 /// `settle_pending_write`'s outcome - either it landed, or its target was gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettleOutcome {
@@ -887,6 +924,77 @@ mod tests {
         let (repo, _dir) = repo();
         let err = repo.mkdir(999, "a", 100).unwrap_err();
         assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn insert_migrated_entry_creates_a_directory_when_content_id_is_none() {
+        let (repo, _dir) = repo();
+        let id = repo
+            .insert_migrated_entry(0, "old-dir", 123, None, None)
+            .unwrap();
+        let entry = repo.entry_by_id(id).unwrap().unwrap();
+        assert_eq!(entry.kind, crate::EntryKind::Dir);
+        assert_eq!(entry.time_millis, 123);
+    }
+
+    #[test]
+    fn insert_migrated_entry_creates_a_soft_deleted_file_when_deleted_at_is_some() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo
+            .insert_migrated_entry(0, "old-file", 100, Some(200), Some(content_id))
+            .unwrap();
+
+        // Already deleted at the moment of creation - never live, so entry_by_id (live-only) must
+        // not find it, but deleted_entry_by_id must.
+        assert!(repo.entry_by_id(id).unwrap().is_none());
+        let deleted = repo.deleted_entry_by_id(id).unwrap().unwrap();
+        assert_eq!(deleted.deleted_at, 200);
+    }
+
+    #[test]
+    fn insert_migrated_entry_does_not_touch_the_parents_own_time() {
+        let (repo, _dir) = repo();
+        let parent_id = repo
+            .insert_migrated_entry(0, "parent", 555, None, None)
+            .unwrap();
+
+        repo.insert_migrated_entry(parent_id, "child", 999, None, None)
+            .unwrap();
+
+        // A normal mkdir/settle_file would have bumped the parent's own time to the child's -
+        // insert_migrated_entry must leave it exactly as migrated.
+        let parent = repo.entry_by_id(parent_id).unwrap().unwrap();
+        assert_eq!(parent.time_millis, 555);
+    }
+
+    #[test]
+    fn insert_migrated_entry_allows_more_than_one_soft_deleted_entry_at_the_same_name() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        repo.insert_migrated_entry(0, "dup", 100, Some(150), Some(content_id))
+            .unwrap();
+        // Must not collide - REQ-MIGRATION-001's full history can hold more than one historical
+        // entry at the same name, as long as at most one is live.
+        repo.insert_migrated_entry(0, "dup", 200, Some(250), Some(content_id))
+            .unwrap();
+
+        let deleted = repo.list_deleted_children(0).unwrap();
+        assert_eq!(deleted.len(), 2);
+    }
+
+    #[test]
+    fn insert_migrated_entry_refuses_a_second_live_entry_at_the_same_name() {
+        let (repo, _dir) = repo();
+        repo.insert_migrated_entry(0, "dup", 100, None, None)
+            .unwrap();
+        let err = repo
+            .insert_migrated_entry(0, "dup", 200, None, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::Sqlite(_)),
+            "expected the live-only unique index to reject this, got: {err:?}"
+        );
     }
 
     /// Inserts a bare `contents` row (no chunks) for tests that only need a valid `content_id` to

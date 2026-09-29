@@ -467,6 +467,25 @@ impl Repository {
         self.with_transaction(|conn, cache| tree::mkdir(conn, cache, parent_id, name, time_millis))
     }
 
+    /// Inserts one `tree_entries` row exactly as given, without any of [`Self::mkdir`]/
+    /// [`Self::settle_file`]'s own liveness/collision bookkeeping or parent-touching -
+    /// DESIGN-MIGRATION-007 in `docs/design/scala-migration-tool.md`. Returns the new entry's id.
+    ///
+    /// Temporary - exists only for the Scala-repository migration tool; remove this method along
+    /// with it, see DESIGN-MIGRATION-007's own removal note.
+    pub fn insert_migrated_entry(
+        &self,
+        parent_id: i64,
+        name: &str,
+        time_millis: i64,
+        deleted_at: Option<i64>,
+        content_id: Option<i64>,
+    ) -> Result<i64, Error> {
+        self.with_transaction(|conn, _cache| {
+            tree::insert_migrated_entry(conn, parent_id, name, time_millis, deleted_at, content_id)
+        })
+    }
+
     /// Soft-deletes the directory entry `id` (REQ-TREE-002), refusing if it still has live
     /// children (REQ-TREE-008). Bumps its parent's modification time.
     pub fn rmdir(&self, id: i64, time_millis: i64) -> Result<(), Error> {

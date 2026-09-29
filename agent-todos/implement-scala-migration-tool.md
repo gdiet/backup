@@ -1,11 +1,14 @@
 # Implement the Scala-repository migration tool
 
-**Why parked**: a substantial, deliberately-staged feature - this session investigated and planned
-it (requirements agreed, design decided) but did not start implementation, so a later session has a
-concrete starting point instead of an empty branch.
-**Size**: large (confirm with the user before starting)
+**Why parked**: a substantial, deliberately-staged feature. All seven design decisions are now
+implemented end to end (staging import, destination adoption, the walk-and-migrate content loop,
+resumability) and covered by synthetic-fixture tests - what is left (see "Remaining gaps" below) is
+smaller follow-up work: CLI polish, documentation, and validating against real (not just synthetic)
+data, kept here rather than moved to `done/` since that validation step matters before calling this
+tool actually finished.
+**Size**: medium (confirm with the user before starting)
 **Opened**: 2026-09-29, by a Windows/Claude Code Desktop session
-**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001/002/003/004/005),
+**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001 through 007),
 REQ-MIGRATION-001 through 005 in `requirements/functional/repository-migration.md`, branch
 `migration-tool`.
 
@@ -82,36 +85,49 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
     an already-populated `repo_root` (tolerates non-empty, never touches `data/`) at a location
     other than the conventional `meta/` (needed once more than one target size is requested). Both
     functions are temporary by design - see DESIGN-MIGRATION-004's own removal note.
-2. **Decided** (DESIGN-MIGRATION-005): phase 2's durable progress record is a small separate SQLite
-   file per destination metadata database, holding `content_cache(old_data_id, content_id)` and
-   `migrated(old_tree_id, new_id)`. Not yet implemented.
+2. **Done** (`crates/cli/src/migration_progress.rs`, DESIGN-MIGRATION-005): phase 2's durable
+   progress record - a small separate SQLite file per destination metadata database, holding
+   `content_cache(old_data_id, content_id)` and `migrated(old_tree_id, new_id)`.
 2b. **Done** (`crates/db/src/content.rs`'s `insert_chunk_at`, `Repository::register_existing_chunk`,
     DESIGN-MIGRATION-006): the `db`-API addition phase 2 needs to record a migrated chunk's
     `chunk_extents` at its own known, caller-supplied position instead of asking
     `allocation::reserve` to find one - the ordinary `reserve_and_insert_chunk` cannot do this.
     Temporary by design, same removal plan as 1b.
-3. **Partly done**: `crates/cli/src/migrate_scala_repo.rs` now accepts one or more
-   `--cdc-target-size-bits` values (`--repository` is now also a required argument) and, after the
-   staging import, adopts (or reuses, with a mismatched-size check) one destination metadata
-   database per value via `db::adopt_repository`/`open_repository_at` - at the conventional `meta/`
-   location for exactly one value, at a distinguishable `meta-<bits>bit/` location plus a printed
-   rename reminder for several (DESIGN-MIGRATION-003/004). Still missing: the actual walk-and-migrate
-   content loop against `crates/store` and the new `register_existing_chunk` from 2b above - this
-   step only sets up empty destination databases so far, it does not migrate any content into them
-   yet.
-4. The resume path that consults the progress record from step 2, using it to skip content and tree
-   entries already migrated.
-5. A CLI entry point wiring the above together, matching this project's existing `crates/cli`
-   conventions (argument parsing, error reporting, RAM-budget handling) rather than inventing new
-   ones.
+2c. **Done** (`crates/db/src/tree.rs`'s `insert_migrated_entry`, `Repository::insert_migrated_entry`,
+    DESIGN-MIGRATION-007): recreates one tree entry - live or already-deleted-from-birth - without
+    `mkdir`/`settle_file`'s own liveness bookkeeping or parent-touching, since a migrated entry's
+    `time`/`deleted_at` are themselves already-fixed migrated values. Temporary, same removal plan.
+3. **Done** (`crates/cli/src/migrate_content.rs`, wired into `crates/cli/src/migrate_scala_repo.rs`):
+   the walk-and-migrate content loop. Walks the staging tree root-first, recreating every entry via
+   2c above; for each distinct old `dataId`, reads the old bytes at most once and feeds them to every
+   still-pending target's own chunker in lockstep (DESIGN-MIGRATION-003/REQ-MIGRATION-004), recording
+   new chunks via 2b above (never writing bytes - REQ-MIGRATION-005) and consulting/updating the
+   progress record from step 2 throughout, so a resumed run only redoes whatever an interruption left
+   unfinished. `db::adopt_repository`/`open_repository_at`'s own naming-and-hint behavior
+   (DESIGN-MIGRATION-004) is unchanged from the previous increment. Once every destination has been
+   fully migrated in one call, the staging import and every destination's own progress record are
+   removed (DESIGN-MIGRATION-001) - best-effort, a cleanup failure does not undo an otherwise-
+   successful migration. Covered by `crates/cli/src/migrate_content.rs`'s own tests (a full
+   tree/directory/soft-delete/empty-file/whole-file-dedup scenario, a resumability check whose own
+   regression-catching power was verified red/green per AGENTS.md's debugging discipline, and a
+   two-target fan-out check) plus `crates/cli/src/migrate_scala_repo.rs`'s own CLI-level tests
+   (including a failed-phase-2-leaves-staging-in-place-for-reuse scenario).
 
-## Test and documentation notes
+## Remaining gaps
 
-Red/green coverage for the resume path specifically (kill mid-migration, confirm a re-run skips
-already-migrated content and does not corrupt or duplicate it - AGENTS.md's own debugging discipline
-for this kind of guarantee), plus ordinary coverage for the statement splitter and the
-multi-target-size fan-out.
+Not blocking, but real gaps a later session should know about:
 
-`migration/from-scala.md` currently only covers the byte-store compatibility question - it needs the
-actual migration steps, prerequisites, and rollback/fallback guidance filled in once the tool exists,
-matching what actually got built rather than this plan.
+- No `--ram-budget-mb` handling (unlike most other `crates/cli` commands) - `migrate_content`'s own
+  in-memory footprint is modest (one chunk buffer plus one read-window buffer per still-pending
+  target), but this was never deliberately bounded against a budget the way ordinary ingest/mount
+  paths are.
+- No `--verify`/`--best-effort` style flags for a partially-missing old `data/` (unlike
+  `crate::restore`'s own two independent opt-ins) - a single incomplete read currently fails the
+  whole run outright (`MigrateContentError::IncompleteOldData`), which is the safer default but not
+  the only one a real operator might eventually want.
+- `migration/from-scala.md` currently only covers the byte-store compatibility question - it needs
+  the actual migration steps, prerequisites, and rollback/fallback guidance filled in, matching what
+  actually got built rather than this plan.
+- Not yet tested against the real, large sample export (`.local/scala-example-db/`) or the hand-built
+  real Scala test repository (`.local/scala-test-repo/`) from earlier in this same session - only
+  synthetic, small fixtures so far. Worth a manual end-to-end run before considering this tool done.

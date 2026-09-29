@@ -199,6 +199,72 @@ pub fn stats(conn: &Connection) -> Result<ImportStats, ImportError> {
     })
 }
 
+/// One row from the staging `treeentries` table, live or soft-deleted alike, exactly as the source
+/// export recorded it - REQ-MIGRATION-001's full history needs both, so nothing here filters
+/// either out.
+#[derive(Debug, Clone)]
+pub struct StagingTreeEntry {
+    pub id: i64,
+    pub name: String,
+    pub time: i64,
+    /// `None` for a live entry - the source's own `0`-means-live encoding, already translated so
+    /// callers never need to know it. `Some(timestamp)` otherwise.
+    pub deleted_at: Option<i64>,
+    /// `None` for a directory, `Some(-1)` for an explicit zero-length file, `Some(id) if id >= 0`
+    /// for a real reference into `dataentries` - confirmed by
+    /// `import_preserves_the_null_vs_minus_one_dataid_distinction` below.
+    pub data_id: Option<i64>,
+}
+
+/// Every child of `parent_id` in the staging tree, live and soft-deleted alike, in ascending `id`
+/// order (a stable, deterministic order for a resumable walk - not otherwise meaningful). The
+/// staging schema has no separate "live children only" query; a caller wanting only live entries
+/// filters `deleted_at` itself.
+///
+/// The root's own row (`id = 0`) is `parentid = 0` too (self-parented, the source's own
+/// convention) - calling this with `parent_id = 0` therefore also returns the root's own row
+/// alongside its real children; callers walking from the root filter it out themselves.
+pub fn staging_children(
+    conn: &Connection,
+    parent_id: i64,
+) -> Result<Vec<StagingTreeEntry>, ImportError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, time, deleted, dataid FROM treeentries WHERE parentid = ?1 ORDER BY id",
+    )?;
+    let rows = stmt
+        .query_map([parent_id], |row| {
+            let deleted: i64 = row.get(3)?;
+            Ok(StagingTreeEntry {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                time: row.get(2)?,
+                deleted_at: if deleted == 0 { None } else { Some(deleted) },
+                data_id: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// `data_id`'s ordered `(start, stop)` byte ranges in the old data store, from `dataentries`'
+/// `seq`-ordered rows - concatenating the bytes at these ranges, in this order, reproduces the old
+/// file's bytes exactly (a file's storage is not always contiguous, hence more than one row can
+/// share one `data_id`). `length`/`hash` are not read here - migration recomputes its own chunk
+/// hashes from the bytes directly rather than trusting the source's whole-file ones. Empty if
+/// `data_id` is not actually a real content reference (see [`StagingTreeEntry::data_id`]).
+pub fn staging_data_parts(conn: &Connection, data_id: i64) -> Result<Vec<(u64, u64)>, ImportError> {
+    let mut stmt =
+        conn.prepare("SELECT start, stop FROM dataentries WHERE id = ?1 ORDER BY seq")?;
+    let rows = stmt
+        .query_map([data_id], |row| {
+            let start: i64 = row.get(0)?;
+            let stop: i64 = row.get(1)?;
+            Ok((start as u64, stop as u64))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 enum Table {
     TreeEntries,
     DataEntries,
@@ -729,6 +795,69 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
             context_table_exists, 0,
             "the Context table must never be created"
         );
+    }
+
+    #[test]
+    fn staging_children_returns_both_live_children_ordered_by_id() {
+        let dir = tempfile::tempdir().unwrap();
+        import(sample_script(), &staging_path(&dir)).unwrap();
+        let conn = open(&staging_path(&dir)).unwrap();
+
+        // Root (id 0) is its own parent in the source's own convention - calling with parent_id 0
+        // also returns the root's own row, which a caller walking from the root must filter out
+        // itself (see this function's own doc comment).
+        let children = staging_children(&conn, 0).unwrap();
+        let ids: Vec<i64> = children.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![0, 1, 2]);
+
+        let a = &children[1];
+        assert_eq!(a.name, "a.txt");
+        assert_eq!(a.deleted_at, None);
+        assert_eq!(a.data_id, Some(-1));
+
+        let b = &children[2];
+        assert_eq!(b.name, "b.txt");
+        assert_eq!(b.data_id, Some(5));
+    }
+
+    #[test]
+    fn staging_children_translates_a_nonzero_deleted_column_into_some_timestamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = format!(
+            "CREATE CACHED TABLE \"PUBLIC\".\"TREEENTRIES\"({TREE_ENTRIES_COLUMNS});\n\
+             INSERT INTO \"PUBLIC\".\"TREEENTRIES\" VALUES\n\
+             (0, 0, '', 1000, 0, NULL),\n\
+             (1, 0, 'gone.txt', 1001, 2000, -1);"
+        );
+        import(&script, &staging_path(&dir)).unwrap();
+        let conn = open(&staging_path(&dir)).unwrap();
+        let children = staging_children(&conn, 0).unwrap();
+        let gone = children.iter().find(|c| c.id == 1).unwrap();
+        assert_eq!(gone.deleted_at, Some(2000));
+    }
+
+    #[test]
+    fn staging_data_parts_returns_ordered_ranges_for_a_multi_part_data_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = format!(
+            "CREATE CACHED TABLE \"PUBLIC\".\"DATAENTRIES\"({DATA_ENTRIES_COLUMNS});\n\
+             INSERT INTO \"PUBLIC\".\"DATAENTRIES\" VALUES\n\
+             (5, 2, NULL, 900, 950, NULL),\n\
+             (5, 1, 53, 100, 103, X'0102030405060708090a0b0c0d0e0f10');"
+        );
+        import(&script, &staging_path(&dir)).unwrap();
+        let conn = open(&staging_path(&dir)).unwrap();
+        let parts = staging_data_parts(&conn, 5).unwrap();
+        // Ordered by seq (1 before 2), not by insertion order (2 was inserted first above).
+        assert_eq!(parts, vec![(100, 103), (900, 950)]);
+    }
+
+    #[test]
+    fn staging_data_parts_is_empty_for_an_unknown_data_id() {
+        let dir = tempfile::tempdir().unwrap();
+        import(sample_script(), &staging_path(&dir)).unwrap();
+        let conn = open(&staging_path(&dir)).unwrap();
+        assert_eq!(staging_data_parts(&conn, 999).unwrap(), Vec::new());
     }
 
     #[test]
