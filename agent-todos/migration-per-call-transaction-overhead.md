@@ -65,3 +65,25 @@ would give. That is a further sign that the time goes into waiting for per-commi
 which concurrent threads overlap only partly. Fewer, larger transactions attack that directly. They
 would also make the per-entry thread spawns in `migrate_content::parallel_map` the dominant cost, so
 the design should then move to persistent per-target worker threads fed through channels.
+
+## Correction and a crash-safety bug found while analysing this item (2026-09-29)
+
+**The measured cost is the progress file's own commits, not the destination's.** The destination
+databases run in WAL mode with `synchronous=NORMAL` (`crates/db/src/connection.rs`), where a commit
+does not flush to disk. `crate::migration_progress` opened its file with SQLite's defaults instead
+(rollback journal, `synchronous=FULL`), so every `record_migrated`/`record_content` created a journal
+file, flushed it and deleted it. Timing the same runs with the progress file switched to WAL and
+`synchronous=NORMAL` (experiment only, reverted): one target at 18 bits 20.0 s -> 3.3 s, five targets
+(16-20 bits) 57.2 s -> 9.3 s - most of what is left is the shared read. The earlier estimate of about
+5 days for the developer's real repository is therefore far too pessimistic for the current code.
+
+**Resuming after a hard kill can fail.** Destination insert and progress record are two independent
+commits in two files. Killing the process between them leaves an entry in the destination that the
+progress record does not know about, and the resume then tries to insert it again. Reproduced on the
+real test repository (one target, 18 bits): of four runs killed at 3/6/9/12 s, the one killed at 3 s
+could not be resumed - `error: UNIQUE constraint failed: tree_entries.parent_id, tree_entries.name`,
+every time, until someone cleans up by hand (violating REQ-MIGRATION-003). For a soft-deleted entry
+the same window would not fail but silently insert a duplicate history row. The resume test that
+exists only re-runs a *completed* migration, which never exercises this. A power loss adds a second
+direction: with `synchronous=NORMAL` the destination can lose its last commits while the progress
+file (`FULL`) still claims them.
