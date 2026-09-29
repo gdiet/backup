@@ -9,6 +9,7 @@
 
 use std::fmt;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -41,81 +42,96 @@ impl From<rusqlite::Error> for ProgressError {
     }
 }
 
-/// Opens `path`'s progress record, creating its schema if `path` does not exist yet - safe to call
-/// on every run, resumed or not, since a fresh file and an already-populated one from an
-/// interrupted attempt are opened identically.
-pub fn open_or_create(path: &Path) -> Result<Connection, ProgressError> {
-    let conn = Connection::open(path)?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS content_cache (
-             old_data_id INTEGER PRIMARY KEY,
-             content_id  INTEGER NOT NULL
-         );
-         CREATE TABLE IF NOT EXISTS migrated (
-             old_tree_id INTEGER PRIMARY KEY,
-             new_id      INTEGER NOT NULL
-         );",
-    )?;
-    Ok(conn)
+/// One destination's open progress record. The connection sits behind a `Mutex` because
+/// `rusqlite::Connection` is `Send` but not `Sync`, and `crate::migrate_content` shares each
+/// target (including this record) with worker threads - in practice only that target's own worker
+/// ever touches it, so the lock is uncontended.
+pub struct ProgressRecord {
+    conn: Mutex<Connection>,
 }
 
-/// The destination `content_id` already recorded for `old_data_id`, if this or an earlier
-/// (possibly interrupted) run already migrated it - `None` means it still needs to be read,
-/// re-chunked, and re-hashed.
-pub fn cached_content(conn: &Connection, old_data_id: i64) -> Result<Option<i64>, ProgressError> {
-    conn.query_row(
-        "SELECT content_id FROM content_cache WHERE old_data_id = ?1",
-        params![old_data_id],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(ProgressError::from)
-}
+impl ProgressRecord {
+    /// Opens `path`'s progress record, creating its schema if `path` does not exist yet - safe to
+    /// call on every run, resumed or not, since a fresh file and an already-populated one from an
+    /// interrupted attempt are opened identically.
+    pub fn open_or_create(path: &Path) -> Result<Self, ProgressError> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS content_cache (
+                 old_data_id INTEGER PRIMARY KEY,
+                 content_id  INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS migrated (
+                 old_tree_id INTEGER PRIMARY KEY,
+                 new_id      INTEGER NOT NULL
+             );",
+        )?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
 
-/// Records `old_data_id`'s resolved `content_id`, so a later run's [`cached_content`] can skip
-/// re-reading and re-chunking it.
-pub fn record_content(
-    conn: &Connection,
-    old_data_id: i64,
-    content_id: i64,
-) -> Result<(), ProgressError> {
-    conn.execute(
-        "INSERT INTO content_cache (old_data_id, content_id) VALUES (?1, ?2)",
-        params![old_data_id, content_id],
-    )?;
-    Ok(())
-}
+    fn conn(&self) -> MutexGuard<'_, Connection> {
+        // Poisoned only if another thread panicked while holding this lock, and a panic in any
+        // migration worker propagates out of `crate::migrate_content` and ends the run anyway.
+        self.conn.lock().expect(
+            "the progress record's lock is only poisoned by a panic that already aborts the run",
+        )
+    }
 
-/// The destination `new_id` already recorded for `old_tree_id`, if this or an earlier (possibly
-/// interrupted) run already recreated it - `None` means it still needs to be inserted.
-pub fn migrated_id(conn: &Connection, old_tree_id: i64) -> Result<Option<i64>, ProgressError> {
-    conn.query_row(
-        "SELECT new_id FROM migrated WHERE old_tree_id = ?1",
-        params![old_tree_id],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(ProgressError::from)
-}
+    /// The destination `content_id` already recorded for `old_data_id`, if this or an earlier
+    /// (possibly interrupted) run already migrated it - `None` means it still needs to be read,
+    /// re-chunked, and re-hashed.
+    pub fn cached_content(&self, old_data_id: i64) -> Result<Option<i64>, ProgressError> {
+        self.conn()
+            .query_row(
+                "SELECT content_id FROM content_cache WHERE old_data_id = ?1",
+                params![old_data_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(ProgressError::from)
+    }
 
-/// Records `old_tree_id`'s recreated `new_id`, so a later run's [`migrated_id`] can skip
-/// recreating it - and, for a directory, still knows which new id to recurse into for its
-/// not-yet-migrated children.
-pub fn record_migrated(
-    conn: &Connection,
-    old_tree_id: i64,
-    new_id: i64,
-) -> Result<(), ProgressError> {
-    conn.execute(
-        "INSERT INTO migrated (old_tree_id, new_id) VALUES (?1, ?2)",
-        params![old_tree_id, new_id],
-    )?;
-    Ok(())
+    /// Records `old_data_id`'s resolved `content_id`, so a later run's [`Self::cached_content`] can
+    /// skip re-reading and re-chunking it.
+    pub fn record_content(&self, old_data_id: i64, content_id: i64) -> Result<(), ProgressError> {
+        self.conn().execute(
+            "INSERT INTO content_cache (old_data_id, content_id) VALUES (?1, ?2)",
+            params![old_data_id, content_id],
+        )?;
+        Ok(())
+    }
+
+    /// The destination `new_id` already recorded for `old_tree_id`, if this or an earlier (possibly
+    /// interrupted) run already recreated it - `None` means it still needs to be inserted.
+    pub fn migrated_id(&self, old_tree_id: i64) -> Result<Option<i64>, ProgressError> {
+        self.conn()
+            .query_row(
+                "SELECT new_id FROM migrated WHERE old_tree_id = ?1",
+                params![old_tree_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(ProgressError::from)
+    }
+
+    /// Records `old_tree_id`'s recreated `new_id`, so a later run's [`Self::migrated_id`] can skip
+    /// recreating it - and, for a directory, still knows which new id to recurse into for its
+    /// not-yet-migrated children.
+    pub fn record_migrated(&self, old_tree_id: i64, new_id: i64) -> Result<(), ProgressError> {
+        self.conn().execute(
+            "INSERT INTO migrated (old_tree_id, new_id) VALUES (?1, ?2)",
+            params![old_tree_id, new_id],
+        )?;
+        Ok(())
+    }
 }
 
 /// Removes the progress record file entirely - called once a target size's migration has
 /// completed successfully (DESIGN-MIGRATION-001), so a resume after that point has nothing left to
-/// consult. Tolerates the file already being gone.
+/// consult. Tolerates the file already being gone. The [`ProgressRecord`] for `path` must already
+/// be dropped - an open connection keeps the file locked on Windows.
 pub fn remove(path: &Path) -> Result<(), ProgressError> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -128,54 +144,56 @@ pub fn remove(path: &Path) -> Result<(), ProgressError> {
 mod tests {
     use super::*;
 
+    fn open(dir: &tempfile::TempDir) -> ProgressRecord {
+        ProgressRecord::open_or_create(&dir.path().join("progress.db")).unwrap()
+    }
+
     #[test]
     fn cached_content_is_none_before_anything_is_recorded() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = open_or_create(&dir.path().join("progress.db")).unwrap();
-        assert_eq!(cached_content(&conn, 5).unwrap(), None);
+        assert_eq!(open(&dir).cached_content(5).unwrap(), None);
     }
 
     #[test]
     fn record_content_makes_it_findable_by_the_same_old_data_id() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = open_or_create(&dir.path().join("progress.db")).unwrap();
-        record_content(&conn, 5, 42).unwrap();
-        assert_eq!(cached_content(&conn, 5).unwrap(), Some(42));
-        assert_eq!(cached_content(&conn, 6).unwrap(), None);
+        let progress = open(&dir);
+        progress.record_content(5, 42).unwrap();
+        assert_eq!(progress.cached_content(5).unwrap(), Some(42));
+        assert_eq!(progress.cached_content(6).unwrap(), None);
     }
 
     #[test]
     fn migrated_id_is_none_before_anything_is_recorded() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = open_or_create(&dir.path().join("progress.db")).unwrap();
-        assert_eq!(migrated_id(&conn, 7).unwrap(), None);
+        assert_eq!(open(&dir).migrated_id(7).unwrap(), None);
     }
 
     #[test]
     fn record_migrated_makes_it_findable_by_the_same_old_tree_id() {
         let dir = tempfile::tempdir().unwrap();
-        let conn = open_or_create(&dir.path().join("progress.db")).unwrap();
-        record_migrated(&conn, 7, 99).unwrap();
-        assert_eq!(migrated_id(&conn, 7).unwrap(), Some(99));
+        let progress = open(&dir);
+        progress.record_migrated(7, 99).unwrap();
+        assert_eq!(progress.migrated_id(7).unwrap(), Some(99));
     }
 
     #[test]
     fn open_or_create_reopens_an_already_populated_file_without_losing_its_rows() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.db");
-        let conn = open_or_create(&path).unwrap();
-        record_content(&conn, 1, 2).unwrap();
-        drop(conn);
+        let progress = ProgressRecord::open_or_create(&path).unwrap();
+        progress.record_content(1, 2).unwrap();
+        drop(progress);
 
-        let reopened = open_or_create(&path).unwrap();
-        assert_eq!(cached_content(&reopened, 1).unwrap(), Some(2));
+        let reopened = ProgressRecord::open_or_create(&path).unwrap();
+        assert_eq!(reopened.cached_content(1).unwrap(), Some(2));
     }
 
     #[test]
     fn remove_deletes_the_file_and_tolerates_it_already_being_gone() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress.db");
-        open_or_create(&path).unwrap();
+        drop(ProgressRecord::open_or_create(&path).unwrap());
         assert!(path.exists());
 
         remove(&path).unwrap();

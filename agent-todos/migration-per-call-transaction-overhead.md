@@ -56,3 +56,12 @@ mechanical change:
 - Re-time the same three-measurement approach (single target, a near-zero-chunk-count target, several
   targets together) after any change, against the same real test repository, to confirm the actual
   speedup before declaring this fixed.
+
+## Update after the per-target threading item (2026-09-29)
+
+Running the per-target work on one thread per target (`done/migration-parallel-targets.md`) brought
+the five-target run from 94.3 s to 57.2 s, but only about 1.65x - not the ~4x a CPU-bound workload
+would give. That is a further sign that the time goes into waiting for per-commit disk flushes,
+which concurrent threads overlap only partly. Fewer, larger transactions attack that directly. They
+would also make the per-entry thread spawns in `migrate_content::parallel_map` the dominant cost, so
+the design should then move to persistent per-target worker threads fed through channels.

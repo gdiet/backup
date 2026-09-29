@@ -129,6 +129,12 @@ metadata database per requested value (DESIGN-MIGRATION-004) and, for each disti
 reference it reads, updates every open destination's own progress tracking independently - one
 value's migration falling behind, or needing to resume, never blocks or restarts the others.
 
+The shared read is the only step the targets have in common. Everything that differs per target -
+chunking and hashing a read window, the `db` commits behind it, creating a tree entry - runs on one
+scoped thread per target, joined again before the walk moves on. Running these steps one target
+after another was measured to cost more than the shared read saves: reading the source is a small
+share of the total time, while the per-target commits dominate it.
+
 ## DESIGN-MIGRATION-004: Several metadata databases against one shared `data/`; the tool and its one `db`-API addition are temporary
 Status: implemented (crates/db/src/lib.rs's `adopt_repository`/`open_repository_at`)
 

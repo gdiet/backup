@@ -114,15 +114,16 @@ fn try_run(
     // REQ-MIGRATION-005: only ever read from the shared data/, never written to - the read-only
     // flag below enforces that even against a coding mistake, not just by omission.
     let old_store = store::ByteStore::new(db::data_dir(repository), true);
-    let mut progress: Vec<(PathBuf, rusqlite::Connection)> = Vec::new();
+    let mut progress: Vec<(PathBuf, migration_progress::ProgressRecord)> = Vec::new();
     for (meta_dir, _) in &destinations {
         let progress_path = meta_dir.with_extension("progress");
-        let progress_conn = migration_progress::open_or_create(&progress_path).map_err(|err| {
-            format!(
-                "error: failed to open progress record '{}': {err}",
-                progress_path.display()
-            )
-        })?;
+        let progress_conn = migration_progress::ProgressRecord::open_or_create(&progress_path)
+            .map_err(|err| {
+                format!(
+                    "error: failed to open progress record '{}': {err}",
+                    progress_path.display()
+                )
+            })?;
         progress.push((progress_path, progress_conn));
     }
 

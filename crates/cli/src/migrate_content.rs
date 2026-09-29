@@ -8,14 +8,20 @@
 //! `db::Repository::register_existing_chunk` (DESIGN-MIGRATION-006). `db::Repository::
 //! insert_migrated_entry` (DESIGN-MIGRATION-007) recreates each tree entry, and
 //! `crate::migration_progress` (DESIGN-MIGRATION-005) makes the whole walk resumable.
+//!
+//! The staging tree is walked, and the old bytes are read, on one thread. Everything that differs
+//! per destination - chunking and hashing a read window, the `db` commits behind it, creating a
+//! tree entry - runs on one scoped thread per target (see [`parallel_map`]), since the targets
+//! share nothing but the read-only source bytes.
 
 use std::fmt;
 use std::io;
+use std::thread;
 
 use cdc::{Chunker, ChunkerConfig, ConfiguredChunker};
 use rusqlite::Connection;
 
-use crate::migration_progress::{self, ProgressError};
+use crate::migration_progress::{ProgressError, ProgressRecord};
 use crate::scala_import::{self, ImportError, StagingTreeEntry};
 use crate::settle::HASH_WIDTH;
 
@@ -81,7 +87,55 @@ impl From<db::Error> for MigrateContentError {
 /// `data/` - see `crate::migrate_scala_repo`) and its own progress record.
 pub struct Target<'a> {
     pub repo: &'a db::Repository,
-    pub progress: &'a Connection,
+    pub progress: &'a ProgressRecord,
+}
+
+/// Runs `work` for every item on its own scoped thread and returns the results in item order. With
+/// a single item it runs inline instead, so a one-target migration pays no thread overhead. Every
+/// thread runs to completion even if another one fails - the caller reports the first error in item
+/// order - and a panic on any thread is re-raised here.
+///
+/// One thread per call is only reasonable while the work per item is large next to a thread spawn
+/// (a few dozen microseconds) - true for the per-entry `db` commits and per-window hashing this is
+/// used for today.
+fn parallel_map<T: Sync, R: Send>(items: &[T], work: impl Fn(usize, &T) -> R + Sync) -> Vec<R> {
+    if let [only] = items {
+        return vec![work(0, only)];
+    }
+    thread::scope(|scope| {
+        let work = &work;
+        let handles: Vec<_> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| scope.spawn(move || work(i, item)))
+            .collect();
+        handles.into_iter().map(join_or_resume).collect()
+    })
+}
+
+/// [`parallel_map`] for work that needs `&mut` access to its item.
+fn parallel_map_mut<T: Send, R: Send>(
+    items: &mut [T],
+    work: impl Fn(usize, &mut T) -> R + Sync,
+) -> Vec<R> {
+    if let [only] = items {
+        return vec![work(0, only)];
+    }
+    thread::scope(|scope| {
+        let work = &work;
+        let handles: Vec<_> = items
+            .iter_mut()
+            .enumerate()
+            .map(|(i, item)| scope.spawn(move || work(i, item)))
+            .collect();
+        handles.into_iter().map(join_or_resume).collect()
+    })
+}
+
+fn join_or_resume<R>(handle: thread::ScopedJoinHandle<'_, R>) -> R {
+    handle
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
 /// Counts of work actually performed by one [`migrate`] call - `0` for both on a fully-resumed run
@@ -157,23 +211,31 @@ fn migrate_entry(
             .collect(),
     };
 
-    let mut new_ids = Vec::with_capacity(targets.len());
-    for (i, target) in targets.iter().enumerate() {
-        let new_id = match migration_progress::migrated_id(target.progress, child.id)? {
-            Some(id) => id,
-            None => {
-                let id = target.repo.insert_migrated_entry(
-                    new_parent_ids[i],
-                    &child.name,
-                    child.time,
-                    child.deleted_at,
-                    content_ids[i],
-                )?;
-                migration_progress::record_migrated(target.progress, child.id, id)?;
-                stats.tree_entries_created += 1;
-                id
+    let results = parallel_map(
+        targets,
+        |i, target| -> Result<(i64, bool), MigrateContentError> {
+            match target.progress.migrated_id(child.id)? {
+                Some(id) => Ok((id, false)),
+                None => {
+                    let id = target.repo.insert_migrated_entry(
+                        new_parent_ids[i],
+                        &child.name,
+                        child.time,
+                        child.deleted_at,
+                        content_ids[i],
+                    )?;
+                    target.progress.record_migrated(child.id, id)?;
+                    Ok((id, true))
+                }
             }
-        };
+        },
+    );
+    let mut new_ids = Vec::with_capacity(targets.len());
+    for result in results {
+        let (new_id, created) = result?;
+        if created {
+            stats.tree_entries_created += 1;
+        }
         new_ids.push(new_id);
     }
 
@@ -197,7 +259,7 @@ fn resolve_content(
     let mut content_ids: Vec<Option<i64>> = Vec::with_capacity(targets.len());
     let mut pending = Vec::new();
     for (i, target) in targets.iter().enumerate() {
-        match migration_progress::cached_content(target.progress, data_id)? {
+        match target.progress.cached_content(data_id)? {
             Some(id) => content_ids.push(Some(id)),
             None => {
                 content_ids.push(None);
@@ -216,7 +278,7 @@ fn resolve_content(
     if data_id == -1 {
         for &i in &pending {
             let content_id = empty_content_id(targets[i].repo)?;
-            migration_progress::record_content(targets[i].progress, data_id, content_id)?;
+            targets[i].progress.record_content(data_id, content_id)?;
             content_ids[i] = Some(content_id);
         }
         return Ok(content_ids
@@ -244,17 +306,27 @@ fn resolve_content(
             if matches!(integrity, store::ReadIntegrity::Incomplete { .. }) {
                 return Err(MigrateContentError::IncompleteOldData(data_id));
             }
-            for (_, settler) in &mut settlers {
-                settler.feed(&read_buf[..n])?;
+            let window = &read_buf[..n];
+            for result in parallel_map_mut(&mut settlers, |_, (_, settler)| settler.feed(window)) {
+                result?;
             }
             pos += n as u64;
         }
     }
 
-    for (i, settler) in settlers {
-        let content_id = settler.finish(total_len)?;
-        migration_progress::record_content(targets[i].progress, data_id, content_id)?;
-        content_ids[i] = Some(content_id);
+    // Most old files are smaller than one chunk, so for them all of the real per-target work -
+    // hashing the one chunk, its `db` commits, the content row - happens here, not in the feed loop
+    // above.
+    let finished = parallel_map_mut(
+        &mut settlers,
+        |_, (i, settler)| -> Result<i64, MigrateContentError> {
+            let content_id = settler.finish(total_len)?;
+            targets[*i].progress.record_content(data_id, content_id)?;
+            Ok(content_id)
+        },
+    );
+    for ((i, _), result) in settlers.iter().zip(finished) {
+        content_ids[*i] = Some(result?);
     }
     Ok(content_ids
         .into_iter()
@@ -373,7 +445,7 @@ impl<'a> MigrationSettler<'a> {
         Ok(())
     }
 
-    fn finish(mut self, total_len: u64) -> Result<i64, MigrateContentError> {
+    fn finish(&mut self, total_len: u64) -> Result<i64, MigrateContentError> {
         if let Some(length) = self.chunker.flush() {
             debug_assert_eq!(
                 length as usize,
@@ -473,8 +545,8 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         db::open_repository(&repo_root).unwrap()
     }
 
-    fn new_progress(dir: &tempfile::TempDir, name: &str) -> Connection {
-        migration_progress::open_or_create(&dir.path().join(name)).unwrap()
+    fn new_progress(dir: &tempfile::TempDir, name: &str) -> ProgressRecord {
+        ProgressRecord::open_or_create(&dir.path().join(name)).unwrap()
     }
 
     #[test]
@@ -580,5 +652,96 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
             old_store.read(extents[0].0, &mut buf).unwrap();
             assert_eq!(buf, CONTENT_BYTES);
         }
+    }
+
+    /// Deterministic, high-entropy filler (xorshift) - content-defined chunking only finds
+    /// boundaries in data with some entropy, unlike a repeated byte.
+    fn pseudo_random_bytes(len: usize, seed: u64) -> Vec<u8> {
+        let mut state = seed;
+        (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    /// Reads a migrated file's whole content back through its destination's own recorded extents,
+    /// straight from the old store the extents point into.
+    fn read_back(repo: &db::Repository, old_store: &store::ByteStore, path: &str) -> Vec<u8> {
+        let entry = repo.resolve_path(path).unwrap().unwrap();
+        let mut content = Vec::new();
+        for (start, stop) in repo.resolve_extents(entry.content_id.unwrap()).unwrap() {
+            let mut buf = vec![0u8; (stop - start) as usize];
+            old_store.read(start, &mut buf).unwrap();
+            content.extend(buf);
+        }
+        content
+    }
+
+    #[test]
+    fn migrate_reassembles_a_multi_part_multi_window_file_identically_in_every_target() {
+        let dir = tempfile::tempdir().unwrap();
+        // Two separate, non-contiguous parts in the old store, together larger than two read
+        // windows, so both the per-window fan-out and a chunk straddling the part boundary get
+        // exercised for real (unlike the tiny single-chunk file every other test uses).
+        let part_one = pseudo_random_bytes(5_000_000, 1);
+        let part_two = pseudo_random_bytes(4_500_000, 2);
+        let old_store = store::ByteStore::new(dir.path().join("old-data"), false);
+        old_store.write(1_000_000, &part_one).unwrap();
+        old_store.write(20_000_000, &part_two).unwrap();
+        let expected: Vec<u8> = part_one.iter().chain(&part_two).copied().collect();
+
+        let script = "INSERT INTO \"PUBLIC\".\"TREEENTRIES\" VALUES \
+                      (0, 0, '', 1000, 0, NULL), (1, 0, 'big.bin', 1001, 0, 7);\n\
+                      INSERT INTO \"PUBLIC\".\"DATAENTRIES\" VALUES \
+                      (7, 1, 9500000, 1000000, 6000000, X'00'), \
+                      (7, 2, NULL, 20000000, 24500000, NULL);";
+        let staging_path = dir.path().join("staging.db");
+        scala_import::import(script, &staging_path).unwrap();
+        let staging = scala_import::open(&staging_path).unwrap();
+
+        let repos = [
+            new_repo(&dir, "dest-14", 14),
+            new_repo(&dir, "dest-16", 16),
+            new_repo(&dir, "dest-18", 18),
+        ];
+        let progress = [
+            new_progress(&dir, "progress-14.db"),
+            new_progress(&dir, "progress-16.db"),
+            new_progress(&dir, "progress-18.db"),
+        ];
+        let targets: Vec<Target> = repos
+            .iter()
+            .zip(&progress)
+            .map(|(repo, progress)| Target { repo, progress })
+            .collect();
+
+        let stats = migrate(&staging, &old_store, &targets).unwrap();
+        assert_eq!(stats.contents_migrated, 1);
+
+        let mut chunk_counts = Vec::new();
+        for repo in &repos {
+            let content = read_back(repo, &old_store, "/big.bin");
+            assert!(
+                content == expected,
+                "migrated content differs from the original bytes"
+            );
+            let content_id = repo
+                .resolve_path("/big.bin")
+                .unwrap()
+                .unwrap()
+                .content_id
+                .unwrap();
+            chunk_counts.push(repo.resolve_chunks(content_id).unwrap().len());
+        }
+        // Each target really chunked on its own target size: finer targets produce more chunks.
+        assert!(
+            chunk_counts[0] > chunk_counts[1] && chunk_counts[1] > chunk_counts[2],
+            "expected strictly fewer chunks as the target size grows, got {chunk_counts:?}"
+        );
+        assert!(chunk_counts[2] > 5, "got {chunk_counts:?}");
     }
 }

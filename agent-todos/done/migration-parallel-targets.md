@@ -38,3 +38,25 @@ progress record, own chunker state) and share only the read-only source bytes.
   roughly "slowest single target" instead of "sum of all targets". Re-time with the same three
   measurements as the sibling item (one target, a near-zero-chunk-count target, five targets
   together) on the real test repository to confirm the actual speedup.
+
+## Done (2026-09-29, Windows/Claude Code Desktop session)
+
+Implemented in `crates/cli/src/migrate_content.rs`: `parallel_map`/`parallel_map_mut` run the
+per-target work on one scoped thread per target (inline for a single target), used for the per-window
+`MigrationSettler::feed` fan-out, the final `finish` + progress record per target, and the per-entry
+tree insert. `crate::migration_progress` became a `ProgressRecord` type with its connection behind a
+`Mutex`, since `rusqlite::Connection` is `Send` but not `Sync`.
+
+Measured with the same method as before (release build, fresh copy of the real Scala test
+repository, same machine): one target at 18 bits 21.0 s -> 20.0 s, five targets (16-20 bits)
+94.3 s -> 57.2 s (about 1.65x). The destination databases came out byte-identical in physical size
+to the sequential run. The speedup is far below the ideal (slowest single target, roughly 25-30 s)
+because every commit still ends in a disk flush, and five concurrent flushes to one disk overlap only
+partly - the per-commit cost itself is what `migration-per-call-transaction-overhead.md` is about,
+and batching is now the bigger remaining lever.
+
+New test `migrate_reassembles_a_multi_part_multi_window_file_identically_in_every_target` covers what
+no test did before: a ~9.5 MB file in two non-contiguous parts (more than two read windows, real
+chunk boundaries including one straddling the part boundary) migrated into three targets at once,
+read back byte for byte through each destination's own extents. Verified red by shifting
+`map_to_old_store_extents` by one byte.
