@@ -38,3 +38,16 @@ cleanup, and without risk to the source repository's original data.
 Rationale: a multi-step migration over a potentially large repository will occasionally be
 interrupted (power loss, a killed process) — recovering from that should be as simple as trying
 again.
+
+### REQ-MIGRATION-004: Compare several CDC target sizes from one read of the source
+Status: agreed
+Importance: should
+
+Migrating into more than one candidate `--cdc-target-size-bits` value does not cost one full read
+of the source repository's stored content per value compared — reading the source once and
+producing several migrated repositories, one per value, is sufficient.
+
+Rationale: choosing a target size for a large, one-time migration benefits from comparing the
+resulting deduplication ratio across a few candidate values on the operator's own real data before
+committing to one — REQ-MIGRATION-002's own "no wholesale recopy" concern applies just as much to
+reading the same multi-terabyte source repeatedly for this comparison as it does to copying it.
