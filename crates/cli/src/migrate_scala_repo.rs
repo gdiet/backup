@@ -1,5 +1,5 @@
-//! `dfs migrate-scala-repo` - REQ-MIGRATION-001 through 005 in
-//! `requirements/functional/repository-migration.md` (DESIGN-MIGRATION-001 through 007 in
+//! `dfs migrate-scala-repo` - REQ-MIGRATION-001 through 006 in
+//! `requirements/functional/repository-migration.md` (DESIGN-MIGRATION-001 through 008 in
 //! `docs/design/scala-migration-tool.md`): imports a Scala-DedupFS `fsc db-backup` SQL export into
 //! a small, durable, queryable staging database via `crate::scala_import`, adopts (or reuses) one
 //! destination metadata database per requested `--cdc-target-size-bits` value against the existing
@@ -8,7 +8,7 @@
 //! been fully migrated, the staging import is removed, and so are the progress tables each
 //! destination kept while it was being migrated (DESIGN-MIGRATION-005) - neither is needed again.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,6 +21,7 @@ fn try_run(
     script: &Path,
     staging: &Path,
     cdc_target_size_bits: &[u32],
+    tolerate_missing_data: bool,
 ) -> Result<String, String> {
     if cdc_target_size_bits.is_empty() {
         return Err("error: at least one --cdc-target-size-bits value is required".to_string());
@@ -135,12 +136,18 @@ fn try_run(
     }
 
     if !pending.is_empty() {
-        let migration_stats = migrate_content::migrate(&conn, &old_store, &pending)
-            .map_err(|err| format!("error: {err}"))?;
+        let migration_stats = migrate_content::migrate(
+            &conn,
+            &old_store,
+            &pending,
+            migrate_content::Settings::new(tolerate_missing_data),
+        )
+        .map_err(|err| format!("error: {err}"))?;
         message.push_str(&format!(
             "\nMigrated content: {} new tree entries, {} distinct old contents re-chunked.",
             migration_stats.tree_entries_created, migration_stats.contents_migrated
         ));
+        message.push_str(&missing_data_report(repository, &conn, &pending)?);
 
         // migrate_content::migrate only ever returns Ok once every pending destination's whole
         // tree has been walked and committed - so reaching here means each is fully migrated, and
@@ -169,6 +176,77 @@ fn try_run(
     Ok(message)
 }
 
+/// Where the full list of contents with missing old data is written (DESIGN-MIGRATION-008).
+const MISSING_DATA_REPORT: &str = "migrate-missing-data.txt";
+/// How many of those contents the printed message itself lists.
+const REPORT_LINES_SHOWN: usize = 20;
+
+/// What to tell the operator about contents whose old data was missing and tolerated
+/// (DESIGN-MIGRATION-008) - empty text if there were none. The full list goes to a file in the
+/// repository root, since the progress tables that hold it are dropped once the migration is
+/// finished, and only the first few contents fit in a message.
+///
+/// Must run before the destinations drop those tables. Contents noted by an earlier, interrupted
+/// run are included: they are stored with the destination, not held in memory.
+fn missing_data_report(
+    repository: &Path,
+    staging_conn: &rusqlite::Connection,
+    destinations: &[&db::Repository],
+) -> Result<String, String> {
+    let mut damaged: BTreeMap<i64, String> = BTreeMap::new();
+    for repo in destinations {
+        let listed = repo
+            .migration_damaged()
+            .map_err(|err| format!("error: failed to read the list of damaged contents: {err}"))?;
+        for (data_id, detail) in listed {
+            damaged.entry(data_id).or_insert(detail);
+        }
+    }
+    if damaged.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut lines = Vec::with_capacity(damaged.len());
+    for (data_id, detail) in &damaged {
+        let used_by = scala_import::staging_paths_for_data_id(
+            staging_conn,
+            *data_id,
+            migrate_content::PATHS_SHOWN,
+        )
+        .map_err(|err| format!("error: {err}"))?;
+        lines.push(format!(
+            "dataId {data_id}: missing {detail}; used by: {}",
+            used_by.join(", ")
+        ));
+    }
+    let report_path = repository.join(MISSING_DATA_REPORT);
+    let report_note = match std::fs::write(&report_path, lines.join("\n") + "\n") {
+        Ok(()) => format!("The full list is in '{}'.", report_path.display()),
+        Err(err) => format!(
+            "The full list could not be written to '{}': {err}",
+            report_path.display()
+        ),
+    };
+
+    let mut text = format!(
+        "\nWARNING: {} old content(s) had missing data. Zeros were assumed for the missing bytes. \
+         Reading these files through dfs still reports the missing data (`dfs restore` fails them \
+         unless run with --best-effort) until the missing data files are restored. {report_note}",
+        damaged.len()
+    );
+    for line in lines.iter().take(REPORT_LINES_SHOWN) {
+        text.push_str("\n  ");
+        text.push_str(line);
+    }
+    if lines.len() > REPORT_LINES_SHOWN {
+        text.push_str(&format!(
+            "\n  ... and {} more",
+            lines.len() - REPORT_LINES_SHOWN
+        ));
+    }
+    Ok(text)
+}
+
 /// `bits`'s destination metadata database location - `repository`'s own conventional `meta/` when
 /// exactly one target size was requested (immediately usable by every other command), or a
 /// distinguishable, non-conventional location otherwise (DESIGN-MIGRATION-004), since only one
@@ -189,7 +267,13 @@ fn default_staging_path(repository: &Path) -> PathBuf {
     repository.join("migrate-staging.db")
 }
 
-pub fn run(repository: &Path, script: &Path, staging: Option<&Path>, cdc_target_size_bits: &[u32]) {
+pub fn run(
+    repository: &Path,
+    script: &Path,
+    staging: Option<&Path>,
+    cdc_target_size_bits: &[u32],
+    tolerate_missing_data: bool,
+) {
     let default_staging;
     let staging = match staging {
         Some(path) => path,
@@ -198,7 +282,13 @@ pub fn run(repository: &Path, script: &Path, staging: Option<&Path>, cdc_target_
             &default_staging
         }
     };
-    match try_run(repository, script, staging, cdc_target_size_bits) {
+    match try_run(
+        repository,
+        script,
+        staging,
+        cdc_target_size_bits,
+        tolerate_missing_data,
+    ) {
         Ok(message) => println!("{message}"),
         Err(message) => {
             eprintln!("{message}");
@@ -249,7 +339,7 @@ CREATE CACHED TABLE "PUBLIC"."DATAENTRIES"(
     #[test]
     fn try_run_builds_a_fresh_staging_database_and_reports_its_counts() {
         let (_dir, repository, script, staging) = setup();
-        let message = try_run(&repository, &script, &staging, &[20]).unwrap();
+        let message = try_run(&repository, &script, &staging, &[20], false).unwrap();
         assert!(message.starts_with("Built"), "got: {message}");
         assert!(
             message.contains("1 tree entries, 0 data entries"),
@@ -286,7 +376,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let (_dir, repository, script, staging) = setup();
         std::fs::write(&script, SCRIPT_WITH_UNREADABLE_CONTENT).unwrap();
 
-        let first_error = try_run(&repository, &script, &staging, &[20])
+        let first_error = try_run(&repository, &script, &staging, &[20], false)
             .expect_err("phase 2 must fail - dataId 5's bytes do not actually exist");
         assert!(first_error.contains("dataId 5"), "got: {first_error}");
         assert!(
@@ -297,7 +387,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         // A script that no longer exists must not matter the second time - a genuinely reused
         // import never needs to read it again.
         std::fs::remove_file(&script).unwrap();
-        let second_error = try_run(&repository, &script, &staging, &[20])
+        let second_error = try_run(&repository, &script, &staging, &[20], false)
             .expect_err("must still fail the same way");
         assert!(second_error.contains("dataId 5"), "got: {second_error}");
     }
@@ -306,15 +396,59 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     fn try_run_reports_an_actionable_message_for_a_missing_script() {
         let (dir, repository, _script, staging) = setup();
         let missing = dir.path().join("does-not-exist.sql");
-        let message = try_run(&repository, &missing, &staging, &[20])
+        let message = try_run(&repository, &missing, &staging, &[20], false)
             .expect_err("must fail - the script is missing");
         assert!(message.contains("does-not-exist.sql"), "got: {message}");
     }
 
     #[test]
+    fn try_run_names_the_option_the_missing_data_and_the_affected_path_when_data_is_missing() {
+        let (_dir, repository, script, staging) = setup();
+        std::fs::write(&script, SCRIPT_WITH_UNREADABLE_CONTENT).unwrap();
+
+        let message = try_run(&repository, &script, &staging, &[20], false)
+            .expect_err("dataId 5's bytes do not exist and nothing is tolerated");
+        assert!(message.contains("--tolerate-missing-data"), "{message}");
+        assert!(message.contains("data/"), "{message}");
+        assert!(message.contains("/b.txt"), "{message}");
+    }
+
+    #[test]
+    fn try_run_with_tolerance_warns_lists_the_gap_in_a_report_file_and_still_finishes() {
+        let (_dir, repository, script, staging) = setup();
+        std::fs::write(&script, SCRIPT_WITH_UNREADABLE_CONTENT).unwrap();
+
+        let message = try_run(&repository, &script, &staging, &[20], true)
+            .expect("the gap is tolerated, so the migration must complete");
+        assert!(message.contains("WARNING"), "{message}");
+        assert!(message.contains("dataId 5"), "{message}");
+        assert!(message.contains("/b.txt"), "{message}");
+
+        let report = std::fs::read_to_string(repository.join("migrate-missing-data.txt")).unwrap();
+        assert!(
+            report.contains("dataId 5") && report.contains("/b.txt"),
+            "{report}"
+        );
+        assert!(
+            !staging.exists(),
+            "a finished migration removes its staging file, gaps or not"
+        );
+        let repo = db::open_repository(&repository).unwrap();
+        assert!(repo.resolve_path("/b.txt").unwrap().is_some());
+    }
+
+    #[test]
+    fn try_run_writes_no_report_when_nothing_was_missing() {
+        let (_dir, repository, script, staging) = setup();
+        let message = try_run(&repository, &script, &staging, &[20], true).unwrap();
+        assert!(!message.contains("WARNING"), "{message}");
+        assert!(!repository.join("migrate-missing-data.txt").exists());
+    }
+
+    #[test]
     fn try_run_adopts_a_single_target_size_at_the_conventional_meta_location() {
         let (_dir, repository, script, staging) = setup();
-        let message = try_run(&repository, &script, &staging, &[18]).unwrap();
+        let message = try_run(&repository, &script, &staging, &[18], false).unwrap();
         assert!(message.contains("Created metadata database"), "{message}");
         assert!(!message.contains("rename"), "{message}");
 
@@ -325,9 +459,9 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_reuses_an_already_adopted_destination_on_a_second_run() {
         let (_dir, repository, script, staging) = setup();
-        try_run(&repository, &script, &staging, &[18]).unwrap();
+        try_run(&repository, &script, &staging, &[18], false).unwrap();
 
-        let message = try_run(&repository, &script, &staging, &[18]).unwrap();
+        let message = try_run(&repository, &script, &staging, &[18], false).unwrap();
         assert!(
             message.contains("Reusing existing metadata database"),
             "{message}"
@@ -337,9 +471,9 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_rejects_a_mismatched_target_size_on_an_already_adopted_destination() {
         let (_dir, repository, script, staging) = setup();
-        try_run(&repository, &script, &staging, &[18]).unwrap();
+        try_run(&repository, &script, &staging, &[18], false).unwrap();
 
-        let message = try_run(&repository, &script, &staging, &[20])
+        let message = try_run(&repository, &script, &staging, &[20], false)
             .expect_err("must fail - the existing destination was created with a different size");
         assert!(message.contains("18 bits"), "{message}");
         assert!(message.contains("20"), "{message}");
@@ -348,7 +482,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_adopts_several_target_sizes_at_distinguishable_locations_and_prints_a_rename_hint() {
         let (_dir, repository, script, staging) = setup();
-        let message = try_run(&repository, &script, &staging, &[18, 20]).unwrap();
+        let message = try_run(&repository, &script, &staging, &[18, 20], false).unwrap();
 
         assert!(!db::meta_dir(&repository).exists(), "{message}");
         db::open_repository_at(&repository.join("meta-18bit")).unwrap();
@@ -365,7 +499,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         std::fs::write(&script, SAMPLE_SCRIPT).unwrap();
         let staging = dir.path().join("staging.db");
 
-        let message = try_run(&repository, &script, &staging, &[20])
+        let message = try_run(&repository, &script, &staging, &[20], false)
             .expect_err("must fail - there is no data/ directory to adopt");
         assert!(message.contains("data"), "{message}");
     }
@@ -373,7 +507,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_rejects_duplicate_target_size_values() {
         let (_dir, repository, script, staging) = setup();
-        let message = try_run(&repository, &script, &staging, &[18, 18])
+        let message = try_run(&repository, &script, &staging, &[18, 18], false)
             .expect_err("must fail - 18 was given twice");
         assert!(message.contains("more than once"), "{message}");
     }
@@ -381,7 +515,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_rejects_an_out_of_range_target_size_value() {
         let (_dir, repository, script, staging) = setup();
-        let message = try_run(&repository, &script, &staging, &[24])
+        let message = try_run(&repository, &script, &staging, &[24], false)
             .expect_err("must fail - 24 exceeds the 23-bit ceiling");
         assert!(message.contains("too large"), "{message}");
     }
@@ -389,8 +523,8 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
     #[test]
     fn try_run_rejects_an_empty_target_size_list() {
         let (_dir, repository, script, staging) = setup();
-        let message =
-            try_run(&repository, &script, &staging, &[]).expect_err("must fail - none given");
+        let message = try_run(&repository, &script, &staging, &[], false)
+            .expect_err("must fail - none given");
         assert!(message.contains("at least one"), "{message}");
     }
 }

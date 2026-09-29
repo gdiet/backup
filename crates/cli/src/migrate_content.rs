@@ -39,16 +39,43 @@ const READ_WINDOW: usize = 4 * 1024 * 1024;
 /// enough that commits stop mattering for speed, small enough that a failed run loses little and
 /// the write-ahead log stays small.
 const BATCH_OPS: u64 = 5000;
+/// How many referencing paths an error or warning about missing old data names.
+pub const PATHS_SHOWN: usize = 3;
+
+/// What a migration run is told to do, beyond the targets themselves.
+#[derive(Debug, Clone, Copy)]
+pub struct Settings {
+    /// Commit a target's batch once it has run this many write operations.
+    pub batch_ops: u64,
+    /// Continue past old data that is missing or too short, taking the missing bytes as zeros,
+    /// instead of stopping (DESIGN-MIGRATION-008).
+    pub tolerate_missing_data: bool,
+}
+
+impl Settings {
+    pub fn new(tolerate_missing_data: bool) -> Self {
+        Self {
+            batch_ops: BATCH_OPS,
+            tolerate_missing_data,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum MigrateContentError {
     Staging(ImportError),
     Db(db::Error),
     Read(io::Error),
-    /// The old data store had missing or short bytes for this old `dataId` - a real content
-    /// reference should never be incomplete in a healthy source repository, so this is reported
-    /// rather than silently zero-filled.
-    IncompleteOldData(i64),
+    /// The old data store has missing or short bytes for this old `dataId`, and the caller did not
+    /// choose to tolerate that (DESIGN-MIGRATION-008). Carries what an operator needs to decide
+    /// between repairing the data and tolerating the gap.
+    MissingOldData {
+        data_id: i64,
+        /// The backing files that were missing or too short, relative to `data/`.
+        missing_files: Vec<String>,
+        /// A few of the tree entries that use this content.
+        used_by: Vec<String>,
+    },
 }
 
 impl fmt::Display for MigrateContentError {
@@ -57,10 +84,22 @@ impl fmt::Display for MigrateContentError {
             MigrateContentError::Staging(err) => write!(f, "{err}"),
             MigrateContentError::Db(err) => write!(f, "{err}"),
             MigrateContentError::Read(err) => write!(f, "{err}"),
-            MigrateContentError::IncompleteOldData(data_id) => write!(
+            MigrateContentError::MissingOldData {
+                data_id,
+                missing_files,
+                used_by,
+            } => write!(
                 f,
-                "old data for dataId {data_id} was missing or shorter than expected in the \
-                 existing data/ directory"
+                "old data for dataId {data_id} is missing or incomplete in the existing data/ \
+                 directory (missing or too short: {}; used by: {}). Restore the missing data \
+                 files and run the migration again, or pass --tolerate-missing-data to continue \
+                 with zeros in place of the missing bytes",
+                missing_files.join(", "),
+                if used_by.is_empty() {
+                    "an entry not found in the export".to_string()
+                } else {
+                    used_by.join(", ")
+                }
             ),
         }
     }
@@ -143,6 +182,8 @@ pub struct MigrationStats {
     /// regardless of how many targets still needed it) - not incremented for a `dataId` every
     /// target had already cached.
     pub contents_migrated: u64,
+    /// Of those, how many had missing old bytes that were tolerated (DESIGN-MIGRATION-008).
+    pub damaged_contents: u64,
 }
 
 /// Migrates the whole staging tree into every one of `targets`, each of which must already have its
@@ -157,24 +198,24 @@ pub fn migrate(
     staging: &Connection,
     old_store: &store::ByteStore,
     targets: &[Target],
+    settings: Settings,
 ) -> Result<MigrationStats, MigrateContentError> {
-    migrate_in_batches(staging, old_store, targets, BATCH_OPS)
+    migrate_in_batches(staging, old_store, targets, settings)
 }
 
-/// [`migrate`] with the batch size chosen by the caller - tests use a tiny one to get many commits
-/// out of a small fixture.
+/// [`migrate`], kept as its own function so tests can hand in a tiny batch size.
 fn migrate_in_batches(
     staging: &Connection,
     old_store: &store::ByteStore,
     targets: &[Target],
-    batch_ops: u64,
+    settings: Settings,
 ) -> Result<MigrationStats, MigrateContentError> {
     let begun = parallel_map(targets, |_, repo| repo.migration_begin_batch());
     if let Some(err) = begun.into_iter().find_map(Result::err) {
         roll_back_all(targets);
         return Err(err.into());
     }
-    let result = walk_and_commit(staging, old_store, targets, batch_ops);
+    let result = walk_and_commit(staging, old_store, targets, settings);
     if result.is_err() {
         roll_back_all(targets);
     }
@@ -185,7 +226,7 @@ fn walk_and_commit(
     staging: &Connection,
     old_store: &store::ByteStore,
     targets: &[Target],
-    batch_ops: u64,
+    settings: Settings,
 ) -> Result<MigrationStats, MigrateContentError> {
     let mut stats = MigrationStats::default();
     let new_root_ids = vec![0i64; targets.len()];
@@ -195,7 +236,7 @@ fn walk_and_commit(
         targets,
         OLD_ROOT_ID,
         &new_root_ids,
-        batch_ops,
+        settings,
         &mut stats,
     )?;
     for result in parallel_map(targets, |_, repo| repo.migration_commit_batch()) {
@@ -232,7 +273,7 @@ fn walk_children(
     targets: &[Target],
     old_parent_id: i64,
     new_parent_ids: &[i64],
-    batch_ops: u64,
+    settings: Settings,
     stats: &mut MigrationStats,
 ) -> Result<(), MigrateContentError> {
     for child in scala_import::staging_children(staging, old_parent_id)? {
@@ -247,7 +288,7 @@ fn walk_children(
             targets,
             &child,
             new_parent_ids,
-            batch_ops,
+            settings,
             stats,
         )?;
     }
@@ -262,12 +303,12 @@ fn migrate_entry(
     targets: &[Target],
     child: &StagingTreeEntry,
     new_parent_ids: &[i64],
-    batch_ops: u64,
+    settings: Settings,
     stats: &mut MigrationStats,
 ) -> Result<(), MigrateContentError> {
     let content_ids: Vec<Option<i64>> = match child.data_id {
         None => vec![None; targets.len()],
-        Some(data_id) => resolve_content(staging, old_store, targets, data_id, batch_ops, stats)?
+        Some(data_id) => resolve_content(staging, old_store, targets, data_id, settings, stats)?
             .into_iter()
             .map(Some)
             .collect(),
@@ -287,7 +328,7 @@ fn migrate_entry(
                         content_ids[i],
                     )?;
                     target.migration_record_migrated(child.id, id)?;
-                    commit_if_due(target, batch_ops)?;
+                    commit_if_due(target, settings.batch_ops)?;
                     Ok((id, true))
                 }
             }
@@ -304,7 +345,7 @@ fn migrate_entry(
 
     if child.data_id.is_none() {
         walk_children(
-            staging, old_store, targets, child.id, &new_ids, batch_ops, stats,
+            staging, old_store, targets, child.id, &new_ids, settings, stats,
         )?;
     }
     Ok(())
@@ -319,7 +360,7 @@ fn resolve_content(
     old_store: &store::ByteStore,
     targets: &[Target],
     data_id: i64,
-    batch_ops: u64,
+    settings: Settings,
     stats: &mut MigrationStats,
 ) -> Result<Vec<i64>, MigrateContentError> {
     let mut content_ids: Vec<Option<i64>> = Vec::with_capacity(targets.len());
@@ -358,9 +399,10 @@ fn resolve_content(
 
     let mut settlers: Vec<(usize, MigrationSettler)> = pending
         .iter()
-        .map(|&i| (i, MigrationSettler::new(targets[i], &parts)))
+        .map(|&i| (i, MigrationSettler::new(targets[i], &parts, data_id)))
         .collect();
 
+    let mut missing_files: Vec<String> = Vec::new();
     let mut read_buf = vec![0u8; READ_WINDOW];
     for &(start, stop) in &parts {
         let mut pos = start;
@@ -369,17 +411,41 @@ fn resolve_content(
             let integrity = old_store
                 .read(pos, &mut read_buf[..n])
                 .map_err(MigrateContentError::Read)?;
-            if matches!(integrity, store::ReadIntegrity::Incomplete { .. }) {
-                return Err(MigrateContentError::IncompleteOldData(data_id));
-            }
+            // `read` has already zero-filled whatever was missing, so the window can be used as it
+            // is - if the caller chose to tolerate that.
+            let incomplete =
+                if let store::ReadIntegrity::Incomplete { missing_or_short } = integrity {
+                    let files = missing_or_short
+                        .iter()
+                        .map(|path| format!("data/{}", path.to_string_lossy().replace('\\', "/")));
+                    if !settings.tolerate_missing_data {
+                        return Err(MigrateContentError::MissingOldData {
+                            data_id,
+                            missing_files: files.collect(),
+                            used_by: scala_import::staging_paths_for_data_id(
+                                staging,
+                                data_id,
+                                PATHS_SHOWN,
+                            )?,
+                        });
+                    }
+                    for file in files {
+                        if !missing_files.contains(&file) {
+                            missing_files.push(file);
+                        }
+                    }
+                    true
+                } else {
+                    false
+                };
             let window = &read_buf[..n];
             let fed = parallel_map_mut(
                 &mut settlers,
                 |_, (_, settler)| -> Result<(), MigrateContentError> {
-                    settler.feed(window)?;
+                    settler.feed(window, incomplete)?;
                     // Only chunks are pending here, and re-registering a chunk after a resume finds it
                     // again by hash - so committing in the middle of a long file is safe.
-                    commit_if_due(settler.repo, batch_ops)?;
+                    commit_if_due(settler.repo, settings.batch_ops)?;
                     Ok(())
                 },
             );
@@ -390,6 +456,17 @@ fn resolve_content(
         }
     }
 
+    let damaged_detail = (!missing_files.is_empty()).then(|| missing_files.join(", "));
+    if let Some(detail) = &damaged_detail {
+        stats.damaged_contents += 1;
+        let used_by = scala_import::staging_paths_for_data_id(staging, data_id, PATHS_SHOWN)?;
+        eprintln!(
+            "warning: old data for dataId {data_id} is missing or incomplete ({detail}; used by: \
+             {}) - continuing with zeros in place of the missing bytes",
+            used_by.join(", ")
+        );
+    }
+
     // Most old files are smaller than one chunk, so for them all of the real per-target work -
     // hashing the one chunk, its `db` commits, the content row - happens here, not in the feed loop
     // above.
@@ -398,7 +475,10 @@ fn resolve_content(
         |_, (i, settler)| -> Result<i64, MigrateContentError> {
             let content_id = settler.finish(total_len)?;
             targets[*i].migration_record_content(data_id, content_id)?;
-            commit_if_due(targets[*i], batch_ops)?;
+            if let Some(detail) = &damaged_detail {
+                targets[*i].migration_record_damaged(data_id, detail)?;
+            }
+            commit_if_due(targets[*i], settings.batch_ops)?;
             Ok(content_id)
         },
     );
@@ -451,6 +531,22 @@ fn map_to_old_store_extents(
     extents
 }
 
+/// The hash recorded for a chunk that overlaps missing old data (DESIGN-MIGRATION-008). The plain
+/// hash of the zero-filled bytes must never be used: it would let a later write of real all-zero
+/// content of the same length dedup onto this chunk, and would then serve different bytes once the
+/// missing data is restored. This value is unique per `(dataId, position, length)`, so it never
+/// matches real content, and it is the same on every run, so a resume finds the chunk again.
+fn missing_data_marker_hash(data_id: i64, chunk_start: u64, length: u64) -> [u8; HASH_WIDTH] {
+    let mut hasher =
+        blake3::Hasher::new_derive_key("dedupfs scala migration: chunk over missing old data");
+    hasher.update(&data_id.to_le_bytes());
+    hasher.update(&chunk_start.to_le_bytes());
+    hasher.update(&length.to_le_bytes());
+    let mut hash = [0u8; HASH_WIDTH];
+    hasher.finalize_xof().fill(&mut hash);
+    hash
+}
+
 /// Streaming chunker/hasher state for re-chunking one distinct old content reference into one
 /// target - one instance per `(data_id, target)` pair still needing work, fed the same bytes as
 /// every other pending target's own instance in lockstep, each producing its own chunk boundaries
@@ -458,6 +554,7 @@ fn map_to_old_store_extents(
 struct MigrationSettler<'a> {
     repo: &'a db::Repository,
     parts: &'a [(u64, u64)],
+    data_id: i64,
     chunker: ConfiguredChunker,
     chunk_buffer: Vec<u8>,
     chunk_ids: Vec<i64>,
@@ -465,25 +562,40 @@ struct MigrationSettler<'a> {
     /// This settler's own logical position, within the concatenation of `parts`, of the end of the
     /// last chunk it has completed so far - see `map_to_old_store_extents`.
     chunk_boundary: u64,
+    /// How many bytes have been fed so far, in the same logical coordinates.
+    fed_position: u64,
+    /// The logical ranges of the fed windows that were zero-filled for missing old data. A chunk
+    /// overlapping any of them gets [`missing_data_marker_hash`] instead of its real hash.
+    missing_ranges: Vec<(u64, u64)>,
 }
 
 impl<'a> MigrationSettler<'a> {
-    fn new(repo: &'a db::Repository, parts: &'a [(u64, u64)]) -> Self {
+    fn new(repo: &'a db::Repository, parts: &'a [(u64, u64)], data_id: i64) -> Self {
         let bits = repo.settings().cdc_target_size_bits();
         let config = ChunkerConfig::new(Some(bits))
             .expect("cdc_target_size_bits was already validated when this repository was adopted");
         Self {
             repo,
             parts,
+            data_id,
             chunker: config.chunker(),
             chunk_buffer: Vec::new(),
             chunk_ids: Vec::new(),
             content_hasher: blake3::Hasher::new(),
             chunk_boundary: 0,
+            fed_position: 0,
+            missing_ranges: Vec::new(),
         }
     }
 
-    fn feed(&mut self, data: &[u8]) -> Result<(), MigrateContentError> {
+    /// Feeds one window. `incomplete` says that the window contains zero-filled stand-ins for
+    /// missing old bytes - chunk boundaries are then found on those zeros, but the chunks they end
+    /// up in are marked, see [`missing_data_marker_hash`].
+    fn feed(&mut self, data: &[u8], incomplete: bool) -> Result<(), MigrateContentError> {
+        if incomplete {
+            self.missing_ranges
+                .push((self.fed_position, self.fed_position + data.len() as u64));
+        }
         let mut bytes_into_chunk = self.chunker.bytes_into_chunk();
         let lengths = self.chunker.next(data);
         let mut rest = data;
@@ -495,29 +607,40 @@ impl<'a> MigrationSettler<'a> {
             bytes_into_chunk = 0;
         }
         self.chunk_buffer.extend_from_slice(rest);
+        self.fed_position += data.len() as u64;
         Ok(())
     }
 
     fn complete_chunk(&mut self) -> Result<(), MigrateContentError> {
-        let hash = blake3::hash(&self.chunk_buffer);
-        let chunk_hash = &hash.as_bytes()[..HASH_WIDTH];
         let length = self.chunk_buffer.len() as i64;
-
         let chunk_start = self.chunk_boundary;
         let chunk_end = chunk_start + length as u64;
         self.chunk_boundary = chunk_end;
 
-        let chunk_id = match self.repo.find_chunk(length, chunk_hash)? {
+        let over_missing_data = self
+            .missing_ranges
+            .iter()
+            .any(|&(start, end)| chunk_start < end && start < chunk_end);
+        let chunk_hash = if over_missing_data {
+            missing_data_marker_hash(self.data_id, chunk_start, length as u64)
+        } else {
+            let hash = blake3::hash(&self.chunk_buffer);
+            let mut chunk_hash = [0u8; HASH_WIDTH];
+            chunk_hash.copy_from_slice(&hash.as_bytes()[..HASH_WIDTH]);
+            chunk_hash
+        };
+
+        let chunk_id = match self.repo.find_chunk(length, &chunk_hash)? {
             Some(id) => id,
             None => {
                 let extents = map_to_old_store_extents(self.parts, chunk_start, chunk_end);
                 self.repo
-                    .register_existing_chunk(length, chunk_hash, &extents)?
+                    .register_existing_chunk(length, &chunk_hash, &extents)?
             }
         };
         self.chunk_ids.push(chunk_id);
         self.content_hasher.update(&(length as u64).to_le_bytes());
-        self.content_hasher.update(chunk_hash);
+        self.content_hasher.update(&chunk_hash);
         self.chunk_buffer.clear();
         Ok(())
     }
@@ -631,7 +754,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let repo = new_repo(&dir, "dest", 12);
         let targets = [&repo];
 
-        let stats = migrate(&staging, &old_store, &targets).unwrap();
+        let stats = migrate(&staging, &old_store, &targets, Settings::new(false)).unwrap();
         assert_eq!(
             stats.tree_entries_created, 4,
             "dir, file.txt, empty.txt, gone.txt"
@@ -718,10 +841,18 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
 
             let repo = new_repo(&dir, "dest", 12);
             let targets = [&repo];
-            let err = migrate_in_batches(&staging, &old_store, &targets, batch_ops)
-                .expect_err("the seventh file's bytes are missing");
+            let err = migrate_in_batches(
+                &staging,
+                &old_store,
+                &targets,
+                Settings {
+                    batch_ops,
+                    tolerate_missing_data: false,
+                },
+            )
+            .expect_err("the seventh file's bytes are missing");
             assert!(
-                matches!(err, MigrateContentError::IncompleteOldData(17)),
+                matches!(err, MigrateContentError::MissingOldData { data_id: 17, .. }),
                 "batch size {batch_ops}: {err}"
             );
 
@@ -745,8 +876,16 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
             );
 
             old_store.write(700, b"content-17").unwrap();
-            let stats = migrate_in_batches(&staging, &old_store, &targets, batch_ops)
-                .unwrap_or_else(|err| panic!("batch size {batch_ops}: resume failed: {err}"));
+            let stats = migrate_in_batches(
+                &staging,
+                &old_store,
+                &targets,
+                Settings {
+                    batch_ops,
+                    tolerate_missing_data: false,
+                },
+            )
+            .unwrap_or_else(|err| panic!("batch size {batch_ops}: resume failed: {err}"));
             assert_eq!(
                 stats.tree_entries_created,
                 8 - already_migrated as u64,
@@ -764,6 +903,134 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         }
     }
 
+    /// A file whose second part lies in a backing data file that does not exist (the store's first
+    /// data file holds 100 MB, so position 250,000,000 is in the third), next to an intact file.
+    /// Returns the staging database, the old store, and the bytes of the intact first part.
+    fn source_with_a_missing_data_file(
+        dir: &tempfile::TempDir,
+    ) -> (Connection, store::ByteStore, Vec<u8>, Vec<u8>) {
+        let intact = pseudo_random_bytes(2_000_000, 3);
+        let gap_part_one = pseudo_random_bytes(2_000_000, 4);
+        let old_store = store::ByteStore::new(dir.path().join("old-data"), false);
+        old_store.write(0, &intact).unwrap();
+        old_store.write(3_000_000, &gap_part_one).unwrap();
+
+        let script = "INSERT INTO \"PUBLIC\".\"TREEENTRIES\" VALUES \
+                      (0, 0, '', 1000, 0, NULL), (1, 0, 'ok.bin', 1001, 0, 20), \
+                      (2, 0, 'gap.bin', 1002, 0, 21);\n\
+                      INSERT INTO \"PUBLIC\".\"DATAENTRIES\" VALUES \
+                      (20, 1, 2000000, 0, 2000000, X'00'), \
+                      (21, 1, 3000000, 3000000, 5000000, X'00'), \
+                      (21, 2, NULL, 250000000, 251000000, NULL);";
+        let staging_path = dir.path().join("staging.db");
+        scala_import::import(script, &staging_path).unwrap();
+        (
+            scala_import::open(&staging_path).unwrap(),
+            old_store,
+            intact,
+            gap_part_one,
+        )
+    }
+
+    #[test]
+    fn missing_old_data_stops_the_migration_with_a_helpful_error_and_a_restart_stops_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (staging, old_store, _, _) = source_with_a_missing_data_file(&dir);
+        let repo = new_repo(&dir, "dest", 14);
+        let targets = [&repo];
+
+        for attempt in 1..=2 {
+            let err = migrate(&staging, &old_store, &targets, Settings::new(false))
+                .expect_err("the second part of gap.bin is in a data file that does not exist");
+            let MigrateContentError::MissingOldData {
+                data_id,
+                missing_files,
+                used_by,
+            } = &err
+            else {
+                panic!("attempt {attempt}: unexpected error {err}");
+            };
+            assert_eq!(*data_id, 21, "attempt {attempt}");
+            assert!(
+                !missing_files.is_empty() && missing_files.iter().all(|f| f.starts_with("data/")),
+                "attempt {attempt}: {missing_files:?}"
+            );
+            assert_eq!(used_by, &vec!["/gap.bin".to_string()], "attempt {attempt}");
+            let message = err.to_string();
+            assert!(
+                message.contains("--tolerate-missing-data") && message.contains("/gap.bin"),
+                "attempt {attempt}: {message}"
+            );
+        }
+        assert!(
+            repo.resolve_path("/gap.bin").unwrap().is_none(),
+            "nothing of the failed content may have been recorded"
+        );
+    }
+
+    #[test]
+    fn tolerated_missing_data_is_marked_never_hashed_as_zeros_and_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (staging, old_store, intact, gap_part_one) = source_with_a_missing_data_file(&dir);
+        let repos = [new_repo(&dir, "dest-14", 14), new_repo(&dir, "dest-16", 16)];
+        let targets: Vec<Target> = repos.iter().collect();
+
+        let stats = migrate(&staging, &old_store, &targets, Settings::new(true)).unwrap();
+        assert_eq!(
+            stats.damaged_contents, 1,
+            "one content, however many targets"
+        );
+
+        // The bytes as anything reading through the store sees them: zeros where data is missing.
+        let expected_gap: Vec<u8> = gap_part_one
+            .iter()
+            .copied()
+            .chain(std::iter::repeat_n(0u8, 1_000_000))
+            .collect();
+        for repo in &repos {
+            let listed = repo.migration_damaged().unwrap();
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].0, 21);
+            assert!(listed[0].1.contains("data/"), "{}", listed[0].1);
+
+            assert!(read_back(repo, &old_store, "/ok.bin") == intact);
+            assert!(read_back(repo, &old_store, "/gap.bin") == expected_gap);
+
+            let content_id = repo
+                .resolve_path("/gap.bin")
+                .unwrap()
+                .unwrap()
+                .content_id
+                .unwrap();
+            let (mut clean, mut marked) = (0, 0);
+            for chunk in repo.resolve_chunks(content_id).unwrap() {
+                let mut bytes = Vec::new();
+                for &(start, stop) in &chunk.extents {
+                    let mut buf = vec![0u8; (stop - start) as usize];
+                    old_store.read(start, &mut buf).unwrap();
+                    bytes.extend(buf);
+                }
+                let real_hash = blake3::hash(&bytes).as_bytes()[..HASH_WIDTH].to_vec();
+                if chunk.extents.iter().any(|&(start, _)| start >= 250_000_000) {
+                    marked += 1;
+                    assert_ne!(
+                        chunk.hash, real_hash,
+                        "a chunk over missing data must not carry the hash of its zero-filled bytes"
+                    );
+                    assert_eq!(
+                        repo.find_chunk(chunk.length as i64, &real_hash).unwrap(),
+                        None,
+                        "real zero-filled content must not find this chunk"
+                    );
+                } else {
+                    clean += 1;
+                    assert_eq!(chunk.hash, real_hash, "intact chunks keep their real hash");
+                }
+            }
+            assert!(clean > 0 && marked > 0, "clean {clean}, marked {marked}");
+        }
+    }
+
     #[test]
     fn migrate_run_twice_creates_nothing_new_the_second_time() {
         let dir = tempfile::tempdir().unwrap();
@@ -771,10 +1038,10 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let repo = new_repo(&dir, "dest", 12);
         let targets = [&repo];
 
-        let first = migrate(&staging, &old_store, &targets).unwrap();
+        let first = migrate(&staging, &old_store, &targets, Settings::new(false)).unwrap();
         assert!(first.tree_entries_created > 0);
 
-        let second = migrate(&staging, &old_store, &targets).unwrap();
+        let second = migrate(&staging, &old_store, &targets, Settings::new(false)).unwrap();
         assert_eq!(second, MigrationStats::default());
     }
 
@@ -786,7 +1053,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let repo_b = new_repo(&dir, "dest-b", 16);
         let targets = [&repo_a, &repo_b];
 
-        let stats = migrate(&staging, &old_store, &targets).unwrap();
+        let stats = migrate(&staging, &old_store, &targets, Settings::new(false)).unwrap();
         // Still exactly one read of dataId 100 (plus one for the -1 empty-file case), even though
         // two targets both needed it (REQ-MIGRATION-004).
         assert_eq!(stats.contents_migrated, 2);
@@ -858,7 +1125,7 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         ];
         let targets: Vec<Target> = repos.iter().collect();
 
-        let stats = migrate(&staging, &old_store, &targets).unwrap();
+        let stats = migrate(&staging, &old_store, &targets, Settings::new(false)).unwrap();
         assert_eq!(stats.contents_migrated, 1);
 
         let mut chunk_counts = Vec::new();

@@ -14,7 +14,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-const TABLE_NAMES: &str = "('migration_content_cache', 'migration_migrated')";
+const TABLE_NAMES: &str =
+    "('migration_content_cache', 'migration_migrated', 'migration_damaged_content')";
 
 /// Makes sure the progress tables exist. Returns `false` - creating nothing - when this database
 /// has already been fully migrated: the tables are gone (they are dropped by [`finish`]) but the
@@ -43,6 +44,10 @@ pub(crate) fn prepare(conn: &Connection) -> Result<bool, Error> {
          CREATE TABLE IF NOT EXISTS migration_migrated (
              old_tree_id INTEGER PRIMARY KEY,
              new_id      INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS migration_damaged_content (
+             old_data_id INTEGER PRIMARY KEY,
+             detail      TEXT NOT NULL
          );",
     )?;
     Ok(true)
@@ -52,7 +57,8 @@ pub(crate) fn prepare(conn: &Connection) -> Result<bool, Error> {
 pub(crate) fn finish(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS migration_content_cache;
-         DROP TABLE IF EXISTS migration_migrated;",
+         DROP TABLE IF EXISTS migration_migrated;
+         DROP TABLE IF EXISTS migration_damaged_content;",
     )?;
     Ok(())
 }
@@ -77,6 +83,31 @@ pub(crate) fn record_content(
         params![old_data_id, content_id],
     )?;
     Ok(())
+}
+
+/// Notes that `old_data_id`'s content was migrated although some of its old bytes were missing
+/// (`detail` says which data files) - see DESIGN-MIGRATION-008.
+pub(crate) fn record_damaged(
+    conn: &Connection,
+    old_data_id: i64,
+    detail: &str,
+) -> Result<(), Error> {
+    conn.execute(
+        "INSERT INTO migration_damaged_content (old_data_id, detail) VALUES (?1, ?2)",
+        params![old_data_id, detail],
+    )?;
+    Ok(())
+}
+
+/// Every content noted by [`record_damaged`], by ascending old id.
+pub(crate) fn damaged(conn: &Connection) -> Result<Vec<(i64, String)>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT old_data_id, detail FROM migration_damaged_content ORDER BY old_data_id",
+    )?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 pub(crate) fn migrated_id(conn: &Connection, old_tree_id: i64) -> Result<Option<i64>, Error> {
@@ -156,6 +187,32 @@ mod tests {
         assert_eq!(repo.migration_migrated_id(7).unwrap(), None);
         repo.migration_record_migrated(7, 99).unwrap();
         assert_eq!(repo.migration_migrated_id(7).unwrap(), Some(99));
+    }
+
+    #[test]
+    fn damaged_contents_are_recorded_listed_in_order_and_dropped_by_finish() {
+        let (root, _dir) = repo_root();
+        let repo = open_repository(&root).unwrap();
+        repo.migration_prepare().unwrap();
+        assert_eq!(repo.migration_damaged().unwrap(), Vec::new());
+
+        repo.migration_record_damaged(9, "data/00/01/x").unwrap();
+        repo.migration_record_damaged(3, "data/00/00/y").unwrap();
+        assert_eq!(
+            repo.migration_damaged().unwrap(),
+            vec![
+                (3, "data/00/00/y".to_string()),
+                (9, "data/00/01/x".to_string())
+            ]
+        );
+
+        repo.migration_finish().unwrap();
+        repo.migration_prepare().unwrap();
+        assert_eq!(
+            repo.migration_damaged().unwrap(),
+            Vec::new(),
+            "the table must not survive finish"
+        );
     }
 
     #[test]

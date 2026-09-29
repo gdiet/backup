@@ -65,3 +65,18 @@ a disposable copy — it is the operator's original data, the same bytes the pre
 implementation still depends on until migration is confirmed successful. A write to it, however
 small or well-intentioned, risks corrupting that original data with no independent copy to recover
 from.
+
+### REQ-MIGRATION-006: Missing source data is never accepted silently
+Status: agreed
+Importance: must
+
+If stored content that the source repository's metadata refers to is missing or incomplete,
+migration stops at it, names what is missing and which files are affected, and can be started again
+at any time. An operator can explicitly choose to continue past such gaps. Migration then reports
+every affected file, and the migrated repository never presents the missing bytes as genuine
+content.
+
+Rationale: a repository that has lost part of its stored bytes cannot always be repaired. Migration
+should neither fail for good on such a repository nor turn the loss into apparently valid data.
+Stopping by default keeps the decision with the operator. Continuing on request lets the rest of
+the repository be migrated.

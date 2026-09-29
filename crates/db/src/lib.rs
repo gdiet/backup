@@ -727,6 +727,18 @@ impl Repository {
         self.with_transaction(|conn, _cache| migration::record_migrated(conn, old_tree_id, new_id))
     }
 
+    /// Temporary, see [`Self::migration_prepare`]. Notes that `old_data_id`'s content was migrated
+    /// although some of its old bytes were missing; `detail` says which data files (DESIGN-MIGRATION-008).
+    pub fn migration_record_damaged(&self, old_data_id: i64, detail: &str) -> Result<(), Error> {
+        self.with_transaction(|conn, _cache| migration::record_damaged(conn, old_data_id, detail))
+    }
+
+    /// Temporary, see [`Self::migration_prepare`]. Every content noted by
+    /// [`Self::migration_record_damaged`], by ascending old `dataId`, with its `detail`.
+    pub fn migration_damaged(&self) -> Result<Vec<(i64, String)>, Error> {
+        self.with_connection(|conn, _cache| migration::damaged(conn))
+    }
+
     /// Temporary, see [`Self::migration_prepare`]. Drops the progress tables once the migration has
     /// finished, and gives their space back. No batch may be open.
     pub fn migration_finish(&self) -> Result<(), Error> {

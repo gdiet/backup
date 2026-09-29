@@ -126,10 +126,9 @@ Not blocking, but real gaps a later session should know about:
   average chunk size (e.g. a hypothetical 1 TB single file at 16 bits across three simultaneous
   target sizes tops out around 150 MB). Only a pathological choice (very small `bits`, or a single
   enormous file) would make this worth adding - not worth building for a case this unlikely.
-- No `--verify`/`--best-effort` style flags for a partially-missing old `data/` (unlike
-  `crate::restore`'s own two independent opt-ins) - a single incomplete read currently fails the
-  whole run outright (`MigrateContentError::IncompleteOldData`), which is the safer default but not
-  the only one a real operator might eventually want.
+- Missing old data: done (REQ-MIGRATION-006, DESIGN-MIGRATION-008) - the migration stops at the first
+  gap with an error naming the files and affected paths, and `--tolerate-missing-data` continues with
+  zeros, marker-hashed chunks and a persisted list of affected contents plus `migrate-missing-data.txt`.
 - `migration/from-scala.md` is written (prerequisites, running, choosing the chunk size, checking,
   interruptions, going back) - done, see the commit that added it.
 

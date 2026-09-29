@@ -1,6 +1,6 @@
 # Migrating An Existing Scala Repository
 
-How the actual migration tool (REQ-MIGRATION-001/002/003/004/005 in
+How the actual migration tool (REQ-MIGRATION-001/002/003/004/005/006 in
 [`../../requirements/functional/repository-migration.md`](../../requirements/functional/repository-migration.md),
 concrete path in [`../../migration/from-scala.md`](../../migration/from-scala.md)) reads the old
 system's own SQL export and turns it into one or more new metadata databases against the existing
@@ -214,7 +214,8 @@ on its own:
   matching ambiguous.
 
 Both facts are kept in two tables, `migration_content_cache(old_data_id, content_id)` and
-`migration_migrated(old_tree_id, new_id)`, inside the destination database file itself. Every
+`migration_migrated(old_tree_id, new_id)`, inside the destination database file itself. A third
+table, `migration_damaged_content`, lists contents whose old data was missing (DESIGN-MIGRATION-008). Every
 migrated entry and the record that it has been migrated are written by the same transaction, so a
 kill or a power loss can never leave the one without the other. The tables are created when a
 migration starts and dropped again once it has finished, so a finished repository carries nothing
@@ -281,3 +282,40 @@ themselves rely on - this function does not weaken it, only skips checking it pr
 Temporary, the same as `adopt_repository`/`open_repository_at` (DESIGN-MIGRATION-004) and
 `register_existing_chunk` (DESIGN-MIGRATION-006) - only the Scala-repository migration tool needs
 it, removed together with the tool itself.
+
+## DESIGN-MIGRATION-008: Missing old data stops the migration unless it is tolerated; tolerated gaps are marked
+Status: implemented (`crates/cli/src/migrate_content.rs`, `crates/cli/src/migrate_scala_repo.rs`,
+`Repository::migration_record_damaged`)
+
+The old data store reports a read that touched a missing or too short backing file, and zero-fills
+the affected bytes. Migration treats that as a gap in the source (REQ-MIGRATION-006).
+
+By default, migration stops at the first gap. The error names the backing files that are missing or
+too short, the old `dataId`, and up to three tree entries that use it. Nothing of that content is
+recorded. Everything before it already is, so a restart walks quickly through the finished part and
+stops at the same gap again, until the data is restored or the operator chooses otherwise.
+
+With `--tolerate-missing-data`, migration continues. The missing bytes are taken as zeros for
+finding chunk boundaries. A warning names every affected content when it is found. When the
+migration finishes, a summary lists the affected contents, and the full list is written to
+`migrate-missing-data.txt` in the repository root. The affected `dataId`s are kept in a third
+progress table of the destination (DESIGN-MIGRATION-005), so a run that was interrupted and resumed
+still reports the gaps found before the interruption.
+
+A chunk that overlaps missing data never carries the hash of its zero-filled bytes. That hash would
+let a later write of real all-zero content of the same length deduplicate onto the chunk, and the
+chunk would serve different bytes once the missing data is restored. Such a chunk carries a marker
+hash instead: a domain-separated BLAKE3 over the `dataId`, the chunk position and the chunk length.
+It matches no real content. It is the same on every run, so a resume finds the chunk again instead
+of creating a second one. The chunk still points at its extents in the missing file. A later read
+through `dfs` therefore still finds the gap, and the allocator still treats the range as occupied,
+so no new data is ever written into a missing data file. Verification of such a chunk reports a
+mismatch, which is correct, since its content cannot be verified.
+
+Only missing or too short data is tolerated. Any other read error stops the migration, with or
+without the option.
+
+### Rejected: hashing the zero-filled bytes like ordinary content
+
+It is the simplest treatment and looks harmless, but it makes a real all-zero chunk and a gap
+indistinguishable in the deduplication index, with the consequences described above.

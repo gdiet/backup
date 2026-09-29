@@ -360,7 +360,7 @@ enum Commands {
         #[arg(long)]
         repository: Option<PathBuf>,
     },
-    // REQ-MIGRATION-001 through 005.
+    // REQ-MIGRATION-001 through 006.
     /// Adopts an existing Scala-DedupFS repository in place: imports its `fsc db-backup` SQL
     /// export's metadata into a small, durable staging database, adopts (or reuses) one destination
     /// metadata database per `--cdc-target-size-bits` value against the repository's own, unchanged
@@ -392,6 +392,13 @@ enum Commands {
         /// renamed (DESIGN-MIGRATION-004).
         #[arg(long, required = true)]
         cdc_target_size_bits: Vec<u32>,
+        /// Continue when old content is missing from `data/` (a missing or too short data file)
+        /// instead of stopping at it. The missing bytes are taken as zeros for chunking, a warning
+        /// names every affected file, and the affected chunks stay marked so they can never be
+        /// mistaken for real all-zero content. Reading such a file through dfs later still reports
+        /// the missing data. Without this option the migration stops at the first gap.
+        #[arg(long)]
+        tolerate_missing_data: bool,
     },
 }
 
@@ -675,12 +682,14 @@ fn main() {
             script,
             staging,
             cdc_target_size_bits,
+            tolerate_missing_data,
         } => {
             migrate_scala_repo::run(
                 &repository,
                 &script,
                 staging.as_deref(),
                 &cdc_target_size_bits,
+                tolerate_missing_data,
             );
             // Only reached once migrate_scala_repo::run has actually succeeded (it exits the
             // process on failure) - meta/ may not exist yet beforehand (or ever, if more than one

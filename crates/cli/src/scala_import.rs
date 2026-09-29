@@ -265,6 +265,49 @@ pub fn staging_data_parts(conn: &Connection, data_id: i64) -> Result<Vec<(u64, u
     Ok(rows)
 }
 
+/// Paths of up to `limit` tree entries that reference `data_id`, live ones first, for telling an
+/// operator which files a problem with that old content affects. A soft-deleted entry carries a
+/// ` (deleted)` suffix. The paths are the source's own, as recorded in the export.
+pub fn staging_paths_for_data_id(
+    conn: &Connection,
+    data_id: i64,
+    limit: usize,
+) -> Result<Vec<String>, ImportError> {
+    // A parent chain in a well-formed export ends at the root long before this; the bound only
+    // keeps a malformed export with a cycle from looping forever.
+    const MAX_DEPTH: usize = 10_000;
+
+    let mut entries_stmt = conn.prepare(
+        "SELECT parentid, name, deleted FROM treeentries WHERE dataid = ?1 \
+         ORDER BY deleted <> 0, id LIMIT ?2",
+    )?;
+    let entries: Vec<(i64, String, i64)> = entries_stmt
+        .query_map(rusqlite::params![data_id, limit as i64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
+        .collect::<Result<_, _>>()?;
+
+    let mut parent_stmt = conn.prepare("SELECT parentid, name FROM treeentries WHERE id = ?1")?;
+    let mut paths = Vec::with_capacity(entries.len());
+    for (parent_id, name, deleted) in entries {
+        let mut segments = vec![name];
+        let mut current = parent_id;
+        while current != 0 && segments.len() < MAX_DEPTH {
+            let (next, segment): (i64, String) =
+                parent_stmt.query_row([current], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            segments.push(segment);
+            current = next;
+        }
+        segments.reverse();
+        let mut path = format!("/{}", segments.join("/"));
+        if deleted != 0 {
+            path.push_str(" (deleted)");
+        }
+        paths.push(path);
+    }
+    Ok(paths)
+}
+
 enum Table {
     TreeEntries,
     DataEntries,
@@ -850,6 +893,27 @@ INSERT INTO "PUBLIC"."DATAENTRIES" VALUES
         let parts = staging_data_parts(&conn, 5).unwrap();
         // Ordered by seq (1 before 2), not by insertion order (2 was inserted first above).
         assert_eq!(parts, vec![(100, 103), (900, 950)]);
+    }
+
+    #[test]
+    fn staging_paths_for_data_id_lists_live_paths_first_and_marks_deleted_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = "INSERT INTO \"PUBLIC\".\"TREEENTRIES\" VALUES \n                      (0, 0, '', 1000, 0, NULL), (1, 0, 'a', 1001, 0, NULL), \n                      (2, 1, 'b', 1002, 0, NULL), (3, 2, 'old.txt', 1003, 5000, 7), \n                      (4, 2, 'new.txt', 1004, 0, 7), (5, 0, 'other.txt', 1005, 0, 8);";
+        import(script, &staging_path(&dir)).unwrap();
+        let conn = open(&staging_path(&dir)).unwrap();
+
+        assert_eq!(
+            staging_paths_for_data_id(&conn, 7, 10).unwrap(),
+            vec![
+                "/a/b/new.txt".to_string(),
+                "/a/b/old.txt (deleted)".to_string()
+            ]
+        );
+        assert_eq!(staging_paths_for_data_id(&conn, 7, 1).unwrap().len(), 1);
+        assert_eq!(
+            staging_paths_for_data_id(&conn, 99, 10).unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

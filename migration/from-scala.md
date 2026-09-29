@@ -89,6 +89,29 @@ All these databases describe the same `data/` directory. Therefore:
 - Once one size is chosen, keep its directory as `meta/` and delete the other `meta-*bit`
   directories. They contain only metadata.
 
+## If old data is missing
+
+Migration reads all stored content once. If a data file that the metadata refers to is missing or
+too short, the migration stops at that content (REQ-MIGRATION-006). The error names the missing
+files under `data/`, the affected content, and a few of the files that use it. Nothing of that
+content is migrated. Starting the migration again gets quickly to the same place and stops again.
+
+There are two ways forward:
+
+- Restore the missing data files, for example from a backup of the Scala repository, and run the
+  same command again.
+- Continue anyway with `--tolerate-missing-data`. The missing bytes are then taken as zeros, and
+  the migration reports the gaps as it finds them. When it finishes, it prints a summary and writes
+  the full list to `migrate-missing-data.txt` in the repository root.
+
+A file that was migrated with a gap stays damaged. `dfs` reports the missing data whenever such a
+file is read, exactly as long as the data files stay missing (`dfs restore` fails such a file unless
+it runs with `--best-effort`, and a mount returns an I/O error). Restoring the data files later
+repairs the file itself. The checksums of the affected chunks cannot match, so `dfs restore
+--verify` reports them, since their content was never known.
+
+The option only covers missing or too short data. Any other read error stops the migration.
+
 ## Checking the result
 
 Compare the numbers with the Scala repository's own `fsc stats`: the counts of files and folders,
