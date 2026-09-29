@@ -159,14 +159,23 @@ an older release, migrates there, then upgrades normally). Both functions' own d
 directly, pointing back at this entry, so removing them later does not need rediscovering why they
 exist first.
 
-## Recording a migrated chunk at its existing position
+## DESIGN-MIGRATION-006: Recording a migrated chunk at its existing position
+Status: implemented (`crates/db/src/content.rs`'s `insert_chunk_at`,
+`Repository::register_existing_chunk`)
 
 REQ-MIGRATION-005 means phase 2 never writes bytes anywhere - a chunk's content already sits at a
 known position within `data/` (translated from the old system's own record of where it stored that
 content). What phase 2 needs from `db` is therefore not "allocate space and write metadata for a
 new chunk" (`crates/db/src/content.rs`'s existing `reserve_and_insert_chunk`, which always calls
 `allocation::reserve` to find free space) but "record metadata for a chunk whose bytes already
-exist at this caller-supplied position" - a distinct operation `db` does not yet expose.
+exist at this caller-supplied position" - a distinct operation `db` did not expose before this
+decision.
+
+`Repository::register_existing_chunk(length, hash, extents)` fills that gap: like
+`reserve_and_insert_chunk`, but takes the chunk's `chunk_extents` ranges directly from the caller
+instead of asking `allocation::reserve` to find them. Temporary, the same as
+`adopt_repository`/`open_repository_at` (DESIGN-MIGRATION-004) - only the Scala-repository
+migration tool needs it, removed together with the tool itself.
 
 This composes safely with the ordinary allocator with no extra bookkeeping: `allocation::reserve`
 (`crates/db/src/allocation.rs`) derives free space entirely by scanning `chunk_extents` on every

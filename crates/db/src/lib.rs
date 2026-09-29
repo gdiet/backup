@@ -601,6 +601,22 @@ impl Repository {
         self.with_transaction(|conn, _cache| content::reserve_and_insert_chunk(conn, length, hash))
     }
 
+    /// Records a chunk not already known whose bytes already exist at `extents`, rather than
+    /// deciding where to put them - DESIGN-MIGRATION-006 in `docs/design/scala-migration-tool.md`.
+    /// Returns the new chunk id.
+    ///
+    /// Temporary - exists only for the Scala-repository migration tool; remove this method along
+    /// with it, see DESIGN-MIGRATION-006's own removal note (the same one covering
+    /// [`adopt_repository`]/[`open_repository_at`]).
+    pub fn register_existing_chunk(
+        &self,
+        length: i64,
+        hash: &[u8],
+        extents: &[(u64, u64)],
+    ) -> Result<i64, Error> {
+        self.with_transaction(|conn, _cache| content::insert_chunk_at(conn, length, hash, extents))
+    }
+
     /// Finds or creates the whole-content `(length, hash)` row (DESIGN-METADATA-007's
     /// hash-of-chunk-hashes), linking `chunk_ids` (in order, from [`Self::find_chunk`]/
     /// [`Self::reserve_and_insert_chunk`]) if it did not already exist. Returns the content id.

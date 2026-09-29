@@ -81,17 +81,24 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
     DESIGN-MIGRATION-004): the `db`-API addition phase 2 needs to write a metadata database against
     an already-populated `repo_root` (tolerates non-empty, never touches `data/`) at a location
     other than the conventional `meta/` (needed once more than one target size is requested). Both
-    functions are temporary by design - see DESIGN-MIGRATION-004's own removal note - and not yet
-    wired into `migrate_scala_repo.rs`.
+    functions are temporary by design - see DESIGN-MIGRATION-004's own removal note.
 2. **Decided** (DESIGN-MIGRATION-005): phase 2's durable progress record is a small separate SQLite
    file per destination metadata database, holding `content_cache(old_data_id, content_id)` and
    `migrated(old_tree_id, new_id)`. Not yet implemented.
-3. Phase 2's walk-and-migrate logic against `db::adopt_repository`/`open_repository_at` and
-   `crates/store`, parameterized over one or more `--cdc-target-size-bits` values at once
-   (DESIGN-MIGRATION-003) - including the naming-and-hint behavior DESIGN-MIGRATION-004 describes
-   for the single-vs-several-target-sizes case, and recording each migrated chunk's own extents via
-   the new, caller-supplied-extents `db` function step 1b's own note above still calls out as not yet
-   built.
+2b. **Done** (`crates/db/src/content.rs`'s `insert_chunk_at`, `Repository::register_existing_chunk`,
+    DESIGN-MIGRATION-006): the `db`-API addition phase 2 needs to record a migrated chunk's
+    `chunk_extents` at its own known, caller-supplied position instead of asking
+    `allocation::reserve` to find one - the ordinary `reserve_and_insert_chunk` cannot do this.
+    Temporary by design, same removal plan as 1b.
+3. **Partly done**: `crates/cli/src/migrate_scala_repo.rs` now accepts one or more
+   `--cdc-target-size-bits` values (`--repository` is now also a required argument) and, after the
+   staging import, adopts (or reuses, with a mismatched-size check) one destination metadata
+   database per value via `db::adopt_repository`/`open_repository_at` - at the conventional `meta/`
+   location for exactly one value, at a distinguishable `meta-<bits>bit/` location plus a printed
+   rename reminder for several (DESIGN-MIGRATION-003/004). Still missing: the actual walk-and-migrate
+   content loop against `crates/store` and the new `register_existing_chunk` from 2b above - this
+   step only sets up empty destination databases so far, it does not migrate any content into them
+   yet.
 4. The resume path that consults the progress record from step 2, using it to skip content and tree
    entries already migrated.
 5. A CLI entry point wiring the above together, matching this project's existing `crates/cli`

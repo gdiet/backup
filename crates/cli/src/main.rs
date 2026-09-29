@@ -359,12 +359,20 @@ enum Commands {
         #[arg(long)]
         repository: Option<PathBuf>,
     },
-    // REQ-MIGRATION-001/002/003/004.
-    /// Imports a Scala-DedupFS `fsc db-backup` SQL export's metadata into a small, durable staging
-    /// database - the first phase of the planned Scala-repository migration tool
-    /// (docs/design/scala-migration-tool.md). Phase 2 (the actual content migration) is not
-    /// implemented yet; this only builds or reuses the staging database and reports its counts.
+    // REQ-MIGRATION-001 through 005.
+    /// Adopts an existing Scala-DedupFS repository in place: imports its `fsc db-backup` SQL
+    /// export's metadata into a small, durable staging database, then adopts (or reuses) one
+    /// destination metadata database per `--cdc-target-size-bits` value against the repository's
+    /// own, unchanged `data/` directory (docs/design/scala-migration-tool.md). The actual content
+    /// migration is not implemented yet; this only sets up the staging and destination database(s)
+    /// and reports what it found.
     MigrateScalaRepo {
+        /// The existing Scala-DedupFS repository to adopt in place. Its `data/` directory must
+        /// already exist (REQ-MIGRATION-002) and is only ever read from, never written to
+        /// (REQ-MIGRATION-005) - unlike every other command's `--repository`, this is not defaulted,
+        /// since guessing wrong here would point the migration at the wrong repository entirely.
+        #[arg(long)]
+        repository: PathBuf,
         /// Path to the H2 SQL script export produced by the Scala tool's `fsc db-backup` command -
         /// either the zipped script as produced directly, or an already-unzipped `.sql` file.
         #[arg(long)]
@@ -374,6 +382,13 @@ enum Commands {
         /// unless it is missing or was left behind by an interrupted import.
         #[arg(long)]
         staging: PathBuf,
+        /// The candidate content-defined-chunking target size(s), in bits, to migrate into - one
+        /// destination metadata database per value (DESIGN-MIGRATION-003). Repeat this flag to
+        /// compare more than one value from a single read of the source; migrating into more than
+        /// one leaves none of the resulting databases immediately usable until one is chosen and
+        /// renamed (DESIGN-MIGRATION-004).
+        #[arg(long, required = true)]
+        cdc_target_size_bits: Vec<u32>,
     },
 }
 
@@ -652,8 +667,17 @@ fn main() {
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
             db_compact::run(&repository, default_path_used);
         }
-        Commands::MigrateScalaRepo { script, staging } => {
-            migrate_scala_repo::run(&script, &staging);
+        Commands::MigrateScalaRepo {
+            repository,
+            script,
+            staging,
+            cdc_target_size_bits,
+        } => {
+            migrate_scala_repo::run(&repository, &script, &staging, &cdc_target_size_bits);
+            // Only reached once migrate_scala_repo::run has actually succeeded (it exits the
+            // process on failure) - meta/ may not exist yet beforehand (or ever, if more than one
+            // target size was requested), the same reasoning as Commands::CreateRepo above.
+            usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
         }
     }
 }

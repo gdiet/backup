@@ -8,7 +8,29 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// (6 to 30), see DESIGN-MEMORY-001 in `docs/design/ram-budget.md`. Fixed regardless of any
 /// operator-configurable RAM budget - see that design doc's "Why 23 bits is the chunking-
 /// granularity ceiling" for why `create-repo` deliberately does not validate against one itself.
-const MAX_CDC_TARGET_SIZE_BITS: u32 = 23;
+pub(crate) const MAX_CDC_TARGET_SIZE_BITS: u32 = 23;
+
+/// Validates a `--cdc-target-size-bits` value against `cdc`'s own general bounds and this
+/// project's narrower ceiling - shared by every command that lets an operator pick a target size
+/// for a repository not yet created, including `crate::migrate_scala_repo`'s destination
+/// databases.
+pub(crate) fn validate_cdc_target_size_bits(bits: u32) -> Result<(), String> {
+    // Validate against cdc's own bounds before touching the filesystem at all -
+    // DESIGN-METADATA-009's "CLI validation" section: reuse cdc::ChunkerConfig::new
+    // rather than duplicating its bounds here.
+    if let Err(err) = cdc::ChunkerConfig::new(Some(bits)) {
+        return Err(format!("error: {err}"));
+    }
+    if bits > MAX_CDC_TARGET_SIZE_BITS {
+        return Err(format!(
+            "error: --cdc-target-size-bits {bits} is too large (maximum: \
+             {MAX_CDC_TARGET_SIZE_BITS}) - REQ-STORAGE-003 caps this lower than cdc's own general \
+             range so the largest possible chunk always fits within the RAM budget \
+             (REQ-OPERABILITY-006)"
+        ));
+    }
+    Ok(())
+}
 
 /// `create-repo`'s core logic, separated from `main`'s process-exit/println side effects so it
 /// stays testable: returns the message to print on success, or the message to print (to stderr,
@@ -22,20 +44,7 @@ fn try_run(
     cdc_target_size_bits: u32,
     default_path_used: bool,
 ) -> Result<String, String> {
-    // Validate against cdc's own bounds before touching the filesystem at all -
-    // DESIGN-METADATA-009's "CLI validation" section: reuse cdc::ChunkerConfig::new
-    // rather than duplicating its bounds here.
-    if let Err(err) = cdc::ChunkerConfig::new(Some(cdc_target_size_bits)) {
-        return Err(format!("error: {err}"));
-    }
-    if cdc_target_size_bits > MAX_CDC_TARGET_SIZE_BITS {
-        return Err(format!(
-            "error: --cdc-target-size-bits {cdc_target_size_bits} is too large (maximum: \
-             {MAX_CDC_TARGET_SIZE_BITS}) - REQ-STORAGE-003 caps this lower than cdc's own general \
-             range so the largest possible chunk always fits within the RAM budget \
-             (REQ-OPERABILITY-006)"
-        ));
-    }
+    validate_cdc_target_size_bits(cdc_target_size_bits)?;
 
     let creation_time_millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -1,9 +1,11 @@
 //! Deduplication-index bookkeeping - `contents`/`chunks`/`content_chunks` (REQ-STORAGE-001/002 in
 //! `requirements/functional/storage.md`): find-or-create lookups by `(length, hash)`, and
-//! recording a newly-resolved chunk's reserved byte range(s). Byte positions for a new chunk come
-//! from [`crate::allocation`]; this module never touches `crates/store` itself, only records where
-//! a chunk's bytes belong (DESIGN-STORE-002/003 in `docs/design/byte-store.md`) - actually writing
-//! them there is the caller's job, using the positions returned here.
+//! recording a newly-resolved chunk's byte range(s). Byte positions for an ordinary new chunk come
+//! from [`crate::allocation`] ([`reserve_and_insert_chunk`]); [`insert_chunk_at`] is the one
+//! exception, taking caller-supplied positions instead (temporary, migration-only - see its own
+//! doc comment). Either way this module never touches `crates/store` itself, only records where a
+//! chunk's bytes belong (DESIGN-STORE-002/003 in `docs/design/byte-store.md`) - actually writing
+//! them there, if that has not already happened, is the caller's job.
 //!
 //! `pub(crate)` only, reached exclusively through [`crate::Repository`] (DESIGN-METADATA-006).
 
@@ -72,6 +74,38 @@ pub(crate) fn reserve_and_insert_chunk(
         )?;
     }
     Ok((chunk_id, ranges))
+}
+
+/// Records a chunk not already known (caller already checked [`find_chunk`] returned `None`) whose
+/// bytes already exist at `extents`, rather than deciding where to put them: a fresh `chunks` row
+/// plus the `chunk_extents` row(s) covering exactly those caller-supplied ranges, never touching
+/// [`allocation::reserve`] at all. Returns the new chunk id.
+///
+/// Temporary - exists only for the Scala-repository migration tool (DESIGN-MIGRATION-006 in
+/// `docs/design/scala-migration-tool.md`), which never writes new bytes anywhere
+/// (REQ-MIGRATION-005 in `requirements/functional/repository-migration.md`): a migrated chunk's
+/// bytes already sit at a known position in the adopted repository's own, unchanged byte store.
+/// Composes safely with ordinary allocation with no extra bookkeeping - see
+/// [`allocation::reserve`]'s own doc comment on deriving free space by scanning `chunk_extents`,
+/// which already covers whatever this function just recorded.
+pub(crate) fn insert_chunk_at(
+    conn: &Connection,
+    length: i64,
+    hash: &[u8],
+    extents: &[(u64, u64)],
+) -> Result<i64, Error> {
+    conn.execute(
+        "INSERT INTO chunks (length, hash) VALUES (?1, ?2)",
+        params![length, hash],
+    )?;
+    let chunk_id = conn.last_insert_rowid();
+    for (seq, &(start, stop)) in extents.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO chunk_extents (chunk_id, seq, start, stop) VALUES (?1, ?2, ?3, ?4)",
+            params![chunk_id, seq as i64, start as i64, stop as i64],
+        )?;
+    }
+    Ok(chunk_id)
 }
 
 /// Returns `content_id`'s complete physical layout: every `chunk_extents` `(start, stop)` range
@@ -299,6 +333,66 @@ mod tests {
         let (repo, _dir) = repo();
         repo.with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
             .unwrap();
+        let (_id, ranges) = repo
+            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .unwrap();
+        assert_eq!(ranges, vec![(100, 150)]);
+    }
+
+    #[test]
+    fn insert_chunk_at_creates_a_findable_chunk_with_the_given_extents() {
+        let (repo, _dir) = repo();
+        let chunk_id = repo
+            .with_connection(|conn, _cache| {
+                super::insert_chunk_at(conn, 100, HASH_A, &[(500, 600)])
+            })
+            .unwrap();
+
+        let found = repo
+            .with_connection(|conn, _cache| super::find_chunk(conn, 100, HASH_A))
+            .unwrap();
+        assert_eq!(found, Some(chunk_id));
+
+        let content_id = repo
+            .with_connection(|conn, _cache| {
+                super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_id])
+            })
+            .unwrap();
+        let extents = repo
+            .with_connection(|conn, _cache| super::resolve_extents(conn, content_id))
+            .unwrap();
+        assert_eq!(extents, vec![(500, 600)]);
+    }
+
+    #[test]
+    fn insert_chunk_at_supports_a_chunk_split_across_several_extents() {
+        let (repo, _dir) = repo();
+        let chunk_id = repo
+            .with_connection(|conn, _cache| {
+                super::insert_chunk_at(conn, 30, HASH_A, &[(0, 10), (1000, 1020)])
+            })
+            .unwrap();
+        let content_id = repo
+            .with_connection(|conn, _cache| {
+                super::find_or_create_content(conn, 30, CONTENT_HASH, &[chunk_id])
+            })
+            .unwrap();
+        let extents = repo
+            .with_connection(|conn, _cache| super::resolve_extents(conn, content_id))
+            .unwrap();
+        assert_eq!(extents, vec![(0, 10), (1000, 1020)]);
+    }
+
+    #[test]
+    fn insert_chunk_at_does_not_touch_allocation_so_a_later_reserve_treats_it_as_occupied() {
+        let (repo, _dir) = repo();
+        // insert_chunk_at must never consult (or update any separate state in) the allocator -
+        // yet an ordinary reserve afterward must still see this extent occupied and start past
+        // it, purely by rescanning chunk_extents. Placed at position 0 (rather than somewhere in
+        // the middle) so a reserve that wrongly ignored it would visibly return (0, 50) instead.
+        repo.with_connection(|conn, _cache| super::insert_chunk_at(conn, 100, HASH_A, &[(0, 100)]))
+            .unwrap();
+
         let (_id, ranges) = repo
             .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
             .unwrap();
