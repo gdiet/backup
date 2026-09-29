@@ -5,21 +5,22 @@ it (requirements agreed, design decided) but did not start implementation, so a 
 concrete starting point instead of an empty branch.
 **Size**: large (confirm with the user before starting)
 **Opened**: 2026-09-29, by a Windows/Claude Code Desktop session
-**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001/002/003/004), REQ-MIGRATION-001
-through 004 in `requirements/functional/repository-migration.md`, branch `migration-tool`.
+**Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001/002/003/004/005),
+REQ-MIGRATION-001 through 005 in `requirements/functional/repository-migration.md`, branch
+`migration-tool`.
 
 ## What to build
 
-The four decisions in `docs/design/scala-migration-tool.md` describe the shape: a non-resumable
+The five decisions in `docs/design/scala-migration-tool.md` describe the shape: a non-resumable
 metadata-import phase (parses the old system's SQL export via a small hand-written statement
 splitter, delegating the actual row-data parsing to SQL execution against a scratch schema) feeding
 a resumable content-migration phase (reads each distinct old content reference once, re-chunks and
 re-hashes it, writes into one metadata database per requested `--cdc-target-size-bits` value,
-sharing the one existing repository's own `data/` directory rather than each expecting its own).
-That file's own "Open question" section flags the one thing still undecided: the exact shape of
-phase 2's durable progress record.
+sharing the one existing repository's own `data/` directory rather than each expecting its own, and
+tracking its own resumable progress in a small separate SQLite file per destination -
+DESIGN-MIGRATION-005).
 
-Read that design doc and the four requirements before starting - this file does not repeat their
+Read that design doc and the five requirements before starting - this file does not repeat their
 content, only points at where to start coding.
 
 ## Concrete starting references
@@ -82,12 +83,17 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
     other than the conventional `meta/` (needed once more than one target size is requested). Both
     functions are temporary by design - see DESIGN-MIGRATION-004's own removal note - and not yet
     wired into `migrate_scala_repo.rs`.
-2. Decide phase 2's durable progress record shape (the open question in the design doc).
+2. **Decided** (DESIGN-MIGRATION-005): phase 2's durable progress record is a small separate SQLite
+   file per destination metadata database, holding `content_cache(old_data_id, content_id)` and
+   `migrated(old_tree_id, new_id)`. Not yet implemented.
 3. Phase 2's walk-and-migrate logic against `db::adopt_repository`/`open_repository_at` and
    `crates/store`, parameterized over one or more `--cdc-target-size-bits` values at once
    (DESIGN-MIGRATION-003) - including the naming-and-hint behavior DESIGN-MIGRATION-004 describes
-   for the single-vs-several-target-sizes case.
-4. The resume path that consults the progress record from step 2.
+   for the single-vs-several-target-sizes case, and recording each migrated chunk's own extents via
+   the new, caller-supplied-extents `db` function step 1b's own note above still calls out as not yet
+   built.
+4. The resume path that consults the progress record from step 2, using it to skip content and tree
+   entries already migrated.
 5. A CLI entry point wiring the above together, matching this project's existing `crates/cli`
    conventions (argument parsing, error reporting, RAM-budget handling) rather than inventing new
    ones.

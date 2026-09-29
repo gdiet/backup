@@ -175,8 +175,40 @@ recorded there, an ordinary future write through the adopted repository automati
 ranges as occupied - no separate step to reconcile the allocator's own state against what migration
 already claimed.
 
-## Open question
+## DESIGN-MIGRATION-005: A durable progress record, one file per destination metadata database
+Status: decided
 
-The exact shape of phase 2's own durable progress record (DESIGN-MIGRATION-001) - a dedicated small
-table alongside each destination metadata database, or something inferred from its own tree state -
-is not yet decided.
+Phase 2 (DESIGN-MIGRATION-001) needs to skip already-migrated content and tree structure on a
+resume rather than redo it - REQ-MIGRATION-003 exists specifically so an interruption near the end
+of a multi-hour migration does not cost re-reading everything from the start. That needs two
+distinct memoized facts, neither of which the destination metadata database's own schema can answer
+on its own:
+
+- **Content memoization**: which old `dataId`(s) have already been read, re-chunked, and resolved
+  into which new `content_id` - `contents`/`chunks`/`chunk_extents` are content-addressed, not
+  origin-addressed, so nothing there records which old `dataId` produced a given `content_id`.
+- **Tree progress**: which old tree entries have already been recreated, and under which new id - a
+  directory's own new id in particular, needed as the `parent_id` for its not-yet-migrated children.
+  Inferring this from the destination's own tree by name/parent/timestamp was considered and
+  rejected: REQ-MIGRATION-001's full soft-delete history means more than one old entry can share the
+  same name at the same location (one live, others historically deleted), which makes name-based
+  matching ambiguous.
+
+The progress record is therefore a small, separate SQLite file - one per destination metadata
+database, sitting alongside it, not merged into the destination's own schema (`db::Repository`'s
+schema stays exactly what an ordinary repository has, with nothing migration-specific mixed into
+it) - holding two tables: `content_cache(old_data_id, content_id)` and `migrated(old_tree_id,
+new_id)`. Removed along with the destination's own staging import once that target size's migration
+completes successfully (DESIGN-MIGRATION-001); left in place after an interrupted run, so a resume
+has exactly the remaining, not-yet-migrated content and tree structure left to do.
+
+### Rejected: no content memoization, a resume just re-migrates everything
+
+Skipping this file entirely and letting an interrupted phase 2 simply restart from the beginning was
+considered. It is safe - re-chunking and re-hashing already-migrated content is idempotent, and the
+ordinary chunk/content dedup lookups prevent it from ever being written twice - and it satisfies
+REQ-MIGRATION-003's literal wording ("re-run from scratch without manual cleanup"). It was rejected
+because it defeats that requirement's own practical purpose for a migration large enough to need
+resumability in the first place: an interruption shortly before completion would cost re-reading and
+re-hashing a multi-terabyte source's entire content again - the exact repeated-read cost
+REQ-MIGRATION-002/004 already go out of their way to avoid elsewhere in this same tool.
