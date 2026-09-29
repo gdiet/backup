@@ -148,8 +148,10 @@ into exactly one target size writes it at `repo_root`'s own conventional `meta/`
 immediately usable by every other command with no extra step; migrating into more than one writes
 each at its own distinguishable, non-conventional location (e.g. `meta-18bit/`) instead, since only
 one of them could ever occupy the conventional name - the tool prints an explicit reminder that
-picking one and renaming it to `meta/` (or passing it directly) is the operator's own next step
-before any other command can use it.
+picking one and renaming it to `meta/` is the operator's own next step before any other command can
+use it. No ordinary `dfs` command accepts a non-conventional metadata-database location directly
+(every one of them always resolves `--repository <path>` to `<path>/meta`) - renaming is the only
+way to make a chosen result usable.
 
 Both functions, and the migration tool itself, are intended to be removed again - not a permanent
 extension of `db`'s own repository-layout conventions, only a stopgap for the small number of

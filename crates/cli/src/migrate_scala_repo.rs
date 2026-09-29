@@ -103,8 +103,9 @@ fn try_run(
     if !single {
         message.push_str(&format!(
             "\nMore than one target size was requested: none of the {} metadata databases above \
-             is directly usable yet - once you have picked one, rename it to '{}' (or pass its \
-             own path directly) before using it with any other dfs command.",
+             is directly usable yet - every other dfs command always looks for its repository's \
+             metadata at '{}', so rename your chosen one there before using it with any other dfs \
+             command.",
             cdc_target_size_bits.len(),
             db::meta_dir(repository).display()
         ));

@@ -2,11 +2,10 @@
 
 **Why parked**: a substantial, deliberately-staged feature. All seven design decisions are now
 implemented end to end (staging import, destination adoption, the walk-and-migrate content loop,
-resumability) and covered by synthetic-fixture tests - what is left (see "Remaining gaps" below) is
-smaller follow-up work: CLI polish, documentation, and validating against real (not just synthetic)
-data, kept here rather than moved to `done/` since that validation step matters before calling this
-tool actually finished.
-**Size**: medium (confirm with the user before starting)
+resumability) and verified both by synthetic-fixture tests and by an actual run against a real
+Scala repository ("Real-data validation" below) - what is left (see "Remaining gaps" below) is
+smaller CLI/documentation follow-up work, not core functionality.
+**Size**: small (confirm with the user before starting)
 **Opened**: 2026-09-29, by a Windows/Claude Code Desktop session
 **Context**: `docs/design/scala-migration-tool.md` (DESIGN-MIGRATION-001 through 007),
 REQ-MIGRATION-001 through 005 in `requirements/functional/repository-migration.md`, branch
@@ -117,10 +116,14 @@ resumability testing (no need to construct or acquire a dramatically larger fixt
 
 Not blocking, but real gaps a later session should know about:
 
-- No `--ram-budget-mb` handling (unlike most other `crates/cli` commands) - `migrate_content`'s own
-  in-memory footprint is modest (one chunk buffer plus one read-window buffer per still-pending
-  target), but this was never deliberately bounded against a budget the way ordinary ingest/mount
-  paths are.
+- No `--ram-budget-mb` handling (unlike most other `crates/cli` commands). Checked concretely rather
+  than left as a guess: `cdc::ChunkerConfig::max_chunk_size` bounds one in-progress chunk buffer to
+  `base_size * (bits + 1)` regardless of file size (e.g. ~544 KB at 16 bits, ~10.5 MB at 20 bits) -
+  the only structure that actually scales with input is one target's `chunk_ids: Vec<i64>` for the
+  single old `dataId` currently being processed, bounded by that one file's own size divided by its
+  average chunk size (e.g. a hypothetical 1 TB single file at 16 bits across three simultaneous
+  target sizes tops out around 150 MB). Real, but low priority for realistic `bits`/file sizes - only
+  a pathological choice (very small `bits`, or a single enormous file) would make this worth adding.
 - No `--verify`/`--best-effort` style flags for a partially-missing old `data/` (unlike
   `crate::restore`'s own two independent opt-ins) - a single incomplete read currently fails the
   whole run outright (`MigrateContentError::IncompleteOldData`), which is the safer default but not
@@ -128,6 +131,36 @@ Not blocking, but real gaps a later session should know about:
 - `migration/from-scala.md` currently only covers the byte-store compatibility question - it needs
   the actual migration steps, prerequisites, and rollback/fallback guidance filled in, matching what
   actually got built rather than this plan.
-- Not yet tested against the real, large sample export (`.local/scala-example-db/`) or the hand-built
-  real Scala test repository (`.local/scala-test-repo/`) from earlier in this same session - only
-  synthetic, small fixtures so far. Worth a manual end-to-end run before considering this tool done.
+
+## Real-data validation (done, 2026-09-29)
+
+Ran `dfs migrate-scala-repo` against the hand-built real Scala test repository
+(`.local/scala-test-repo/`, its final `db-backup` export) from a throwaway copy (never against the
+fixture itself) - not just synthetic unit-test fixtures:
+
+- All 2178 tree entries / 733 data entries imported correctly; migrating `--cdc-target-size-bits 16
+  18 20` in one call read the source once and produced three independent metadata databases in
+  ~57s, exactly as DESIGN-MIGRATION-003 intends.
+- Full tree/history fidelity confirmed by hand via `dfs list --show-deleted`: both real soft-deletes
+  from the fixture (`/build/[deleted]/release-v1-copy`, `/personal/downloads/[deleted]/{24.03.2026
+  Steuerbescheinigung 2025 (1).pdf, Schulferien 2027 Bayern.pdf}`) came through correctly.
+- `dfs stats` across the three target sizes on the same shared `data/`: physical size 165.57 MB (16
+  bits) / 181.65 MB (18 bits) / 206.57 MB (20 bits), logical size identical (286,953,278 bytes) at
+  all three, as expected - finer chunking finds more sub-file duplication. Notably, even 18-bit CDC
+  dedup alone beats the source's own whole-file dedup (Scala's own reported physical size was 251.88
+  MB) - CDC finds cross-file matches whole-file hashing structurally cannot.
+- `dfs reclaim` on a separately-migrated single-target-size copy freed exactly 65,175 bytes - the
+  size of the one genuinely-unique soft-deleted file (`Schulferien 2027 Bayern.pdf`); the other two
+  soft-deleted items (a whole duplicate directory and one of three identical tax-document copies)
+  freed nothing, since their content is still referenced by other live entries - exactly matching the
+  fixture's own documented expectations.
+- `dfs stats`'s reported physical size was unchanged before vs. after that reclaim
+  (181,646,574 bytes both times) - direct, empirical confirmation that REQ-STORAGE-005 (on-demand
+  defragmentation/store shrinking) is not implemented: `dfs reclaim` only marks freed byte ranges as
+  reusable internally (REQ-STORAGE-004), it never relocates existing bytes or returns space to the
+  filesystem, and no other command does either (`dfs db-compact` only VACUUMs the SQLite metadata
+  file, per its own name).
+- Found and fixed a real doc/UX bug along the way: `DESIGN-MIGRATION-004`'s own text, and the CLI's
+  own printed rename hint, claimed a non-conventional metadata database could be "passed directly"
+  to another `dfs` command as an alternative to renaming it - false, no `dfs` command accepts
+  anything but `--repository <path>` resolved to `<path>/meta`. Both corrected.
