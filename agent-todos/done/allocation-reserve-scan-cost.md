@@ -188,8 +188,11 @@ gap list costs about the same as one such call: 0.13 s, 0.42 s and 1.4 to 2.2 s.
 
 Implemented Candidate A as DESIGN-STORE-006 in `docs/design/byte-store.md`
 (`crates/db/src/allocation.rs`, `Repository::load_free_space`, called by `ingest` and a read-write
-mount right after they acquire the write lock). Regression tests in `allocation.rs` each failed when
-the behavior they protect was removed: reuse of space freed by a purge in the same session, no leak
-after a failed reservation, commit-only release of freed ranges, and discarding the list after
-`register_existing_chunk`. The covering index and the background build stay documented there as
-options that are not implemented.
+mount right after they acquire the write lock). Following the developer's review, the in-memory list
+only ever shrinks during a session. A failed reservation leaves its range taken, and space freed by
+a purge or an abandoned write in the running session is not handed back. The next session builds its
+list from `chunk_extents` and finds both again. This removes the commit-only release logic and the
+rebuild after a failed reservation that the "commit-only gap handling" above would have needed.
+Regression tests in `allocation.rs` fail when the list is discarded after a failed reservation or
+rebuilt from the database on every reservation. The covering index and the background build stay
+documented in DESIGN-STORE-006 as options that are not implemented.
