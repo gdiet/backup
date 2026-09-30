@@ -102,13 +102,9 @@ cleanup() {
         fi
         sleep 0.2
     done
-    # dfs mount can still end up exiting via `fuse_main_real exited with
-    # code 8` right around here even with smbd fully gone by this point -
-    # harmless either way: a --read-write mount's writes are already
-    # durably committed regardless of a clean vs. abrupt unmount (see the
-    # comment below), so this is at worst a `fusermount3 -u` racing
-    # something that already unmounted the filesystem itself, hence
-    # `|| true` here same as always.
+    # `|| true`: the mount may already be gone, for example if dfs mount died.
+    # A --read-write mount's writes are already durably committed regardless
+    # of a clean vs. abrupt unmount (see the comment below).
     fusermount3 -u "$MOUNTPOINT" 2>/dev/null || true
     # Give dfs mount a chance to notice the unmount and exit on its own
     # first, rather than SIGTERM-ing it immediately: its unmount handling
@@ -141,7 +137,11 @@ trap cleanup TERM INT
 id "$SMB_USER" >/dev/null 2>&1 || adduser --disabled-password --gecos "" "$SMB_USER"
 pdbedit -L | grep -q "^$SMB_USER:" || printf '%s\n%s\n' "$SMB_PASSWORD" "$SMB_PASSWORD" | smbpasswd -s -a "$SMB_USER"
 
-smbd --foreground --no-process-group &
+# Without --no-process-group, smbd creates its own process group. With it, smbd
+# shares this script's group, and its shutdown sends SIGTERM to that whole
+# group - including `dfs mount`, which libfuse then reports as a failed mount
+# ("fuse_main_real exited with code 8") even on a requested, clean shutdown.
+smbd --foreground &
 SMBD_PID=$!
 
 # Watch both children. A plain `wait "$SMBD_PID"` would leave the container

@@ -172,6 +172,12 @@ with 0.
    read-only media (or is otherwise guaranteed unwritable by anything else for the container's whole
    lifetime): `-v /path/to/repository:/repo:ro -e MOUNT_ARGS="--assume-read-only-medium"`.
 
+6. **A clean shutdown could log `mount failed: fuse_main_real exited with code 8` and make `dfs
+   mount` exit with status 1.** `smbd` started with `--no-process-group` shares the entrypoint's
+   process group, and its own shutdown sends SIGTERM to that whole group. That includes `dfs
+   mount`. libfuse treats a signal as an abnormal end of its loop. `smbd` now runs in its own
+   process group (no `--no-process-group`), so only `entrypoint.sh` decides when `dfs mount` stops.
+
 ## Verification status
 
 Verified directly against this implementation (2026-09-23, this port): container build; a
