@@ -12,7 +12,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
-use crate::allocation;
+use crate::allocation::Allocation;
 
 /// Looks up an existing content by its whole-content `(length, hash)` - DESIGN-METADATA-007's
 /// hash-of-chunk-hashes, not a hash of the content's raw bytes.
@@ -54,14 +54,15 @@ pub(crate) fn find_chunk(
 /// safe: the new chunk's `ref_count` stays `0` (nothing links it into any content yet via
 /// `content_chunks`) until [`find_or_create_content`] does so, and nothing else can reserve the
 /// same range in the meantime - the only operation that could (REQ-STORAGE-004's reclaim) is
-/// itself a mutating operation and so cannot run at the same time as this one
-/// (DESIGN-MOUNT-008 in `docs/design/mount-write-path.md`).
+/// itself a mutating operation, and it can only hand a range back to `allocation` once its own
+/// transaction has committed.
 pub(crate) fn reserve_and_insert_chunk(
     conn: &Connection,
+    allocation: &mut Allocation,
     length: i64,
     hash: &[u8],
 ) -> Result<(i64, Vec<(u64, u64)>), Error> {
-    let ranges = allocation::reserve(conn, length as u64)?;
+    let ranges = allocation.reserve(length as u64);
     conn.execute(
         "INSERT INTO chunks (length, hash) VALUES (?1, ?2)",
         params![length, hash],
@@ -79,15 +80,15 @@ pub(crate) fn reserve_and_insert_chunk(
 /// Records a chunk not already known (caller already checked [`find_chunk`] returned `None`) whose
 /// bytes already exist at `extents`, rather than deciding where to put them: a fresh `chunks` row
 /// plus the `chunk_extents` row(s) covering exactly those caller-supplied ranges, never touching
-/// [`allocation::reserve`] at all. Returns the new chunk id.
+/// the free space at all. Returns the new chunk id.
 ///
 /// Temporary - exists only for the Scala-repository migration tool (DESIGN-MIGRATION-006 in
 /// `docs/design/scala-migration-tool.md`), which never writes new bytes anywhere
 /// (REQ-MIGRATION-005 in `requirements/functional/repository-migration.md`): a migrated chunk's
 /// bytes already sit at a known position in the adopted repository's own, unchanged byte store.
-/// Composes safely with ordinary allocation with no extra bookkeeping - see
-/// [`allocation::reserve`]'s own doc comment on deriving free space by scanning `chunk_extents`,
-/// which already covers whatever this function just recorded.
+/// The in-memory free space does not know about the ranges recorded here. The caller
+/// (`Repository::register_existing_chunk`) therefore discards it, and it is rebuilt from
+/// `chunk_extents` the next time it is needed.
 pub(crate) fn insert_chunk_at(
     conn: &Connection,
     length: i64,
@@ -212,11 +213,16 @@ pub(crate) fn resolve_chunks(
 /// can be shared by more than one content. This walks exactly that one level further: after
 /// deleting `content_id`'s row, any chunk whose `ref_count` reached zero as a result is deleted in
 /// turn, cascading to its own `chunk_extents` rows - which is what actually makes those byte ranges
-/// eligible for reuse by [`crate::allocation::reserve`].
+/// eligible for reuse - each range is reported to `allocation`, which makes it reusable once the
+/// surrounding transaction has committed.
 ///
 /// Returns the number of bytes freed (the sum of every deleted chunk's own `chunk_extents`
 /// ranges) - `0` if `content_id` is still referenced, or no longer exists (already reclaimed).
-pub(crate) fn reclaim_content(conn: &Connection, content_id: i64) -> Result<u64, Error> {
+pub(crate) fn reclaim_content(
+    conn: &Connection,
+    allocation: &mut Allocation,
+    content_id: i64,
+) -> Result<u64, Error> {
     let ref_count: Option<i64> = conn
         .query_row(
             "SELECT ref_count FROM contents WHERE id = ?1",
@@ -246,13 +252,17 @@ pub(crate) fn reclaim_content(conn: &Connection, content_id: i64) -> Result<u64,
             |row| row.get(0),
         )?;
         if chunk_ref_count == 0 {
-            let extents_len: i64 = conn.query_row(
-                "SELECT COALESCE(SUM(stop - start), 0) FROM chunk_extents WHERE chunk_id = ?1",
-                params![chunk_id],
-                |row| row.get(0),
-            )?;
+            let extents: Vec<(u64, u64)> = conn
+                .prepare("SELECT start, stop FROM chunk_extents WHERE chunk_id = ?1")?
+                .query_map(params![chunk_id], |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
             conn.execute("DELETE FROM chunks WHERE id = ?1", params![chunk_id])?;
-            reclaimed_bytes += extents_len as u64;
+            for (start, stop) in extents {
+                allocation.record_freed(start, stop);
+                reclaimed_bytes += stop - start;
+            }
         }
     }
     Ok(reclaimed_bytes)
@@ -317,9 +327,7 @@ mod tests {
     #[test]
     fn reserve_and_insert_chunk_creates_a_findable_chunk_with_extents_at_position_zero() {
         let (repo, _dir) = repo();
-        let (chunk_id, ranges) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
+        let (chunk_id, ranges) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
         assert_eq!(ranges, vec![(0, 100)]);
 
         let found = repo
@@ -331,11 +339,8 @@ mod tests {
     #[test]
     fn reserve_and_insert_chunk_a_second_time_extends_past_the_first() {
         let (repo, _dir) = repo();
-        repo.with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
-        let (_id, ranges) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
-            .unwrap();
+        repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
+        let (_id, ranges) = repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
         assert_eq!(ranges, vec![(100, 150)]);
     }
 
@@ -393,21 +398,15 @@ mod tests {
         repo.with_connection(|conn, _cache| super::insert_chunk_at(conn, 100, HASH_A, &[(0, 100)]))
             .unwrap();
 
-        let (_id, ranges) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
-            .unwrap();
+        let (_id, ranges) = repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
         assert_eq!(ranges, vec![(100, 150)]);
     }
 
     #[test]
     fn find_or_create_content_creates_a_new_content_linking_its_chunks_in_order() {
         let (repo, _dir) = repo();
-        let (chunk_a, _) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
-        let (chunk_b, _) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
-            .unwrap();
+        let (chunk_a, _) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
+        let (chunk_b, _) = repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
 
         let content_id = repo
             .with_connection(|conn, _cache| {
@@ -432,12 +431,8 @@ mod tests {
     #[test]
     fn resolve_extents_returns_ranges_in_content_chunk_order_not_insertion_order() {
         let (repo, _dir) = repo();
-        let (chunk_a, ranges_a) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
-        let (chunk_b, ranges_b) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 50, HASH_B))
-            .unwrap();
+        let (chunk_a, ranges_a) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
+        let (chunk_b, ranges_b) = repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
 
         // Content order is deliberately the reverse of chunk-creation order, so this only passes
         // if resolve_extents actually follows content_chunks.seq rather than chunk id/insertion
@@ -506,9 +501,7 @@ mod tests {
     #[test]
     fn find_or_create_content_returns_the_same_id_for_an_already_known_content() {
         let (repo, _dir) = repo();
-        let (chunk_a, _) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
+        let (chunk_a, _) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
 
         let first = repo
             .with_connection(|conn, _cache| {
@@ -553,9 +546,7 @@ mod tests {
     #[test]
     fn reserve_and_insert_chunk_leaves_ref_count_at_zero_until_linked() {
         let (repo, _dir) = repo();
-        let (chunk_id, _) = repo
-            .with_connection(|conn, _cache| super::reserve_and_insert_chunk(conn, 100, HASH_A))
-            .unwrap();
+        let (chunk_id, _) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
 
         let ref_count: i64 = repo
             .with_connection(|conn, _cache| {

@@ -311,6 +311,10 @@ impl From<rusqlite_migration::Error> for Error {
 struct Locked {
     conn: Connection,
     name_cache: name_cache::NameCache,
+    /// The byte store's free ranges (DESIGN-STORE-003), `None` until first needed. Built by
+    /// [`Repository::load_free_space`] or by the first reservation, and discarded whenever it might
+    /// no longer match `chunk_extents`.
+    free_space: Option<allocation::FreeSpace>,
     /// How many write operations have run inside the currently open migration batch (see
     /// [`Repository::migration_begin_batch`]) - temporary, migration tool only.
     batch_ops: u64,
@@ -375,6 +379,24 @@ impl Repository {
         &self,
         f: impl FnOnce(&Connection, &mut name_cache::NameCache) -> Result<T, Error>,
     ) -> Result<T, Error> {
+        self.with_transaction_alloc(false, |conn, cache, _allocation| f(conn, cache))
+    }
+
+    /// [`Self::with_transaction`] for an operation that reserves from or frees space in the byte
+    /// store (DESIGN-STORE-003). `reserves` says whether `f` may reserve: the in-memory free space
+    /// is then built first if it does not exist yet. Ranges `f` reports as freed become reusable
+    /// only after the transaction has committed. If a reserving transaction fails, the in-memory
+    /// free space is discarded and rebuilt from the database when next needed, since it may already
+    /// have handed out ranges the database never recorded.
+    fn with_transaction_alloc<T>(
+        &self,
+        reserves: bool,
+        f: impl FnOnce(
+            &Connection,
+            &mut name_cache::NameCache,
+            &mut allocation::Allocation,
+        ) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         if self.read_only {
             return Err(Error::ReadOnlyRepository);
         }
@@ -382,21 +404,65 @@ impl Repository {
         let Locked {
             conn,
             name_cache,
+            free_space,
             batch_ops,
         } = &mut *locked;
-        if conn.is_autocommit() {
-            let tx = conn.transaction()?;
-            let result = f(&tx, name_cache)?;
-            tx.commit()?;
-            return Ok(result);
+        if reserves && free_space.is_none() {
+            *free_space = Some(allocation::FreeSpace::build(conn)?);
         }
-        // Only ever true inside a migration batch ([`Self::migration_begin_batch`]): an inner
-        // savepoint keeps this one operation all-or-nothing without ending the enclosing batch.
-        let savepoint = conn.savepoint()?;
-        let result = f(&savepoint, name_cache)?;
-        savepoint.commit()?;
-        *batch_ops += 1;
-        Ok(result)
+        let in_batch = !conn.is_autocommit();
+        let mut allocation = allocation::Allocation::new(free_space.as_mut().filter(|_| reserves));
+        let outcome = if !in_batch {
+            conn.transaction().map_err(Error::from).and_then(|tx| {
+                let result = f(&tx, name_cache, &mut allocation)?;
+                tx.commit()?;
+                Ok(result)
+            })
+        } else {
+            // Only ever true inside a migration batch ([`Self::migration_begin_batch`]): an inner
+            // savepoint keeps this one operation all-or-nothing without ending the enclosing batch.
+            conn.savepoint().map_err(Error::from).and_then(|savepoint| {
+                let result = f(&savepoint, name_cache, &mut allocation)?;
+                savepoint.commit()?;
+                *batch_ops += 1;
+                Ok(result)
+            })
+        };
+        let freed = allocation.into_freed();
+        match (&outcome, in_batch) {
+            (Err(_), _) if reserves => *free_space = None,
+            // The enclosing batch may still be rolled back, so nothing that happened inside it is
+            // certain yet.
+            (Ok(_), true) if reserves || !freed.is_empty() => *free_space = None,
+            (Ok(_), false) => {
+                if let Some(free_space) = free_space {
+                    for (start, stop) in freed {
+                        free_space.release(start, stop);
+                    }
+                }
+            }
+            _ => {}
+        }
+        outcome
+    }
+
+    /// Builds the byte store's free-space list (DESIGN-STORE-003) now if it does not exist yet, so
+    /// that the first write of a session does not pay for it. Callers that will certainly write
+    /// new content - `ingest`, a read-write mount - call this when they start. Not calling it is
+    /// safe: the first reservation builds the list itself. A read-only repository never reserves,
+    /// so this does nothing there.
+    pub fn load_free_space(&self) -> Result<(), Error> {
+        if self.read_only {
+            return Ok(());
+        }
+        let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
+        let Locked {
+            conn, free_space, ..
+        } = &mut *locked;
+        if free_space.is_none() {
+            *free_space = Some(allocation::FreeSpace::build(conn)?);
+        }
+        Ok(())
     }
 
     /// Looks up the live entry at `path` (`/`-separated, e.g. `/a/b`; `/` itself resolves to the
@@ -526,7 +592,9 @@ impl Repository {
     /// REQ-STORAGE-004's reclaim cascade immediately, scoped to what this purge just orphaned - see
     /// [`PurgeResult`] and `tree::purge_deleted_entry`'s own doc comment.
     pub fn purge_deleted_entry(&self, id: i64, recursive: bool) -> Result<PurgeResult, Error> {
-        self.with_transaction(|conn, _cache| tree::purge_deleted_entry(conn, id, recursive))
+        self.with_transaction_alloc(false, |conn, _cache, allocation| {
+            tree::purge_deleted_entry(conn, allocation, id, recursive)
+        })
     }
 
     /// REQ-STORAGE-004's bulk sweep: purges every soft-deleted entry that has stayed soft-deleted
@@ -616,10 +684,11 @@ impl Repository {
         content_id: i64,
         collapsible_placeholder_id: Option<i64>,
     ) -> Result<SettleOutcome, Error> {
-        self.with_transaction(|conn, cache| {
+        self.with_transaction_alloc(false, |conn, cache, allocation| {
             tree::settle_pending_write(
                 conn,
                 cache,
+                allocation,
                 base_row_id,
                 time_millis,
                 content_id,
@@ -642,7 +711,9 @@ impl Repository {
         length: i64,
         hash: &[u8],
     ) -> Result<(i64, Vec<(u64, u64)>), Error> {
-        self.with_transaction(|conn, _cache| content::reserve_and_insert_chunk(conn, length, hash))
+        self.with_transaction_alloc(true, |conn, _cache, allocation| {
+            content::reserve_and_insert_chunk(conn, allocation, length, hash)
+        })
     }
 
     /// Records a chunk not already known whose bytes already exist at `extents`, rather than
@@ -658,7 +729,12 @@ impl Repository {
         hash: &[u8],
         extents: &[(u64, u64)],
     ) -> Result<i64, Error> {
-        self.with_transaction(|conn, _cache| content::insert_chunk_at(conn, length, hash, extents))
+        let chunk_id = self.with_transaction(|conn, _cache| {
+            content::insert_chunk_at(conn, length, hash, extents)
+        })?;
+        // The in-memory free space does not know about these extents.
+        self.locked.lock().map_err(|_| Error::Poisoned)?.free_space = None;
+        Ok(chunk_id)
     }
 
     /// Temporary, migration tool only (DESIGN-MIGRATION-005 in `docs/design/scala-migration-tool.md`;
@@ -699,6 +775,7 @@ impl Repository {
     pub fn migration_rollback_batch(&self) -> Result<(), Error> {
         let mut locked = self.locked.lock().map_err(|_| Error::Poisoned)?;
         locked.conn.execute_batch("ROLLBACK")?;
+        locked.free_space = None;
         locked.batch_ops = 0;
         Ok(())
     }
@@ -983,6 +1060,7 @@ pub fn open_repository_at(meta_dir: &Path) -> Result<Repository, Error> {
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            free_space: None,
             batch_ops: 0,
         }),
         read_only: false,
@@ -1020,6 +1098,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            free_space: None,
             batch_ops: 0,
         }),
         read_only: false,
@@ -1130,6 +1209,7 @@ fn finish_read_only_open(repo_root: &Path, conn: Connection) -> Result<Repositor
         locked: Mutex::new(Locked {
             conn,
             name_cache: name_cache::NameCache::new(NAME_CACHE_CAPACITY),
+            free_space: None,
             batch_ops: 0,
         }),
         read_only: true,

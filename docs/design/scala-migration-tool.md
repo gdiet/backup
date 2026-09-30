@@ -176,23 +176,22 @@ Status: implemented (`crates/db/src/content.rs`'s `insert_chunk_at`,
 REQ-MIGRATION-005 means phase 2 never writes bytes anywhere - a chunk's content already sits at a
 known position within `data/` (translated from the old system's own record of where it stored that
 content). What phase 2 needs from `db` is therefore not "allocate space and write metadata for a
-new chunk" (`crates/db/src/content.rs`'s existing `reserve_and_insert_chunk`, which always calls
-`allocation::reserve` to find free space) but "record metadata for a chunk whose bytes already
+new chunk" (`crates/db/src/content.rs`'s existing `reserve_and_insert_chunk`, which always asks the
+allocator to find free space) but "record metadata for a chunk whose bytes already
 exist at this caller-supplied position" - a distinct operation `db` did not expose before this
 decision.
 
 `Repository::register_existing_chunk(length, hash, extents)` fills that gap: like
 `reserve_and_insert_chunk`, but takes the chunk's `chunk_extents` ranges directly from the caller
-instead of asking `allocation::reserve` to find them. Temporary, the same as
+instead of asking the allocator to find them. Temporary, the same as
 `adopt_repository`/`open_repository_at` (DESIGN-MIGRATION-004) - only the Scala-repository
 migration tool needs it, removed together with the tool itself.
 
-This composes safely with the ordinary allocator with no extra bookkeeping: `allocation::reserve`
-(`crates/db/src/allocation.rs`) derives free space entirely by scanning `chunk_extents` on every
-call rather than tracking a separate high-water mark or free-list, so once migration's chunks are
-recorded there, an ordinary future write through the adopted repository automatically treats those
-ranges as occupied - no separate step to reconcile the allocator's own state against what migration
-already claimed.
+This composes safely with the ordinary allocator: the allocator's in-memory free space
+(DESIGN-STORE-006 in [`byte-store.md`](byte-store.md)) does not know about the ranges migration
+records. `register_existing_chunk` therefore discards it, and the next ordinary reservation rebuilds
+it from `chunk_extents`, which already contains everything migration claimed. An ordinary future
+write through the adopted repository automatically treats those ranges as occupied.
 
 ## DESIGN-MIGRATION-005: The progress record lives in each destination, written in the same transaction
 Status: implemented (`crates/db/src/migration.rs`, `Repository::migration_*`)

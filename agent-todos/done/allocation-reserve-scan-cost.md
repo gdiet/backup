@@ -178,3 +178,18 @@ unacceptable).
    DESIGN-STORE-003.
 3. Verify with a regression test that fails against the old behavior, as AGENTS.md's debugging
    discipline requires.
+
+## Done (2026-09-30, cloud Claude Code session)
+
+Benchmarked in Rust against a synthetic, gap-free `chunk_extents` table (this container, release
+build). The former `reserve_and_insert_chunk` cost about 0.12 to 0.18 s per new chunk at 1 million
+rows, 0.37 to 0.45 s at 3 million rows, and 1.1 to 1.5 s at 10 million rows. Building the in-memory
+gap list costs about the same as one such call: 0.13 s, 0.42 s and 1.4 to 2.2 s.
+
+Implemented Candidate A as DESIGN-STORE-006 in `docs/design/byte-store.md`
+(`crates/db/src/allocation.rs`, `Repository::load_free_space`, called by `ingest` and a read-write
+mount right after they acquire the write lock). Regression tests in `allocation.rs` each failed when
+the behavior they protect was removed: reuse of space freed by a purge in the same session, no leak
+after a failed reservation, commit-only release of freed ranges, and discarding the list after
+`register_existing_chunk`. The covering index and the background build stay documented there as
+options that are not implemented.

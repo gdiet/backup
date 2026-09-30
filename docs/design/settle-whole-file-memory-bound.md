@@ -69,7 +69,7 @@ passes over the same `read` callback:
    (`crates/db::Repository::find_chunk`). Already known - REQ-STORAGE-001's dedup applies exactly
    as it does today - and nothing further needs writing at all: the second pass is skipped
    entirely. Not already known: reserve the destination range(s) for the whole, now-known size
-   up front (`crates/db::allocation::reserve`, the same allocator `reserve_and_insert_chunk` already
+   up front (`crates/db::allocation::FreeSpace::reserve`, the same allocator `reserve_and_insert_chunk` already
    calls), then read a second pass through the same `read` callback, writing each `READ_WINDOW`
    piece directly to its position in `crates/store` as it is read, never accumulating more than one
    window's worth in memory on this pass either.
@@ -111,7 +111,7 @@ second pass over it would be worth an unconditional local-disk copy instead.
   and what its precise wording should be - a concrete bound (e.g. "a bounded, small multiple of
   `READ_WINDOW`, independent of content size") versus a looser "does not scale with input size"
   framing.
-- Whether `crates/db::allocation::reserve`'s existing gap-scanning allocator handles a
+- Whether `crates/db::allocation::FreeSpace`'s existing gap-tracking allocator handles a
   "reserve now, know you will write it a moment later, in order" access pattern the same way it
   already handles `reserve_and_insert_chunk`'s existing single-shot reservation, or needs any
   adjustment for this two-pass caller.

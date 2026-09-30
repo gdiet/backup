@@ -148,6 +148,14 @@ fn try_run(
         None
     };
 
+    // Built now, while this session already holds the write lock, so the first write does not pay
+    // for it (DESIGN-STORE-003). It must not be built before the lock is held: another writer
+    // could still change `chunk_extents` in between.
+    if read_write {
+        repo.load_free_space()
+            .map_err(|err| format!("error: {err}"))?;
+    }
+
     // Linux's FUSE backend refuses to mount onto a path that does not already exist, and only
     // reports that via a raw line on stderr, not through this crate's `Err`. Catching it here
     // first gives an actionable message instead (REQ-OPERABILITY-004) - Windows needs no such

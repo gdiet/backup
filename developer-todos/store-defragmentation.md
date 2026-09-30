@@ -17,7 +17,7 @@ Confirmed empirically this session (not just by reading the code) that no comman
 relocates existing bytes in `data/` or shrinks it: migrated a real Scala test repository, ran `dfs
 stats` before and after `dfs reclaim`, and the reported physical size was byte-for-byte identical
 (181,646,574 bytes both times) even though `reclaim` itself reported freeing 65,175 bytes.
-`allocation::reserve` (`crates/db/src/allocation.rs`) only ever treats a freed range as available
+`allocation::FreeSpace` (`crates/db/src/allocation.rs`) only ever treats a freed range as available
 for a *future* write - REQ-STORAGE-004's gradual reuse - never moves what is already there.
 
 REQ-STORAGE-005 itself describes the missing piece: relocate still-live content into a contiguous

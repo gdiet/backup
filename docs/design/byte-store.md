@@ -281,3 +281,66 @@ implementation both entry points share, rather than `cli` re-coordinating `db` a
 separately at each call site - which would also risk exactly the write-then-crash-before-commit
 inconsistency REQ-TREE-006 in [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)
 exists to rule out.
+
+## DESIGN-STORE-006: Free space is held in memory for the length of a write session
+Status: implemented
+
+The allocator of DESIGN-STORE-003 answers "where is free space" from an in-memory list of gaps, not
+from a query against `chunk_extents` per reservation. The list is a sorted set of disjoint gaps. The
+last gap always runs from the end of the used range to the end of the address space.
+
+The list is built once, by reading every `chunk_extents` row in order (`FreeSpace::build`). `ingest`
+and a read-write mount build it right after they have acquired the repository's write lock. Both
+will reserve space in almost every session, and a delay of a few seconds at startup is less
+surprising than the same delay at the first write. The write lock is what keeps the list valid: no
+other process can change `chunk_extents` while the session runs (DESIGN-MOUNT-008). A caller that
+does not build the list up front is still correct, because the first reservation builds it.
+
+The list stays in step with the database for the rest of the session:
+
+- A reservation takes its ranges from the list immediately. If the surrounding transaction fails,
+  the whole list is discarded and rebuilt from the database when it is next needed. A leaked
+  reservation would otherwise waste space until the next session.
+- A range freed by reclaim (`purge`, or a write abandoned because its file was deleted) is handed
+  back to the list only after the transaction that freed it has committed. Doing this earlier could
+  leave a range marked free that a chunk still uses if the transaction is rolled back. That would
+  corrupt data.
+- `register_existing_chunk` records extents at caller-chosen positions. The list does not know about
+  them, so it is discarded and rebuilt on the next reservation.
+
+The list lives next to the connection, in the same mutex-protected state that already serializes
+every write transaction. Its thread safety therefore needs no additional lock.
+
+Measured on the development machine with a synthetic gap-free `chunk_extents` table: scanning all
+rows costs about 0.13 s per million rows, which is about 1.4 to 2.2 s at ten million rows. The former
+per-reservation scan cost the same amount for every newly written chunk, so populating a repository
+with `N` distinct chunks was quadratic in `N`. With the list, each reservation costs a few
+operations on a small map, and the scan is paid once per session.
+
+### Alternative considered and rejected: scanning `chunk_extents` for every reservation
+
+Simple, and it needs no state beyond the database. It reads every row on every reservation, though.
+That is about 1.3 s per new chunk at ten million rows, which is the size a large repository reaches
+with a chunk size of 2^17 bits.
+
+### Alternative considered and rejected: a persisted free-space table
+
+Would make a reservation cheap without any startup cost. It needs a schema change and a migration.
+Adjacent gaps would have to be merged in the database when reclaim frees a range. The chunks
+recorded by `register_existing_chunk` would have to split gaps. All of that complexity buys only the
+avoidance of one scan per session.
+
+### Alternative considered and rejected for now: a covering index on `chunk_extents(start, stop)`
+
+Turns the scan into an index-only scan. A small probe showed roughly 25 percent less time. The scan
+remains linear, so it does not remove the cost per reservation. Since the scan now runs once per
+session, the gain is too small to justify a schema migration. It can still be applied if a
+measurement ever shows the startup scan to be a problem.
+
+### Possible later refinement: building the list in the background for a read-write mount
+
+Settle jobs already run asynchronously behind the write cache. Delaying their first reservation
+until the list is ready would fit that model. The scan would need its own read-only connection,
+because running it on the shared connection would block every read. Reclaim in the same session
+would also have to wait for the list. This is not implemented because the startup delay of a few
+seconds does not yet justify the additional code.
