@@ -286,8 +286,8 @@ exists to rule out.
 Status: implemented
 
 The allocator of DESIGN-STORE-003 answers "where is free space" from an in-memory list of gaps, not
-from a query against `chunk_extents` per reservation. The list is a sorted set of disjoint gaps. The
-last gap always runs from the end of the used range to the end of the address space.
+from a query against `chunk_extents` per reservation. The list is sorted by position. The last gap
+always runs from the end of the used range to the end of the address space.
 
 The list is built once, by reading every `chunk_extents` row in order (`FreeSpace::build`). `ingest`
 and a read-write mount build it right after they have acquired the repository's write lock. Both
@@ -296,17 +296,25 @@ surprising than the same delay at the first write. The write lock is what keeps 
 other process can change `chunk_extents` while the session runs (DESIGN-MOUNT-008). A caller that
 does not build the list up front is still correct, because the first reservation builds it.
 
-The list stays in step with the database for the rest of the session:
+The list only ever shrinks during a session. A reservation takes its ranges from the list
+immediately. The list never learns about anything that happens to `chunk_extents` afterwards:
 
-- A reservation takes its ranges from the list immediately. If the surrounding transaction fails,
-  the whole list is discarded and rebuilt from the database when it is next needed. A leaked
-  reservation would otherwise waste space until the next session.
-- A range freed by reclaim (`purge`, or a write abandoned because its file was deleted) is handed
-  back to the list only after the transaction that freed it has committed. Doing this earlier could
-  leave a range marked free that a chunk still uses if the transaction is rolled back. That would
-  corrupt data.
-- `register_existing_chunk` records extents at caller-chosen positions. The list does not know about
-  them, so it is discarded and rebuilt on the next reservation.
+- If the transaction of a reservation fails, the ranges it took stay taken. They are free in the
+  database, so the next session finds them again. A leaked range costs some space for a while and
+  cannot cause harm.
+- Space freed by reclaim during the session (`purge`, or a write abandoned because its file was
+  deleted) is not handed back either. The next session reuses it. Offline reclaim is unaffected,
+  because the next session builds its list after reclaim has finished.
+
+Because nothing is ever added, the list can only be too small, never too large. A list that is too
+large would hand out a range that a chunk still uses, which would corrupt data. Adding freed ranges
+would therefore require handing them back only after the freeing transaction has committed, and
+handling rolled-back transactions and migration batches specially. Not adding them removes that whole
+class of mistake, at the price described above.
+
+`register_existing_chunk` records extents at caller-chosen positions, which the list would not know
+about. It must therefore not be used in a session that has already reserved space. Its only caller is
+the temporary migration tool, which never reserves.
 
 The list lives next to the connection, in the same mutex-protected state that already serializes
 every write transaction. Its thread safety therefore needs no additional lock.
@@ -315,7 +323,7 @@ Measured on the development machine with a synthetic gap-free `chunk_extents` ta
 rows costs about 0.13 s per million rows, which is about 1.4 to 2.2 s at ten million rows. The former
 per-reservation scan cost the same amount for every newly written chunk, so populating a repository
 with `N` distinct chunks was quadratic in `N`. With the list, each reservation costs a few
-operations on a small map, and the scan is paid once per session.
+operations, and the scan is paid once per session.
 
 ### Alternative considered and rejected: scanning `chunk_extents` for every reservation
 
@@ -330,6 +338,14 @@ Adjacent gaps would have to be merged in the database when reclaim frees a range
 recorded by `register_existing_chunk` would have to split gaps. All of that complexity buys only the
 avoidance of one scan per session.
 
+### Alternative considered and rejected: handing freed ranges back to the running session
+
+Would make space from a `purge` reusable immediately. It requires carrying the freed ranges out of
+every reclaiming transaction and adding them to the list only after that transaction has committed.
+It also requires discarding and rebuilding the list after a failed reservation, which blocks the
+single database connection for the duration of a scan. The only benefit is reusing purged space
+without restarting the session.
+
 ### Alternative considered and rejected for now: a covering index on `chunk_extents(start, stop)`
 
 Turns the scan into an index-only scan. A small probe showed roughly 25 percent less time. The scan
@@ -341,6 +357,5 @@ measurement ever shows the startup scan to be a problem.
 
 Settle jobs already run asynchronously behind the write cache. Delaying their first reservation
 until the list is ready would fit that model. The scan would need its own read-only connection,
-because running it on the shared connection would block every read. Reclaim in the same session
-would also have to wait for the list. This is not implemented because the startup delay of a few
-seconds does not yet justify the additional code.
+because running it on the shared connection would block every read. This is not implemented because
+the startup delay of a few seconds does not yet justify the additional code.

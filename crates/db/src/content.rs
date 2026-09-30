@@ -12,7 +12,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
-use crate::allocation::Allocation;
+use crate::allocation::FreeSpace;
 
 /// Looks up an existing content by its whole-content `(length, hash)` - DESIGN-METADATA-007's
 /// hash-of-chunk-hashes, not a hash of the content's raw bytes.
@@ -53,16 +53,15 @@ pub(crate) fn find_chunk(
 /// Recording the reservation before the caller has actually written the bytes through `store` is
 /// safe: the new chunk's `ref_count` stays `0` (nothing links it into any content yet via
 /// `content_chunks`) until [`find_or_create_content`] does so, and nothing else can reserve the
-/// same range in the meantime - the only operation that could (REQ-STORAGE-004's reclaim) is
-/// itself a mutating operation, and it can only hand a range back to `allocation` once its own
-/// transaction has committed.
+/// same range in the meantime - the only operation that could (REQ-STORAGE-004's reclaim) never
+/// hands a range back to `free_space` while the session runs (DESIGN-STORE-006).
 pub(crate) fn reserve_and_insert_chunk(
     conn: &Connection,
-    allocation: &mut Allocation,
+    free_space: &mut FreeSpace,
     length: i64,
     hash: &[u8],
 ) -> Result<(i64, Vec<(u64, u64)>), Error> {
-    let ranges = allocation.reserve(length as u64);
+    let ranges = free_space.reserve(length as u64);
     conn.execute(
         "INSERT INTO chunks (length, hash) VALUES (?1, ?2)",
         params![length, hash],
@@ -86,9 +85,8 @@ pub(crate) fn reserve_and_insert_chunk(
 /// `docs/design/scala-migration-tool.md`), which never writes new bytes anywhere
 /// (REQ-MIGRATION-005 in `requirements/functional/repository-migration.md`): a migrated chunk's
 /// bytes already sit at a known position in the adopted repository's own, unchanged byte store.
-/// The in-memory free space does not know about the ranges recorded here. The caller
-/// (`Repository::register_existing_chunk`) therefore discards it, and it is rebuilt from
-/// `chunk_extents` the next time it is needed.
+/// The in-memory free space (DESIGN-STORE-006) does not know about the ranges recorded here, so
+/// this must not be used in a session that has already reserved space.
 pub(crate) fn insert_chunk_at(
     conn: &Connection,
     length: i64,
@@ -213,16 +211,12 @@ pub(crate) fn resolve_chunks(
 /// can be shared by more than one content. This walks exactly that one level further: after
 /// deleting `content_id`'s row, any chunk whose `ref_count` reached zero as a result is deleted in
 /// turn, cascading to its own `chunk_extents` rows - which is what actually makes those byte ranges
-/// eligible for reuse - each range is reported to `allocation`, which makes it reusable once the
-/// surrounding transaction has committed.
+/// eligible for reuse - by the next session, since a running session's in-memory free space is not
+/// told about them (DESIGN-STORE-006).
 ///
 /// Returns the number of bytes freed (the sum of every deleted chunk's own `chunk_extents`
 /// ranges) - `0` if `content_id` is still referenced, or no longer exists (already reclaimed).
-pub(crate) fn reclaim_content(
-    conn: &Connection,
-    allocation: &mut Allocation,
-    content_id: i64,
-) -> Result<u64, Error> {
+pub(crate) fn reclaim_content(conn: &Connection, content_id: i64) -> Result<u64, Error> {
     let ref_count: Option<i64> = conn
         .query_row(
             "SELECT ref_count FROM contents WHERE id = ?1",
@@ -252,17 +246,13 @@ pub(crate) fn reclaim_content(
             |row| row.get(0),
         )?;
         if chunk_ref_count == 0 {
-            let extents: Vec<(u64, u64)> = conn
-                .prepare("SELECT start, stop FROM chunk_extents WHERE chunk_id = ?1")?
-                .query_map(params![chunk_id], |row| {
-                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
+            let extents_len: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(stop - start), 0) FROM chunk_extents WHERE chunk_id = ?1",
+                params![chunk_id],
+                |row| row.get(0),
+            )?;
             conn.execute("DELETE FROM chunks WHERE id = ?1", params![chunk_id])?;
-            for (start, stop) in extents {
-                allocation.record_freed(start, stop);
-                reclaimed_bytes += stop - start;
-            }
+            reclaimed_bytes += extents_len as u64;
         }
     }
     Ok(reclaimed_bytes)

@@ -197,7 +197,7 @@ fn try_run(
     // Held for the rest of this run (DESIGN-MAINTENANCE-001 in
     // `docs/design/repository-locking.md`), same as a read-write mount session.
     let _write_lock = db::acquire_write_lock(repo_path).map_err(|err| format!("error: {err}"))?;
-    // Built now, while this run already holds the write lock (DESIGN-STORE-003): ingest reserves
+    // Built now, while this run already holds the write lock (DESIGN-STORE-006): ingest reserves
     // space for almost every new chunk, so nothing is gained by waiting for the first one.
     repo.load_free_space()
         .map_err(|err| format!("error: {err}"))?;

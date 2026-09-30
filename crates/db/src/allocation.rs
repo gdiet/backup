@@ -1,13 +1,13 @@
 //! Free-byte-range allocation (DESIGN-STORE-003 in `docs/design/byte-store.md`) - answers "which
 //! byte range is free to write new content into". The state is derived entirely from
 //! `chunk_extents`, which already lives in this database. It is built into memory once per write
-//! session ([`FreeSpace::build`]) and kept in step with the database from then on, so a
+//! session ([`FreeSpace::build`]) and only ever shrinks from then on (DESIGN-STORE-006), so a
 //! reservation never scans `chunk_extents` again.
 //!
 //! `pub(crate)` only, reached exclusively through [`crate::content`] (DESIGN-METADATA-006) and
 //! `Repository`'s own write transactions.
 
-use std::collections::BTreeMap;
+use std::collections::VecDeque;
 
 use rusqlite::Connection;
 
@@ -17,12 +17,12 @@ use crate::Error;
 /// positions as `i64`.
 const END_OF_ADDRESS_SPACE: u64 = i64::MAX as u64;
 
-/// The free byte ranges of a repository's byte store: a sorted set of disjoint, non-adjacent
-/// `start -> stop` gaps. The last gap always runs from the end of the used range to
-/// [`END_OF_ADDRESS_SPACE`], so a reservation can never run out of space in practice.
+/// The free byte ranges of a repository's byte store: disjoint gaps, sorted by position. The last
+/// gap always runs from the end of the used range to [`END_OF_ADDRESS_SPACE`], so a reservation can
+/// never run out of space in practice.
 #[derive(Debug)]
 pub(crate) struct FreeSpace {
-    gaps: BTreeMap<u64, u64>,
+    gaps: VecDeque<(u64, u64)>,
 }
 
 impl FreeSpace {
@@ -31,7 +31,7 @@ impl FreeSpace {
     /// this module, and reclaiming removes a chunk's rows entirely rather than shrinking them), so
     /// a single ordered pass finds every gap.
     pub(crate) fn build(conn: &Connection) -> Result<Self, Error> {
-        let mut gaps = BTreeMap::new();
+        let mut gaps = VecDeque::new();
         let mut cursor: u64 = 0;
         let mut stmt = conn.prepare("SELECT start, stop FROM chunk_extents ORDER BY start")?;
         let mut rows = stmt.query(())?;
@@ -39,96 +39,41 @@ impl FreeSpace {
             let start = row.get::<_, i64>(0)? as u64;
             let stop = row.get::<_, i64>(1)? as u64;
             if start > cursor {
-                gaps.insert(cursor, start);
+                gaps.push_back((cursor, start));
             }
             cursor = stop;
         }
-        gaps.insert(cursor, END_OF_ADDRESS_SPACE);
+        gaps.push_back((cursor, END_OF_ADDRESS_SPACE));
         Ok(Self { gaps })
     }
 
     /// Takes `length` bytes out of the free space and returns the `(start, stop)` ranges that
     /// together cover exactly `length` bytes, in order - more than one only if no single gap was
-    /// large enough on its own. Lower gaps are used before higher ones, so space freed by reclaim
-    /// is filled before the used range is extended.
+    /// large enough on its own. Lower gaps are used before higher ones, so space freed by an
+    /// earlier session is filled before the used range is extended.
     pub(crate) fn reserve(&mut self, length: u64) -> Vec<(u64, u64)> {
         let mut remaining = length;
         let mut ranges = Vec::new();
         while remaining > 0 {
             let (start, stop) = self
                 .gaps
-                .pop_first()
+                .pop_front()
                 .expect("the last gap always extends to the end of the address space");
             let take = (stop - start).min(remaining);
             ranges.push((start, start + take));
             remaining -= take;
             if start + take < stop {
-                self.gaps.insert(start + take, stop);
+                self.gaps.push_front((start + take, stop));
             }
         }
         ranges
-    }
-
-    /// Returns `start..stop` to the free space, merging it with an adjacent gap on either side.
-    pub(crate) fn release(&mut self, start: u64, stop: u64) {
-        let mut start = start;
-        let mut stop = stop;
-        if let Some((&previous_start, &previous_stop)) = self.gaps.range(..=start).next_back()
-            && previous_stop == start
-        {
-            self.gaps.remove(&previous_start);
-            start = previous_start;
-        }
-        if let Some(next_stop) = self.gaps.remove(&stop) {
-            stop = next_stop;
-        }
-        self.gaps.insert(start, stop);
-    }
-}
-
-/// What a write transaction may use of the free space (see `Repository::with_transaction_alloc`).
-/// A reservation is taken from the in-memory [`FreeSpace`] right away, which is safe even if the
-/// transaction later rolls back (the caller then discards the whole [`FreeSpace`] and rebuilds it
-/// from the database). A range freed by reclaim is only remembered here and handed back to the
-/// [`FreeSpace`] once the transaction has committed. Doing that earlier could let a rolled-back
-/// transaction leave a range marked free that a chunk still uses.
-#[derive(Debug)]
-pub(crate) struct Allocation<'a> {
-    free_space: Option<&'a mut FreeSpace>,
-    freed: Vec<(u64, u64)>,
-}
-
-impl<'a> Allocation<'a> {
-    pub(crate) fn new(free_space: Option<&'a mut FreeSpace>) -> Self {
-        Self {
-            free_space,
-            freed: Vec::new(),
-        }
-    }
-
-    /// See [`FreeSpace::reserve`].
-    pub(crate) fn reserve(&mut self, length: u64) -> Vec<(u64, u64)> {
-        self.free_space
-            .as_mut()
-            .expect("only transactions that ask for the free space reserve from it")
-            .reserve(length)
-    }
-
-    /// Notes that `start..stop` no longer holds any chunk. It becomes reusable once the
-    /// transaction has committed.
-    pub(crate) fn record_freed(&mut self, start: u64, stop: u64) {
-        self.freed.push((start, stop));
-    }
-
-    pub(crate) fn into_freed(self) -> Vec<(u64, u64)> {
-        self.freed
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::FreeSpace;
-    use crate::{Error, RepositorySettings, init_repository, open_repository};
+    use crate::{RepositorySettings, init_repository, open_repository};
 
     const HASH_A: &[u8] = &[0xAA; 20];
     const HASH_B: &[u8] = &[0xBB; 20];
@@ -222,24 +167,11 @@ mod tests {
     }
 
     #[test]
-    fn a_released_range_is_reused_and_merged_with_its_neighbors() {
-        let (repo, _dir) = repo();
-        insert_extent(&repo, 1, 0, 100);
-        let mut free_space = repo
-            .with_connection(|conn, _cache| FreeSpace::build(conn))
-            .unwrap();
-        // Free 20..40 and 40..60 separately: they merge into one 20..60 gap.
-        free_space.release(40, 60);
-        free_space.release(20, 40);
-        assert_eq!(free_space.reserve(40), vec![(20, 60)]);
-        // Freeing the very end of the used range merges into the open-ended last gap.
-        free_space.release(60, 100);
-        assert_eq!(free_space.reserve(60), vec![(60, 120)]);
-    }
-
-    #[test]
-    fn space_freed_by_a_purge_is_reused_in_the_same_session() {
-        let (repo, _dir) = repo();
+    fn space_freed_by_a_purge_is_reused_by_the_next_session_not_the_running_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, RepositorySettings::new(20, 1_700_000_000_000)).unwrap();
+        let repo = open_repository(&repo_root).unwrap();
         repo.load_free_space().unwrap();
         let (first_chunk, _) = repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
         repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
@@ -254,47 +186,41 @@ mod tests {
         let (_, ranges) = repo.reserve_and_insert_chunk(100, &[0xCC; 20]).unwrap();
         assert_eq!(
             ranges,
-            vec![(0, 100)],
-            "the purged chunk's range must be handed out again without a restart"
+            vec![(150, 250)],
+            "a running session appends past the end of the used range"
         );
+        drop(repo);
+
+        let next_session = open_repository(&repo_root).unwrap();
+        let (_, ranges) = next_session
+            .reserve_and_insert_chunk(100, &[0xDD; 20])
+            .unwrap();
+        assert_eq!(ranges, vec![(0, 100)], "the purged range is free again");
     }
 
     #[test]
-    fn a_failed_reservation_does_not_leak_its_range() {
-        let (repo, _dir) = repo();
+    fn a_failed_reservation_leaves_a_gap_that_only_the_next_session_reuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, RepositorySettings::new(20, 1_700_000_000_000)).unwrap();
+        let repo = open_repository(&repo_root).unwrap();
         repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
         // Same (length, hash): reserves 100..200 in memory, then violates the chunks table's
-        // uniqueness constraint, so the transaction rolls back.
+        // uniqueness constraint, so the transaction rolls back and nothing is recorded for it.
         assert!(repo.reserve_and_insert_chunk(100, HASH_A).is_err());
         let (_, ranges) = repo.reserve_and_insert_chunk(50, HASH_B).unwrap();
-        assert_eq!(ranges, vec![(100, 150)]);
-    }
+        assert_eq!(ranges, vec![(200, 250)], "the failed range is skipped");
+        drop(repo);
 
-    #[test]
-    fn a_range_freed_by_a_rolled_back_transaction_is_not_reused() {
-        let (repo, _dir) = repo();
-        repo.reserve_and_insert_chunk(100, HASH_A).unwrap();
-        let result: Result<(), Error> = repo.with_transaction_alloc(false, |_, _, allocation| {
-            allocation.record_freed(0, 100);
-            Err(Error::NoSuchEntry(1))
-        });
-        assert!(result.is_err());
-        let (_, ranges) = repo.reserve_and_insert_chunk(10, HASH_B).unwrap();
+        let next_session = open_repository(&repo_root).unwrap();
+        let (_, ranges) = next_session
+            .reserve_and_insert_chunk(60, &[0xCC; 20])
+            .unwrap();
         assert_eq!(
             ranges,
-            vec![(100, 110)],
-            "the chunk at 0..100 still exists, so its range is not free"
+            vec![(100, 160)],
+            "and is free again after a restart"
         );
-    }
-
-    #[test]
-    fn registering_a_chunk_at_a_fixed_position_is_respected_by_later_reservations() {
-        let (repo, _dir) = repo();
-        repo.load_free_space().unwrap();
-        repo.register_existing_chunk(100, HASH_A, &[(500, 600)])
-            .unwrap();
-        let (_, ranges) = repo.reserve_and_insert_chunk(600, HASH_B).unwrap();
-        assert_eq!(ranges, vec![(0, 500), (600, 700)]);
     }
 
     #[test]

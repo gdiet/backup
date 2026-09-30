@@ -149,7 +149,7 @@ fn try_run(
     };
 
     // Built now, while this session already holds the write lock, so the first write does not pay
-    // for it (DESIGN-STORE-003). It must not be built before the lock is held: another writer
+    // for it (DESIGN-STORE-006). It must not be built before the lock is held: another writer
     // could still change `chunk_extents` in between.
     if read_write {
         repo.load_free_space()

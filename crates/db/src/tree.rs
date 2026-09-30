@@ -20,7 +20,6 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
-use crate::allocation::Allocation;
 use crate::name_cache::NameCache;
 
 mod case_insensitive;
@@ -548,7 +547,6 @@ pub enum SettleOutcome {
 pub(crate) fn settle_pending_write(
     conn: &Connection,
     cache: &mut NameCache,
-    allocation: &mut Allocation,
     base_row_id: i64,
     time_millis: i64,
     content_id: i64,
@@ -566,7 +564,7 @@ pub(crate) fn settle_pending_write(
         _ => None,
     };
     let Some((parent_id, name)) = live else {
-        let reclaimed_bytes = crate::content::reclaim_content(conn, allocation, content_id)?;
+        let reclaimed_bytes = crate::content::reclaim_content(conn, content_id)?;
         return Ok(SettleOutcome::Abandoned { reclaimed_bytes });
     };
 
@@ -690,7 +688,6 @@ pub struct PurgeResult {
 /// it to a later, separate sweep.
 pub(crate) fn purge_deleted_entry(
     conn: &Connection,
-    allocation: &mut Allocation,
     id: i64,
     recursive: bool,
 ) -> Result<PurgeResult, Error> {
@@ -723,7 +720,7 @@ pub(crate) fn purge_deleted_entry(
             return Err(Error::DirectoryNotEmpty(id));
         }
         for child_id in child_ids {
-            let child_result = purge_deleted_entry(conn, allocation, child_id, recursive)?;
+            let child_result = purge_deleted_entry(conn, child_id, recursive)?;
             result.descendants += 1 + child_result.descendants;
             result.reclaimed_bytes += child_result.reclaimed_bytes;
         }
@@ -731,7 +728,7 @@ pub(crate) fn purge_deleted_entry(
 
     conn.execute("DELETE FROM tree_entries WHERE id = ?1", params![id])?;
     if let Some(content_id) = content_id {
-        result.reclaimed_bytes += crate::content::reclaim_content(conn, allocation, content_id)?;
+        result.reclaimed_bytes += crate::content::reclaim_content(conn, content_id)?;
     }
     Ok(result)
 }

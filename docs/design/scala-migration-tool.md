@@ -187,11 +187,12 @@ instead of asking the allocator to find them. Temporary, the same as
 `adopt_repository`/`open_repository_at` (DESIGN-MIGRATION-004) - only the Scala-repository
 migration tool needs it, removed together with the tool itself.
 
-This composes safely with the ordinary allocator: the allocator's in-memory free space
-(DESIGN-STORE-006 in [`byte-store.md`](byte-store.md)) does not know about the ranges migration
-records. `register_existing_chunk` therefore discards it, and the next ordinary reservation rebuilds
-it from `chunk_extents`, which already contains everything migration claimed. An ordinary future
-write through the adopted repository automatically treats those ranges as occupied.
+This composes safely with the ordinary allocator as long as migration and ordinary allocation do not
+share a session: the allocator builds its in-memory free space (DESIGN-STORE-006 in
+[`byte-store.md`](byte-store.md)) from `chunk_extents` when a session starts, which then already
+contains everything migration claimed. The migration tool never reserves space, so it never builds
+that list. An ordinary future write through the adopted repository automatically treats those
+ranges as occupied.
 
 ## DESIGN-MIGRATION-005: The progress record lives in each destination, written in the same transaction
 Status: implemented (`crates/db/src/migration.rs`, `Repository::migration_*`)
