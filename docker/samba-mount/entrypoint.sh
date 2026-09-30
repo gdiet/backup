@@ -26,12 +26,23 @@ MOUNT_ARGS=${MOUNT_ARGS:-}
 
 mkdir -p "$MOUNTPOINT"
 
+# Everything below runs as root. With HOST_UID and HOST_GID set, files in $REPO and /logs are
+# handed over to that owner at start and again on shutdown, so a bind-mounted directory stays
+# usable from the host. Files written while the container runs stay root-owned until then.
+fix_ownership() {
+    [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ] || return 0
+    for dir in "$REPO" /logs; do
+        [ ! -d "$dir" ] || chown -R "$HOST_UID:$HOST_GID" "$dir" || true
+    done
+}
+
 # Opt-in: set CREATE_REPO_ARGS (possibly to the empty string) to create the repository at $REPO
 # on first start. Without it, a missing repository is an error from `dfs mount` below.
 # shellcheck disable=SC2086
 if [ -n "${CREATE_REPO_ARGS+set}" ] && [ ! -d "$REPO/meta" ]; then
     dfs create-repo $CREATE_REPO_ARGS "$REPO"
 fi
+fix_ownership
 
 # shellcheck disable=SC2086
 dfs mount --repository "$REPO" $MOUNT_ARGS "$MOUNTPOINT" &
@@ -132,6 +143,7 @@ cleanup() {
         sleep 0.2
     done
     wait "$MOUNT_PID" 2>/dev/null || true
+    fix_ownership
     exit "$EXIT_CODE"
 }
 trap cleanup TERM INT

@@ -15,8 +15,12 @@ services:
       - /dev/fuse
     volumes:
       - ./repo:/repo
+      - ./logs:/logs
+    stop_grace_period: 60s
     ports:
       - "445:445"
     environment:
+      HOST_UID: ${HOST_UID:-}
+      HOST_GID: ${HOST_GID:-}
       CREATE_REPO_ARGS: "--cdc-target-size-bits 16"
-      MOUNT_ARGS: "--read-write --purge"
+      MOUNT_ARGS: "--read-write --purge --debug-log /logs/dfs-mount-debug.log"

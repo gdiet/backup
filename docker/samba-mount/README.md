@@ -59,7 +59,18 @@ docker compose up --build
 `compose.yaml` keeps the repository in `./repo` (git-ignored). On first start the entrypoint creates
 it with `dfs create-repo --cdc-target-size-bits 16`, because `CREATE_REPO_ARGS` is set. Without
 `CREATE_REPO_ARGS`, a missing repository is an error. The share is mounted with `--read-write
---purge`. The container files in `./repo` belong to root, as the container runs as root.
+--purge` and logs every filesystem call to `./logs/dfs-mount-debug.log` (git-ignored, overwritten
+on each start, can grow large). The container runs as root, so files in `./repo` and `./logs` belong to root by default. To hand
+them to the current user at container start and on shutdown, create a `.env` file (git-ignored)
+next to `compose.yaml` once:
+
+```bash
+printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" > .env
+```
+
+Files written while the container runs stay root-owned until the next shutdown. After a crash, the
+next start corrects them. The `chown` walks the whole repository, so shutting down a large one
+takes longer, which is why `compose.yaml` allows 60 seconds for it.
 
 SMB is published on port 445 of all interfaces. Running under WSL2, connect from the Windows side
 through the WSL2 guest's own address, because Windows' own SMB server already uses port 445 on the
