@@ -46,69 +46,71 @@ unsafe extern "C" fn dispatch_getattr<T: MountFilesystem>(
     stbuf: *mut fuse_stat,
     _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.getattr(path) {
-        Ok(attr) => {
-            unsafe { std::ptr::write_bytes(stbuf, 0, 1) };
-            // WinFSP derives an NT security descriptor from st_uid/st_gid
-            // plus the mode bits below and enforces it *before* ever
-            // calling this crate's own `mkdir`/`create`/`open`/etc. (unlike
-            // real libfuse's kernel VFS, which without `-o
-            // default_permissions` just calls through regardless of
-            // reported mode/ownership) - leaving st_uid/st_gid at 0 (the
-            // zeroing above) does not map to the mounting process's own
-            // identity, so WinFSP built a security descriptor that denied
-            // it access even with fully-open mode bits. Filling in the
-            // real caller's uid/gid via `fuse_get_context()` (exactly what
-            // WinFSP's own memfs-fuse3.cpp reference does) makes the
-            // mounting process the file's owner, so owner-write bits are
-            // honored.
-            unsafe {
-                let ctx = sys::fuse_get_context();
-                (*stbuf).st_uid = (*ctx).uid;
-                (*stbuf).st_gid = (*ctx).gid;
+    crate::guard_callback("getattr", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.getattr(path) {
+            Ok(attr) => {
+                unsafe { std::ptr::write_bytes(stbuf, 0, 1) };
+                // WinFSP derives an NT security descriptor from st_uid/st_gid
+                // plus the mode bits below and enforces it *before* ever
+                // calling this crate's own `mkdir`/`create`/`open`/etc. (unlike
+                // real libfuse's kernel VFS, which without `-o
+                // default_permissions` just calls through regardless of
+                // reported mode/ownership) - leaving st_uid/st_gid at 0 (the
+                // zeroing above) does not map to the mounting process's own
+                // identity, so WinFSP built a security descriptor that denied
+                // it access even with fully-open mode bits. Filling in the
+                // real caller's uid/gid via `fuse_get_context()` (exactly what
+                // WinFSP's own memfs-fuse3.cpp reference does) makes the
+                // mounting process the file's owner, so owner-write bits are
+                // honored.
+                unsafe {
+                    let ctx = sys::fuse_get_context();
+                    (*stbuf).st_uid = (*ctx).uid;
+                    (*stbuf).st_gid = (*ctx).gid;
+                }
+                match attr.kind {
+                    FileKind::Directory => unsafe {
+                        // World-writable (0o777), not 0o555: consistent with
+                        // this crate's "Not modeling permissions" design (see
+                        // `MountFilesystem::chmod`'s doc comment) - read-only
+                        // mounts are still enforced, just by the `-oro`-derived
+                        // `ReadOnlyVolume` WinFSP setting, not by these bits.
+                        (*stbuf).st_mode = 0o040000 | 0o777; // S_IFDIR
+                        (*stbuf).st_nlink = 2;
+                    },
+                    FileKind::File => unsafe {
+                        (*stbuf).st_mode = 0o100000 | 0o666; // S_IFREG
+                        (*stbuf).st_nlink = 1;
+                        (*stbuf).st_size = attr.size as fuse_off_t;
+                    },
+                }
+                // No separate access/change time tracked - `mtime_millis` fills
+                // all three, matching linux::mod's identical convention.
+                let secs = attr.mtime_millis.div_euclid(1000);
+                let nsecs = attr.mtime_millis.rem_euclid(1000) * 1_000_000;
+                unsafe {
+                    (*stbuf).st_atim = sys::fuse_timespec {
+                        tv_sec: secs,
+                        tv_nsec: nsecs,
+                    };
+                    (*stbuf).st_mtim = sys::fuse_timespec {
+                        tv_sec: secs,
+                        tv_nsec: nsecs,
+                    };
+                    (*stbuf).st_ctim = sys::fuse_timespec {
+                        tv_sec: secs,
+                        tv_nsec: nsecs,
+                    };
+                }
+                0
             }
-            match attr.kind {
-                FileKind::Directory => unsafe {
-                    // World-writable (0o777), not 0o555: consistent with
-                    // this crate's "Not modeling permissions" design (see
-                    // `MountFilesystem::chmod`'s doc comment) - read-only
-                    // mounts are still enforced, just by the `-oro`-derived
-                    // `ReadOnlyVolume` WinFSP setting, not by these bits.
-                    (*stbuf).st_mode = 0o040000 | 0o777; // S_IFDIR
-                    (*stbuf).st_nlink = 2;
-                },
-                FileKind::File => unsafe {
-                    (*stbuf).st_mode = 0o100000 | 0o666; // S_IFREG
-                    (*stbuf).st_nlink = 1;
-                    (*stbuf).st_size = attr.size as fuse_off_t;
-                },
-            }
-            // No separate access/change time tracked - `mtime_millis` fills
-            // all three, matching linux::mod's identical convention.
-            let secs = attr.mtime_millis.div_euclid(1000);
-            let nsecs = attr.mtime_millis.rem_euclid(1000) * 1_000_000;
-            unsafe {
-                (*stbuf).st_atim = sys::fuse_timespec {
-                    tv_sec: secs,
-                    tv_nsec: nsecs,
-                };
-                (*stbuf).st_mtim = sys::fuse_timespec {
-                    tv_sec: secs,
-                    tv_nsec: nsecs,
-                };
-                (*stbuf).st_ctim = sys::fuse_timespec {
-                    tv_sec: secs,
-                    tv_nsec: nsecs,
-                };
-            }
-            0
+            Err(errno) => -errno.0,
         }
-        Err(errno) => -errno.0,
-    }
+    })
 }
 
 unsafe extern "C" fn dispatch_readdir<T: MountFilesystem>(
@@ -119,46 +121,50 @@ unsafe extern "C" fn dispatch_readdir<T: MountFilesystem>(
     _fi: *mut sys::fuse_file_info,
     _flags: sys::fuse_readdir_flags,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let Some(filler) = filler else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.readdir(path) {
-        Ok(entries) => {
-            let names = [".", ".."]
-                .into_iter()
-                .map(str::to_string)
-                .chain(entries.into_iter().map(|e: DirEntry| e.name));
-            for name in names {
-                if let Ok(name) = CString::new(name) {
-                    unsafe { filler(buf, name.as_ptr(), std::ptr::null(), 0, 0) };
+    crate::guard_callback("readdir", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let Some(filler) = filler else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.readdir(path) {
+            Ok(entries) => {
+                let names = [".", ".."]
+                    .into_iter()
+                    .map(str::to_string)
+                    .chain(entries.into_iter().map(|e: DirEntry| e.name));
+                for name in names {
+                    if let Ok(name) = CString::new(name) {
+                        unsafe { filler(buf, name.as_ptr(), std::ptr::null(), 0, 0) };
+                    }
                 }
+                0
             }
-            0
+            Err(errno) => -errno.0,
         }
-        Err(errno) => -errno.0,
-    }
+    })
 }
 
 unsafe extern "C" fn dispatch_open<T: MountFilesystem>(
     path: *const c_char,
     fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    let write_intent = unsafe { (*fi).flags & (libc::O_WRONLY | libc::O_RDWR) != 0 };
-    match fs.open(path, write_intent) {
-        Ok(handle) => {
-            unsafe { (*fi).fh = handle.0 };
-            0
+    crate::guard_callback("open", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        let write_intent = unsafe { (*fi).flags & (libc::O_WRONLY | libc::O_RDWR) != 0 };
+        match fs.open(path, write_intent) {
+            Ok(handle) => {
+                unsafe { (*fi).fh = handle.0 };
+                0
+            }
+            Err(errno) => -errno.0,
         }
-        Err(errno) => -errno.0,
-    }
+    })
 }
 
 unsafe extern "C" fn dispatch_read<T: MountFilesystem>(
@@ -168,16 +174,18 @@ unsafe extern "C" fn dispatch_read<T: MountFilesystem>(
     offset: fuse_off_t,
     fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let fs = unsafe { context::<T>() };
-    let handle = Handle(unsafe { (*fi).fh });
-    match fs.read(handle, offset as u64, size as u32) {
-        Ok(data) => {
-            let n = data.len().min(size);
-            unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), buf.cast::<u8>(), n) };
-            n as c_int
+    crate::guard_callback("read", || {
+        let fs = unsafe { context::<T>() };
+        let handle = Handle(unsafe { (*fi).fh });
+        match fs.read(handle, offset as u64, size as u32) {
+            Ok(data) => {
+                let n = data.len().min(size);
+                unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), buf.cast::<u8>(), n) };
+                n as c_int
+            }
+            Err(errno) => -errno.0,
         }
-        Err(errno) => -errno.0,
-    }
+    })
 }
 
 unsafe extern "C" fn dispatch_write<T: MountFilesystem>(
@@ -187,13 +195,15 @@ unsafe extern "C" fn dispatch_write<T: MountFilesystem>(
     offset: fuse_off_t,
     fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let fs = unsafe { context::<T>() };
-    let handle = Handle(unsafe { (*fi).fh });
-    let data = unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), size) };
-    match fs.write(handle, offset as u64, data) {
-        Ok(written) => written as c_int,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("write", || {
+        let fs = unsafe { context::<T>() };
+        let handle = Handle(unsafe { (*fi).fh });
+        let data = unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), size) };
+        match fs.write(handle, offset as u64, data) {
+            Ok(written) => written as c_int,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_truncate<T: MountFilesystem>(
@@ -201,64 +211,72 @@ unsafe extern "C" fn dispatch_truncate<T: MountFilesystem>(
     size: fuse_off_t,
     _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.truncate(path, size as u64) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("truncate", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.truncate(path, size as u64) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_release<T: MountFilesystem>(
     _path: *const c_char,
     fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let fs = unsafe { context::<T>() };
-    fs.release(Handle(unsafe { (*fi).fh }));
-    0
+    crate::guard_callback("release", || {
+        let fs = unsafe { context::<T>() };
+        fs.release(Handle(unsafe { (*fi).fh }));
+        0
+    })
 }
 
 unsafe extern "C" fn dispatch_statfs<T: MountFilesystem>(
     _path: *const c_char,
     buf: *mut fuse_statvfs,
 ) -> c_int {
-    let fs = unsafe { context::<T>() };
-    match fs.statfs() {
-        Ok(info) => {
-            unsafe { std::ptr::write_bytes(buf, 0, 1) };
-            unsafe {
-                (*buf).f_bsize = info.block_size as u64;
-                (*buf).f_frsize = info.block_size as u64;
-                (*buf).f_blocks = info.blocks;
-                (*buf).f_bfree = info.blocks_free;
-                (*buf).f_bavail = info.blocks_available;
-                (*buf).f_files = info.files;
-                (*buf).f_ffree = info.files_free;
-                (*buf).f_namemax = info.max_name_length as u64;
+    crate::guard_callback("statfs", || {
+        let fs = unsafe { context::<T>() };
+        match fs.statfs() {
+            Ok(info) => {
+                unsafe { std::ptr::write_bytes(buf, 0, 1) };
+                unsafe {
+                    (*buf).f_bsize = info.block_size as u64;
+                    (*buf).f_frsize = info.block_size as u64;
+                    (*buf).f_blocks = info.blocks;
+                    (*buf).f_bfree = info.blocks_free;
+                    (*buf).f_bavail = info.blocks_available;
+                    (*buf).f_files = info.files;
+                    (*buf).f_ffree = info.files_free;
+                    (*buf).f_namemax = info.max_name_length as u64;
+                }
+                0
             }
-            0
+            Err(errno) => -errno.0,
         }
-        Err(errno) => -errno.0,
-    }
+    })
 }
 
 unsafe extern "C" fn dispatch_mkdir<T: MountFilesystem>(
     path: *const c_char,
     _mode: sys::fuse_mode_t,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    if let Err(errno) = crate::reject_if_name_too_long(path) {
-        return -errno.0;
-    }
-    let fs = unsafe { context::<T>() };
-    match fs.mkdir(path) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("mkdir", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        if let Err(errno) = crate::reject_if_name_too_long(path) {
+            return -errno.0;
+        }
+        let fs = unsafe { context::<T>() };
+        match fs.mkdir(path) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_create<T: MountFilesystem>(
@@ -266,42 +284,48 @@ unsafe extern "C" fn dispatch_create<T: MountFilesystem>(
     _mode: sys::fuse_mode_t,
     fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    if let Err(errno) = crate::reject_if_name_too_long(path) {
-        return -errno.0;
-    }
-    let fs = unsafe { context::<T>() };
-    match fs.create(path) {
-        Ok(handle) => {
-            unsafe { (*fi).fh = handle.0 };
-            0
+    crate::guard_callback("create", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        if let Err(errno) = crate::reject_if_name_too_long(path) {
+            return -errno.0;
         }
-        Err(errno) => -errno.0,
-    }
+        let fs = unsafe { context::<T>() };
+        match fs.create(path) {
+            Ok(handle) => {
+                unsafe { (*fi).fh = handle.0 };
+                0
+            }
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_unlink<T: MountFilesystem>(path: *const c_char) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.unlink(path) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("unlink", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.unlink(path) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_rmdir<T: MountFilesystem>(path: *const c_char) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.rmdir(path) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("rmdir", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.rmdir(path) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
@@ -309,21 +333,23 @@ unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
     new_path: *const c_char,
     flags: c_uint,
 ) -> c_int {
-    let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
-        return -Errno::EIO.0;
-    };
-    if let Err(errno) = crate::reject_if_name_too_long(new_path) {
-        return -errno.0;
-    }
-    let no_replace = match crate::parse_rename_flags(flags) {
-        Ok(no_replace) => no_replace,
-        Err(errno) => return -errno.0,
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.rename(old_path, new_path, no_replace) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("rename", || {
+        let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
+            return -Errno::EIO.0;
+        };
+        if let Err(errno) = crate::reject_if_name_too_long(new_path) {
+            return -errno.0;
+        }
+        let no_replace = match crate::parse_rename_flags(flags) {
+            Ok(no_replace) => no_replace,
+            Err(errno) => return -errno.0,
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.rename(old_path, new_path, no_replace) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_utimens<T: MountFilesystem>(
@@ -331,18 +357,20 @@ unsafe extern "C" fn dispatch_utimens<T: MountFilesystem>(
     tv: *const sys::fuse_timespec,
     _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    // tv[0] is atime, tv[1] is mtime - this crate tracks only mtime, same
-    // convention as linux::mod's identical dispatch_utimens.
-    let mtime = unsafe { &*tv.add(1) };
-    let mtime_millis = mtime.tv_sec * 1000 + mtime.tv_nsec / 1_000_000;
-    match fs.utimens(path, mtime_millis) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("utimens", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        // tv[0] is atime, tv[1] is mtime - this crate tracks only mtime, same
+        // convention as linux::mod's identical dispatch_utimens.
+        let mtime = unsafe { &*tv.add(1) };
+        let mtime_millis = mtime.tv_sec * 1000 + mtime.tv_nsec / 1_000_000;
+        match fs.utimens(path, mtime_millis) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_chmod<T: MountFilesystem>(
@@ -350,14 +378,16 @@ unsafe extern "C" fn dispatch_chmod<T: MountFilesystem>(
     _mode: sys::fuse_mode_t,
     _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.chmod(path) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("chmod", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.chmod(path) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
@@ -366,14 +396,16 @@ unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
     _gid: sys::fuse_gid_t,
     _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    let Some(path) = path_str(path) else {
-        return -Errno::EIO.0;
-    };
-    let fs = unsafe { context::<T>() };
-    match fs.chown(path) {
-        Ok(()) => 0,
-        Err(errno) => -errno.0,
-    }
+    crate::guard_callback("chown", || {
+        let Some(path) = path_str(path) else {
+            return -Errno::EIO.0;
+        };
+        let fs = unsafe { context::<T>() };
+        match fs.chown(path) {
+            Ok(()) => 0,
+            Err(errno) => -errno.0,
+        }
+    })
 }
 
 /// Cheap check for whether WinFSP is actually installed, without starting

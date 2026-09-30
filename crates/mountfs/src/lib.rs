@@ -109,6 +109,28 @@ fn reject_if_name_too_long(path: &str) -> Result<(), Errno> {
     }
 }
 
+/// Runs the body of one `dispatch_*` trampoline, converting a panic into `-EIO`.
+///
+/// A panic must never unwind out of an `extern "C"` callback: the C frames of libfuse or WinFSP
+/// below it cannot unwind, so Rust aborts the whole process instead. That skips every `Drop`,
+/// leaves the mount half-registered with the kernel, and leaves the repository lock behind. With
+/// this guard, a panic fails only the single operation that hit it, and the mount stays up.
+///
+/// The default panic hook still prints the panic message and location to stderr before this
+/// function reports the operation name. See DESIGN-MOUNT-025.
+fn guard_callback(op: &str, body: impl FnOnce() -> std::ffi::c_int) -> std::ffi::c_int {
+    // `AssertUnwindSafe`: the closure only borrows the `MountFilesystem` behind a shared
+    // reference and raw libfuse/WinFSP buffers. A panic can leave an implementor's own interior
+    // state inconsistent (for example a poisoned `Mutex`). This function does not repair that.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("mountfs: panic in the {op} callback, failing this operation with EIO");
+            -Errno::EIO.0
+        }
+    }
+}
+
 /// `RENAME_NOREPLACE` bit, matching Linux's `renameat2(2)`/real libfuse3's
 /// high-level `rename` callback's own `flags` parameter - "do not replace
 /// an existing `new_path`, fail instead" (see
@@ -315,6 +337,17 @@ pub fn mount<T: MountFilesystem>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guard_callback_passes_a_normal_result_through() {
+        assert_eq!(guard_callback("test", || 42), 42);
+    }
+
+    #[test]
+    fn guard_callback_turns_a_panic_into_negative_eio() {
+        let result = guard_callback("test", || panic!("deliberate"));
+        assert_eq!(result, -Errno::EIO.0);
+    }
 
     #[test]
     fn parse_rename_flags_defaults_to_replace_allowed() {

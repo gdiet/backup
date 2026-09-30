@@ -101,6 +101,36 @@ WinFSP's own published headers (vendored - copied into this repository unmodifie
 `NOTICE.md`), rather than depending on a wrapper crate that bundles its own, different license
 terms, keeps the licensing story limited to WinFSP's own terms alone.
 
+## DESIGN-MOUNT-025: A panic inside a mount callback fails only that operation
+
+Status: implemented
+
+Every `dispatch_*` trampoline is an `extern "C"` function called from libfuse or WinFSP. A Rust
+panic cannot unwind through those C frames. Without a guard, the runtime aborts the whole process.
+An abort skips every `Drop`, so the repository lock stays behind. On Linux it also leaves a stale
+kernel mount that answers every access with "Transport endpoint is not connected".
+
+Each trampoline therefore runs its body under `catch_unwind`. A caught panic is reported on stderr
+and fails the single operation with `EIO`. The mount keeps serving other operations, and unmount
+and `on_unmount` run as usual. The panic itself is still a bug to fix. The guard only limits the
+blast radius to one request.
+
+State shared by the panicking operation is not repaired. A `Mutex` poisoned by the panic can make
+later operations that need it panic as well. Each of those also fails with `EIO`. The mount then
+degrades, but it stays mounted and unmountable.
+
+### Alternatives considered and rejected
+
+#### Rewriting the trampolines as `extern "C-unwind"`
+
+This lets the panic propagate into libfuse or WinFSP. Neither library is built to be unwound
+through. The behavior would be undefined.
+
+#### Catching the panic at the top of `fuse_main_real`
+
+A panic on a libfuse worker thread never reaches the thread that called `fuse_main_real`. Only a
+guard at each callback boundary sees it.
+
 ## Known limitations
 
 - No working in-process clean-shutdown call on Windows (`fuse_exit`/`fsp_fuse3_exit` crashes
