@@ -1501,9 +1501,21 @@ mod tests {
         // generation to the background settle pool, and `unmount_and_join` (via `JobPool`'s own
         // `Drop`) waits for that to fully finish, including `SpillFile`'s own `Drop` deleting the
         // spill file - by then there would be nothing left to read.
-        let spill_entries: Vec<_> = std::fs::read_dir(spill_dir.path())
+        // Spill files do not sit directly in the spill directory: they live in one dedicated
+        // subdirectory (see `write_cache::SPILL_SUBDIR`), so look inside that.
+        let top_level: Vec<_> = std::fs::read_dir(spill_dir.path())
             .expect("read spill_dir")
             .map(|entry| entry.expect("read spill_dir entry"))
+            .collect();
+        assert_eq!(
+            top_level.len(),
+            1,
+            "expected exactly the write cache's spill subdirectory, found {} entries",
+            top_level.len()
+        );
+        let spill_entries: Vec<_> = std::fs::read_dir(top_level[0].path())
+            .expect("read the spill subdirectory")
+            .map(|entry| entry.expect("read spill subdirectory entry"))
             .collect();
         assert_eq!(
             spill_entries.len(),

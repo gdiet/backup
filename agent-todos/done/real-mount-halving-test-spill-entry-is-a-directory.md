@@ -48,3 +48,12 @@ before due to some other now-changed timing/ordering.
    before.
 3. Fix (or update the test's own assumption) accordingly, verified red/green per `AGENTS.md`'s
    debugging discipline.
+
+## Resolution
+
+Done 2026-09-30, Linux/WSL2 session. The cause was a stale test, not a product bug. Commit
+`e2329915` moved every spill file into one dedicated subdirectory (`write_cache::SPILL_SUBDIR`,
+`dfs-write-cache`) directly under the spill directory. The test still assumed the spill file sat
+directly in the spill directory. The single entry it found was that subdirectory, hence
+`IsADirectory`. The test now asserts that exactly one entry exists at the top level and reads the
+spill file from inside it. The test passes again and the write cache itself is unchanged.
