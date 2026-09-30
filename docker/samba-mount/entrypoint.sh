@@ -3,7 +3,9 @@
 # be live (checked via /proc/mounts, not just directory emptiness) - or
 # fails fast with dfs mount's own actionable error if it exits before
 # that - creates the Samba user on first start, then runs smbd in the
-# foreground. On SIGTERM/SIGINT, unmounts cleanly before exiting - see the
+# foreground. On SIGTERM/SIGINT, unmounts cleanly before exiting. If `dfs
+# mount` or smbd dies on its own afterwards, the container exits non-zero
+# instead of staying "Up" while serving a dead mountpoint - see the
 # Dockerfile in this directory for the image this drives.
 set -eu
 
@@ -28,14 +30,14 @@ mkdir -p "$MOUNTPOINT"
 dfs mount --repository "$REPO" $MOUNT_ARGS "$MOUNTPOINT" &
 MOUNT_PID=$!
 
-# Whether $MOUNT_PID is still running - not just `kill -0`, which reports
-# an unreaped zombie (a process that already exited but this shell hasn't
-# `wait`ed for yet, exactly the state a just-failed dfs mount is in right
-# after it exits) as "alive". Linux-only (/proc), which is fine: this
-# container only ever runs on Linux.
-mount_process_alive() {
-    [ -d "/proc/$MOUNT_PID" ] || return 1
-    case "$(cut -d ' ' -f 3 "/proc/$MOUNT_PID/stat" 2>/dev/null)" in
+# Whether process $1 (a child of this shell) is still running - not just
+# `kill -0`, which reports an unreaped zombie (a process that already exited
+# but this shell hasn't `wait`ed for yet, exactly the state a just-failed dfs
+# mount is in right after it exits) as "alive". Linux-only (/proc), which is
+# fine: this container only ever runs on Linux.
+process_alive() {
+    [ -d "/proc/$1" ] || return 1
+    case "$(cut -d ' ' -f 3 "/proc/$1/stat" 2>/dev/null)" in
         Z | '') return 1 ;;
         *) return 0 ;;
     esac
@@ -44,7 +46,7 @@ mount_process_alive() {
 echo "waiting for the mount at $MOUNTPOINT to become live..."
 i=0
 while ! grep -q " $MOUNTPOINT fuse" /proc/mounts 2>/dev/null; do
-    if ! mount_process_alive; then
+    if ! process_alive "$MOUNT_PID"; then
         echo "error: dfs mount exited before the mount became live - see the error above" >&2
         wait "$MOUNT_PID"
         exit $?
@@ -59,6 +61,7 @@ done
 echo "mounted."
 
 CLEANUP_DONE=0
+EXIT_CODE=0
 cleanup() {
     # Idempotency guard: this can genuinely be entered twice for one
     # shutdown - killing $SMBD_PID from inside this function (needed, see
@@ -118,7 +121,7 @@ cleanup() {
     # actually signaling it if it's still running after a generous grace
     # period.
     j=0
-    while mount_process_alive; do
+    while process_alive "$MOUNT_PID"; do
         j=$((j + 1))
         if [ "$j" -ge 100 ]; then
             echo "dfs mount did not exit on its own within 20s - sending SIGTERM" >&2
@@ -128,7 +131,7 @@ cleanup() {
         sleep 0.2
     done
     wait "$MOUNT_PID" 2>/dev/null || true
-    exit 0
+    exit "$EXIT_CODE"
 }
 trap cleanup TERM INT
 
@@ -140,5 +143,27 @@ pdbedit -L | grep -q "^$SMB_USER:" || printf '%s\n%s\n' "$SMB_PASSWORD" "$SMB_PA
 
 smbd --foreground --no-process-group &
 SMBD_PID=$!
-wait "$SMBD_PID"
+
+# Watch both children. A plain `wait "$SMBD_PID"` would leave the container
+# "Up" and serving a disconnected mountpoint ("Transport endpoint is not
+# connected") if `dfs mount` died after startup, e.g. from an out-of-memory
+# kill. `sleep & wait $!` instead of a plain `sleep`, so that a SIGTERM/SIGINT
+# runs the trap immediately rather than after the sleep.
+while process_alive "$SMBD_PID" && process_alive "$MOUNT_PID"; do
+    sleep 1 &
+    wait $!
+done
+
+# Reaching this point means a child exited on its own - a requested shutdown
+# leaves through the trap above. Either exit is a failure, so the container
+# must not report success, even if the dead process's own status was 0.
+if process_alive "$MOUNT_PID"; then
+    echo "error: smbd exited unexpectedly" >&2
+    DEAD_PID=$SMBD_PID
+else
+    echo "error: dfs mount exited unexpectedly - see the error above" >&2
+    DEAD_PID=$MOUNT_PID
+fi
+wait "$DEAD_PID" || EXIT_CODE=$?
+[ "$EXIT_CODE" -ne 0 ] || EXIT_CODE=1
 cleanup

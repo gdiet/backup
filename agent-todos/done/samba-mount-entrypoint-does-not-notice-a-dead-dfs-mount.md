@@ -33,3 +33,16 @@ The panic guard now makes that particular failure much less likely. Other causes
    no repository lock behind.
 4. Verify in a real container: kill `dfs mount` from inside and confirm the container exits. Then
    confirm that `docker stop` still shuts down cleanly.
+
+## Resolution
+
+Done 2026-09-30 by Linux/WSL2 session. `entrypoint.sh` now watches both `smbd` and `dfs mount` in a
+one-second loop instead of a plain `wait "$SMBD_PID"`. If either exits on its own, the script runs
+the existing `cleanup` and exits with the dead process's status, or 1 if that status was 0. The
+liveness check is the former `mount_process_alive`, generalized to `process_alive <pid>`. The
+`docker stop` path is unchanged, and the loop uses `sleep & wait $!` so the trap still fires
+immediately. `docker/samba-mount/README.md` documents the behavior.
+
+Verified in a real container: `pkill -KILL dfs` inside it made the container exit with 137 and log
+"dfs mount exited unexpectedly". `pkill -KILL smbd` did the same with "smbd exited unexpectedly".
+`docker stop` still exited with 0 and left no repository lock.

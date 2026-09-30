@@ -116,6 +116,12 @@ in `docker logs` - it does not sit out the mount-readiness timeout first. Run `d
 the repository (outside the container, or start this container once with `--read-write`) and
 retry.
 
+**If `dfs mount` or `smbd` exits after startup** (for example after an out-of-memory kill), the
+container shuts down and exits with a non-zero status: the dead process's own exit status, or 1 if
+that was 0. `docker ps` then shows the failure, and a restart policy such as `--restart
+on-failure` can bring the share back. A requested shutdown (`docker stop`, Ctrl+C) still exits
+with 0.
+
 ## Non-obvious problems already found and addressed here
 
 1. **`libfuse3-3` alone is not enough** - the `fuse3` package (providing the `fusermount3` setuid
