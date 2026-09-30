@@ -58,7 +58,9 @@ session, an ingest run).
 
 Any storage that becomes unreferenced as a result is reclaimed in the same step: tracked and
 available for reuse by future writes from that point on, so repeated delete/write cycles do not
-make storage grow without bound. Reclaiming a range makes it eligible for reuse without itself
+make storage grow without bound. A write session that is already running when a purge happens
+(for example a read-write mount) does not reuse that storage itself. Every session started
+afterward does. Reclaiming a range makes it eligible for reuse without itself
 altering any byte still on disk - this is what creates the staleness risk REQ-MAINTENANCE-007 in
 [`maintenance.md`](maintenance.md) requires a warning for, whether or not the range is ever
 actually reused afterward.
