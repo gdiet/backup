@@ -8,7 +8,7 @@
 //!
 //! Run with `cargo run --example memfs -- <mountpoint>`, then read, write,
 //! create, and delete files/directories through it with ordinary tools.
-//! Unmount with `fusermount3 -u <mountpoint>` (Linux) or Ctrl+C (Windows).
+//! Unmount with `fusermount3 -u <mountpoint>` or Ctrl+C.
 //! Content does not persist across runs.
 
 use std::collections::{BTreeMap, HashMap};

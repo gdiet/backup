@@ -13,6 +13,7 @@
 //! callback libfuse makes on the calling thread) rather than by closing
 //! over it directly.
 
+mod stop_signal;
 mod sys;
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
@@ -391,9 +392,16 @@ pub fn preflight() -> io::Result<()> {
     sys::check_available()
 }
 
+/// `fuse_main_real`'s exit code for a non-zero result of libfuse's request loop. A stop by
+/// SIGHUP, SIGINT or SIGTERM ends up here too, see [`stop_signal`].
+const LOOP_FAILED: c_int = 8;
+
 /// Mounts `fs` at `mountpoint`, blocking (in the foreground - see the
 /// `-f` note below) until it is unmounted (e.g. via `fusermount3 -u
 /// <mountpoint>`, `umount <mountpoint>`, or process signal).
+///
+/// A stop by SIGHUP, SIGINT or SIGTERM is a normal end and returns `Ok(())`, like an unmount.
+/// Any other failure of libfuse's request loop is an `Err` (DESIGN-MOUNT-026).
 ///
 /// `-f` is required, not optional: without it libfuse's default behavior
 /// is to daemonize (fork into the background), which is unsound to trigger
@@ -408,6 +416,7 @@ pub fn preflight() -> io::Result<()> {
 /// only carries `fuse_main_real`'s exit code, not that message.
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
+        init: Some(stop_signal::dispatch_init),
         getattr: Some(dispatch_getattr::<T>),
         readdir: Some(dispatch_readdir::<T>),
         open: Some(dispatch_open::<T>),
@@ -447,6 +456,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
     // duration of the (blocking) call below, so the `Box` must outlive
     // that call and be reclaimed only after it returns.
     let private_data = Box::into_raw(Box::new(fs));
+    stop_signal::begin();
     let result = unsafe {
         sys::fuse_main_real(
             args.len() as c_int,
@@ -456,6 +466,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
             private_data.cast::<c_void>(),
         )
     };
+    stop_signal::end();
     // on_unmount() is a lifecycle hook for a mount that actually started -
     // if fuse_main_real returned Err before that (libfuse3 not found),
     // there was never a mount to unmount.
@@ -466,6 +477,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
 
     match result? {
         0 => Ok(()),
+        LOOP_FAILED if stop_signal::stopped_by_signal() => Ok(()),
         exit_code => Err(io::Error::other(format!(
             "fuse_main_real exited with code {exit_code}"
         ))),

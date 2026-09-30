@@ -127,7 +127,7 @@ pub struct fuse_operations {
     >,
     pub releasedir: Unimplemented,
     pub fsyncdir: Unimplemented,
-    pub init: Unimplemented,
+    pub init: Option<unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void>,
     pub destroy: Unimplemented,
     pub access: Unimplemented,
     pub create: Option<unsafe extern "C" fn(*const c_char, mode_t, *mut fuse_file_info) -> c_int>,

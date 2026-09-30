@@ -3,7 +3,7 @@
 //!
 //! Run with `cargo run --example hellofs -- <mountpoint>`, then read
 //! `<mountpoint>/hello.txt`. Unmount with `fusermount3 -u <mountpoint>`
-//! (Linux) or Ctrl+C (Windows).
+//! or Ctrl+C.
 
 use std::path::Path;
 

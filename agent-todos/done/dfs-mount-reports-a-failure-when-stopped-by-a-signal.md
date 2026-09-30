@@ -34,3 +34,19 @@ properly, because `on_unmount` runs and the lock is released.
 3. Add a `real_mount_` test that sends SIGTERM to a process mounting a test filesystem. Verify that
    it fails without the fix.
 4. Check the Windows backend's Ctrl+C path for the same message.
+
+## Resolution
+
+Done 2026-09-30 by Linux/WSL2 session. A stop by SIGHUP, SIGINT or SIGTERM is now a normal end:
+`mountfs::mount` returns `Ok(())` and `dfs mount` exits with 0. Every other return value 8 of
+`fuse_main_real` (for example a read error on the FUSE device) stays an error.
+
+The signal is recognized by an `init` callback that wraps libfuse's signal handlers with a flag
+setter. The decision and the rejected alternatives are in DESIGN-MOUNT-026 in
+`docs/design/mount-abstraction.md`. Regression tests are in `crates/mountfs/tests/signal_stop.rs`.
+Both the match arm and the handler restoration were verified red, then green.
+
+Known limitation: a signal before the first kernel request is still reported as an error.
+
+The Windows backend was not changed. The existing documentation states that WinFSP already returns
+cleanly on Ctrl+C. That was not re-verified. The Windows cross-build still compiles.

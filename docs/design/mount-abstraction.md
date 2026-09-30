@@ -131,6 +131,45 @@ through. The behavior would be undefined.
 A panic on a libfuse worker thread never reaches the thread that called `fuse_main_real`. Only a
 guard at each callback boundary sees it.
 
+## DESIGN-MOUNT-026: A stop by SIGHUP, SIGINT or SIGTERM is a normal end on Linux
+
+Status: implemented
+
+`linux::mount` returns `Ok(())` when the mount ends because the process received SIGHUP, SIGINT or
+SIGTERM. This is the same result as an unmount through `fusermount3 -u`. A caller such as `dfs mount`
+then exits with status 0.
+
+libfuse ends its request loop on these signals and stores the signal number as the loop result.
+`fuse_main_real` maps every non-zero loop result to the fixed return value 8. A signal therefore
+looks the same as a real loop failure, such as a read error on the FUSE device, a short read, an
+allocation failure, or a failed protocol handshake. The return value alone cannot tell them apart.
+
+The crate installs an `init` callback. libfuse calls it on the first kernel request, after its own
+signal handlers are in place. The callback wraps each of the three handlers. The wrapper sets a flag
+and then calls the libfuse handler unchanged. If `fuse_main_real` returns 8 and the flag is set, the
+mount ended by signal and `mount` returns `Ok(())`. Any other 8 stays an `Err`. After
+`fuse_main_real` returns, the crate restores the default disposition for every signal that still
+uses the wrapper, because libfuse resets only handlers that it installed itself.
+
+Limitations:
+
+- A signal that arrives before the first kernel request is not recognized. It still stops the mount,
+  but `mount` reports it as an `Err`.
+- libfuse's signal handling is process-global. Only one mount at a time is supported per process.
+
+### Alternatives considered and rejected
+
+#### Treating every return value 8 as success
+
+This would hide real request-loop failures. A mount that dies because of a read error on the FUSE
+device would look like a clean exit.
+
+#### Replacing `fuse_main_real` with the lower-level session calls
+
+The session API returns the signal number directly. Using it means re-implementing option parsing,
+loop configuration and cleanup that `fuse_main_real` already does. That is much more code than the
+flag, and it adds a second way of running a mount that has to stay equivalent.
+
 ## Known limitations
 
 - No working in-process clean-shutdown call on Windows (`fuse_exit`/`fsp_fuse3_exit` crashes

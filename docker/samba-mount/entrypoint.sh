@@ -70,8 +70,7 @@ cleanup() {
     # it - a real second invocation observed in practice, not just a
     # theoretical race, and left unguarded it made two concurrent copies
     # of the unmount/wait-for-`dfs mount` logic below interfere with each
-    # other badly enough to turn a clean shutdown into a `fuse_main_real
-    # exited with code 8`.
+    # other badly enough to break a clean shutdown.
     [ "$CLEANUP_DONE" = 1 ] && return 0
     CLEANUP_DONE=1
     echo "shutting down..."
@@ -85,8 +84,7 @@ cleanup() {
     # indefinitely, not just transiently - reproduced for real (a CIFS
     # client left connected, then this container signaled): without this,
     # `fusermount3 -u` kept failing for the full 20s grace period below,
-    # ending in the SIGTERM fallback and `dfs mount` exiting via
-    # `fuse_main_real exited with code 8` instead of cleanly. `pkill`, not
+    # ending in the SIGTERM fallback instead of a clean exit. `pkill`, not
     # `kill "$SMBD_PID"`: killing only the main smbd doesn't kill its
     # already-forked children (they're independent processes, not torn
     # down just because their parent exits) - matching by name catches all
@@ -137,10 +135,10 @@ trap cleanup TERM INT
 id "$SMB_USER" >/dev/null 2>&1 || adduser --disabled-password --gecos "" "$SMB_USER"
 pdbedit -L | grep -q "^$SMB_USER:" || printf '%s\n%s\n' "$SMB_PASSWORD" "$SMB_PASSWORD" | smbpasswd -s -a "$SMB_USER"
 
-# Without --no-process-group, smbd creates its own process group. With it, smbd
-# shares this script's group, and its shutdown sends SIGTERM to that whole
-# group - including `dfs mount`, which libfuse then reports as a failed mount
-# ("fuse_main_real exited with code 8") even on a requested, clean shutdown.
+# smbd runs in its own process group (no --no-process-group). Sharing this
+# script's group made smbd's shutdown send SIGTERM to `dfs mount` as well, so
+# `dfs mount` stopped before `cleanup` had unmounted it. Only this script
+# decides when `dfs mount` stops.
 smbd --foreground &
 SMBD_PID=$!
 
