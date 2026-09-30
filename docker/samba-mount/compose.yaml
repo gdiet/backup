@@ -1,0 +1,22 @@
+# Starts a throwaway repository as a Samba share for trying DedupFS out:
+#   docker compose up --build
+# The repository lives in ./repo (git-ignored) and is created on first start. Connect to
+# \\<host>\dedup with user "dedup" and password "dedup" - see README.md for the port details.
+services:
+  samba-mount:
+    build:
+      context: ../..
+      dockerfile: docker/samba-mount/Dockerfile
+    image: dedup-samba-mount
+    init: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    volumes:
+      - ./repo:/repo
+    ports:
+      - "445:445"
+    environment:
+      CREATE_REPO_ARGS: "--cdc-target-size-bits 16"
+      MOUNT_ARGS: "--read-write --purge"

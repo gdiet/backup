@@ -6,3 +6,5 @@
 /target/
 /.git/
 /.local/
+# Repository a docker compose setup keeps next to its compose file: changes on every run.
+/docker/samba-mount/repo/

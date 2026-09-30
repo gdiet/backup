@@ -26,6 +26,13 @@ MOUNT_ARGS=${MOUNT_ARGS:-}
 
 mkdir -p "$MOUNTPOINT"
 
+# Opt-in: set CREATE_REPO_ARGS (possibly to the empty string) to create the repository at $REPO
+# on first start. Without it, a missing repository is an error from `dfs mount` below.
+# shellcheck disable=SC2086
+if [ -n "${CREATE_REPO_ARGS+set}" ] && [ ! -d "$REPO/meta" ]; then
+    dfs create-repo $CREATE_REPO_ARGS "$REPO"
+fi
+
 # shellcheck disable=SC2086
 dfs mount --repository "$REPO" $MOUNT_ARGS "$MOUNTPOINT" &
 MOUNT_PID=$!

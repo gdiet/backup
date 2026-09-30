@@ -14,10 +14,18 @@
 
 FROM rust:1.97-slim-bookworm AS builder
 WORKDIR /workspace
-COPY . .
+# Only what cargo needs, so that editing anything under docker/ (or the
+# repository directory a compose setup keeps there) does not invalidate this
+# stage. The cache mounts keep downloaded dependencies and build artifacts
+# across builds, even when the sources changed.
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
 # No libfuse3-dev/pkg-config needed here - libfuse3 is a dlopen'd
 # runtime-only dependency, not linked at build time.
-RUN cargo build --release -p cli
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/workspace/target \
+    cargo build --release -p cli \
+    && cp target/release/dfs /usr/local/bin/dfs
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fuse3 \
         samba \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /workspace/target/release/dfs /usr/local/bin/dfs
+COPY --from=builder /usr/local/bin/dfs /usr/local/bin/dfs
 COPY docker/samba-mount/smb.conf /etc/samba/smb.conf
 COPY docker/samba-mount/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

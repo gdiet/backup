@@ -49,6 +49,33 @@ subnet's default gateway address, which is the *host's* own vEthernet adapter, n
 actually running the container. That address changes across WSL2 restarts, so re-check it if a
 previously-working connection stops resolving.
 
+## Trying it out with `docker compose`
+
+```bash
+cd docker/samba-mount
+docker compose up --build
+```
+
+`compose.yaml` keeps the repository in `./repo` (git-ignored). On first start the entrypoint creates
+it with `dfs create-repo --cdc-target-size-bits 16`, because `CREATE_REPO_ARGS` is set. Without
+`CREATE_REPO_ARGS`, a missing repository is an error. The share is mounted with `--read-write
+--purge`. The container files in `./repo` belong to root, as the container runs as root.
+
+SMB is published on port 445 of all interfaces. Running under WSL2, connect from the Windows side
+through the WSL2 guest's own address, because Windows' own SMB server already uses port 445 on the
+Windows addresses. Determine it inside WSL2 with `hostname -I` (the first entry). It changes across
+WSL2 restarts. Then open `\\<wsl-ip>\dedup` in Explorer, or map it:
+
+```
+net use Z: \\<wsl-ip>\dedup /user:dedup dedup
+```
+
+If the connection fails, `Test-NetConnection <wsl-ip> -Port 445` in PowerShell shows whether the
+address is reachable at all. `net use * /delete` clears cached connections of an earlier failed
+attempt. On a host that is reachable from a network, publish the port on one specific address
+instead (for example `127.0.0.1:445:445` in `compose.yaml`), because the default login is
+`dedup`/`dedup`.
+
 ## Mount options (`MOUNT_ARGS`)
 
 `entrypoint.sh` runs `dfs mount --repository $REPO $MOUNT_ARGS $MOUNTPOINT` - `MOUNT_ARGS` is passed
