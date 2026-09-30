@@ -168,3 +168,32 @@ fixture itself) - not just synthetic unit-test fixtures:
   own printed rename hint, claimed a non-conventional metadata database could be "passed directly"
   to another `dfs` command as an alternative to renaming it - false, no `dfs` command accepts
   anything but `--repository <path>` resolved to `<path>/meta`. Both corrected.
+
+## Done (2026-09-30, Windows/Claude Code Desktop session)
+
+The tool is complete and merged into `rust` (branch `migration-tool`, fast-forwarded and deleted).
+The text above describes how the work was planned and staged, so parts of it are superseded by what
+was actually built - where they differ, the design document is authoritative:
+
+- Design decisions: `docs/design/scala-migration-tool.md`, DESIGN-MIGRATION-001 through 008, all
+  `implemented`. The progress record is **not** a separate SQLite file (as the "What to build"
+  section above still says), but two tables inside each destination database, written in the same
+  batch transaction as the entries they describe (DESIGN-MIGRATION-005, rewritten after a resume bug
+  was found); a third table lists contents with tolerated missing data (DESIGN-MIGRATION-008).
+- Requirements: REQ-MIGRATION-001 through 006 (006 added for missing source data).
+- User documentation: `migration/from-scala.md`.
+- Beyond the original plan: per-target threads, batched transactions, `--staging` defaulting to a file
+  inside the repository, `--tolerate-missing-data`, and the `migrate-missing-data.txt` report.
+- Decided against: `--ram-budget-mb` handling (see "Remaining gaps" above for the numbers).
+
+Not covered here, tracked elsewhere:
+
+- `agent-todos/allocation-reserve-scan-cost.md`: `allocation::reserve` scans all of `chunk_extents`
+  for every newly written chunk. Not a migration problem, but a migrated repository starts with
+  millions of rows, so every later write with new chunks pays for it from day one.
+- `developer-todos/requirements-implementation-audit.md`: the `Status` of REQ-MIGRATION-001 through
+  006 is still `agreed` in `requirements/functional/repository-migration.md`.
+- Never run end to end against a real repository of the developer's own size with its content: the
+  real sample export has no matching `data/`. Its metadata import (6.7 million entries) was verified,
+  and the content migration on the real 250 MB Scala test repository. The real migration is that
+  run.
