@@ -78,3 +78,88 @@ repository once all 21 copies are counted.
 For the benchmark in "What to look at" above, 3 to 10 million rows is therefore the range to test at,
 not an upper bound to extrapolate towards. A fixture with that many `chunk_extents` rows does not need
 real data: the table can be filled directly.
+
+## Additional candidates and findings (added 2026-09-30, by a cloud Claude Code session)
+
+### Candidate A: an in-memory list of free gaps, built once per write session
+
+Build a sorted list of the free gaps from `chunk_extents` once, when a write session starts. The last
+gap runs from the end of the used byte range to `i64::MAX`. `reserve` then takes ranges from this
+list instead of querying the database.
+
+The Scala implementation works this way. It reads all `DataEntries` rows once at startup, but only when
+the repository is opened read-write. It sorts them, derives the gaps, and appends the open-ended last
+gap. Its `reserve` is a `synchronized` operation on the in-memory list. It never queries the database.
+
+What makes this candidate fit here:
+
+- **Thread safety comes for free.** `Repository` keeps its connection and its name cache together in
+  one `Locked` struct behind one `Mutex`. The gap list can live in the same struct. Every `reserve`
+  call already runs inside `with_transaction`, so no second lock is needed.
+- **Nothing new is persisted.** The list is derived from `chunk_extents` at the start of every
+  session. It cannot go stale across restarts, and there is no schema change or migration.
+- **The single-writer slot makes the list valid for the whole session** (DESIGN-MOUNT-008). No other
+  process can change `chunk_extents` while the session runs.
+
+What differs from the Scala setting, and needs deliberate handling:
+
+- **Reclaim can run inside a write session here.** `content::reclaim_content` is called from
+  `tree.rs` (`purge_deleted_entry` and the purge cascade) and from `settle_pending_write`'s abandon
+  path. Each of these deletes `chunks` rows and thereby creates gaps while the session is running.
+  The in-memory list must learn about them. In Scala, reclaim only ran offline.
+- **Transactions can roll back.** `with_transaction` rolls back when the closure returns `Err`. The
+  two directions are not symmetric. A reservation that is taken from the list but rolled back only
+  leaks space until the next session, which is safe. A gap that is added to the list but rolled back
+  would make the allocator hand out space that is still in use, which corrupts data. Gaps freed by
+  reclaim must therefore only enter the list after the surrounding transaction has committed.
+- **The build cost moves to the session start.** It is one full scan instead of one per new chunk.
+  Whether that start-up cost is acceptable at 3 to 10 million rows needs to be measured. Building
+  lazily on the first `reserve` avoids the cost for sessions that never write a new chunk.
+  `insert_chunk_at` (migration tool) needs no special handling as long as the tool does not share a
+  session with ordinary allocation.
+
+### Candidate B: a better index (measured in a small orienting probe, not yet the real benchmark)
+
+The existing `chunk_extents_start_idx` is on `start` only. `EXPLAIN QUERY PLAN` reports
+`SCAN chunk_extents USING INDEX chunk_extents_start_idx` for the current query. That means SQLite
+walks the index and then looks up `stop` in the table for every row.
+
+An index on `(start, stop)` makes the same query a `COVERING INDEX` scan without those lookups.
+A throwaway probe in a scratch directory (2 million synthetic rows, Python `sqlite3`, WAL mode, this
+container) gave about 1.1 s warm (2.9 s cold) with the current index and about 0.85 s with the
+covering index. That is a modest gain of roughly 25 percent, and the scan remains linear. The probe
+also showed that `SELECT stop FROM chunk_extents ORDER BY start DESC LIMIT 1` (the high-water mark)
+answers in well under a millisecond with either index, because `chunk_extents` positions are
+disjoint.
+
+Conclusions so far:
+
+- A covering index alone does not remove the `O(N^2)` behavior. It only lowers the constant.
+- No index can answer "where is the first gap" without a scan, because in a repository without
+  reclaimed space there is no gap, and proving that requires looking at every row. Some form of
+  remembered knowledge is needed: the in-memory list (Candidate A), a watermark, or a persisted
+  free-space table (Candidate C).
+- The high-water-mark query is cheap. If a session could know that no gaps exist below the high-water
+  mark, `reserve` would be `O(log N)` in the common case. That knowledge is exactly what Candidate A
+  or Candidate C provides.
+- Replacing `chunk_extents_start_idx` by a `(start, stop)` index needs a schema migration. The
+  repository has no stability promise yet, but the change still has to be made deliberately.
+
+### Candidate C: a persisted free-space table
+
+A `free_extents` table, maintained in the same transaction as every reservation and every reclaim,
+would make `reserve` an `O(log N)` lookup with no start-up cost and no cross-process staleness. The
+price is a schema change plus a migration, coalescing of adjacent gaps on reclaim, and splitting of
+gaps in `insert_chunk_at`. It is the most invasive option and would be considered only if the
+in-memory list turns out to be insufficient (for example if start-up scan time at 10 million rows is
+unacceptable).
+
+### Proposed order of work
+
+1. Benchmark first, in Rust, against a synthetic `chunk_extents` table of 1, 3, 5 and 10 million rows:
+   the current `reserve`, the same query with a covering index, and the scan that would build the
+   in-memory list (start-up cost of Candidate A).
+2. Decide from the numbers. If Candidate A's build time is acceptable, implement it, with the
+   commit-only gap handling described above, and update DESIGN-STORE-003.
+3. Verify with a regression test that fails against the old behavior, as AGENTS.md's debugging
+   discipline requires.
