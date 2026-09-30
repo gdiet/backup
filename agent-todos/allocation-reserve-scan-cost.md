@@ -154,12 +154,27 @@ gaps in `insert_chunk_at`. It is the most invasive option and would be considere
 in-memory list turns out to be insufficient (for example if start-up scan time at 10 million rows is
 unacceptable).
 
+### Decisions (2026-09-30, developer feedback)
+
+- **Candidate C (persisted free-space table) is ruled out.**
+- **Candidate A is the chosen direction.** The gap list is built once when a write session starts,
+  for `ingest` and for a read-write mount alike. `ingest` needs the list in most cases, so building it
+  lazily would not save anything there. For a read-write mount, a short delay of a few seconds at
+  startup is better UX than the same delay at the first write.
+- **The covering index `(start, stop)` from Candidate B is not implemented for now (YAGNI).** It stays
+  documented here as an option that can still be applied if a measurement ever shows a need.
+- **Possible later optimization for a read-write mount: build the list in the background.** Settle jobs
+  already run asynchronously behind the write cache, so delaying their first `reserve` until the list
+  is ready would fit the existing model. The scan would need its own read-only connection. Running it
+  on the shared connection would block every read behind the connection mutex. In-session reclaim
+  would also have to wait for the list, or be queued until it is ready. This is a moderate amount of
+  code and is not part of the first implementation.
+
 ### Proposed order of work
 
-1. Benchmark first, in Rust, against a synthetic `chunk_extents` table of 1, 3, 5 and 10 million rows:
-   the current `reserve`, the same query with a covering index, and the scan that would build the
-   in-memory list (start-up cost of Candidate A).
-2. Decide from the numbers. If Candidate A's build time is acceptable, implement it, with the
-   commit-only gap handling described above, and update DESIGN-STORE-003.
+1. Benchmark in Rust against a synthetic `chunk_extents` table of 1, 3, 5 and 10 million rows: the
+   current `reserve`, and the scan that builds the in-memory list (start-up cost of Candidate A).
+2. Implement Candidate A with the commit-only gap handling described above, and update
+   DESIGN-STORE-003.
 3. Verify with a regression test that fails against the old behavior, as AGENTS.md's debugging
    discipline requires.
