@@ -19,6 +19,8 @@ repository is stored on, and travels with it between machines. This extends REQ-
 [`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)'s
 "repository is portable, sync-able, machine-independent" goal to the tool that manages it.
 
+The download also carries the manual (DESIGN-CLI-008 below).
+
 Where the same repository (and therefore the same drive) may move between a Windows and a Linux
 machine, bundling both platform builds together in one download is worth doing deliberately -
 whichever machine the drive is currently plugged into then already has the right binary at hand,
@@ -70,6 +72,40 @@ made that choice themselves. This distinction belongs to the default-path mechan
 any one command: what actually counts as "unusable" differs by what a command does with the path
 (`create-repo`: cannot create a repository there; `mount`: nothing to open there), so each reports
 its own natural error in that case - only the actionable-vs-plain policy is shared.
+
+## DESIGN-CLI-008: The manual ships with every download and states the version it documents
+
+Status: decided
+
+The manual is [`../manual.md`](../manual.md). Each download of `dfs` includes a copy of it as a
+plain Markdown file named `dfs-manual-<version>.md`. The file is readable in any text editor, so it
+needs no viewer and no rendering tool. One manual covers both platform builds that a download
+bundles (DESIGN-CLI-003).
+
+The manual names the version it documents:
+
+- In the repository, the manual is the development version. A fixed line at its top says so and
+  says that it describes the `dfs` built from the same commit.
+- A release build copies the manual from the tagged commit. It replaces only the line after the
+  `release-version-line` marker with the version token that `--version` prints (DESIGN-CLI-001).
+  Binary and manual therefore come from the same commit.
+
+The development manual is not a substitute for the shipped one. It always describes the latest
+commit, so it can differ from the binary an operator actually runs. The version line is the
+safeguard. An operator who runs a released binary reads the manual that came with it.
+
+A change that adds or alters user-visible behavior updates the manual in the same commit.
+
+### Alternative considered and rejected: README.md as the manual
+
+The README is the landing page of the repository. Its content (status, known limitations, system
+requirements, notices) does not belong into a document that ships with a download, and the manual
+grows with every command. A separate document keeps both short.
+
+### Alternative considered and rejected: a version number in the development manual
+
+The package version stays at one value for a long time. A number in the development manual would
+claim a precision it does not have. The statement "describes the same commit" is accurate.
 
 ## Known limitations
 

@@ -228,8 +228,8 @@ Full suite:
   --workspace -- --skip real_mount` instead - see
   [`crates/mountfs/CLAUDE.md`](crates/mountfs/CLAUDE.md))
 - `cargo doc --no-deps` and confirm no warnings
-- Check whether `requirements/`, `migration/`, `docs/design/`, or `README.md` describe behavior
-  this change affects, and update them — stale docs actively mislead the next reader. Update a
+- Check whether `requirements/`, `migration/`, `docs/design/`, `docs/manual.md`, or `README.md`
+  describe behavior this change affects, and update them — stale docs actively mislead the next reader. Update a
   shipped decision's own `Status:` line to `implemented` (see
   [`.claude/rules/design-docs.md`](.claude/rules/design-docs.md)); the file itself never moves
   based on that alone.

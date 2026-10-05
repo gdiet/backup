@@ -24,6 +24,12 @@ deduplication) and [`mountfs`](crates/mountfs/) (a cross-platform mount backend,
 libfuse3, Windows via WinFSP, behind a single trait - see
 [`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md) for the design).
 
+## Getting Started
+
+The [manual](docs/manual.md) walks through creating a repository, importing files, mounting,
+restoring, and reclaiming space. This link leads to the development version. A downloaded release
+carries its own manual.
+
 ## Known Limitations
 
 - **Some network mounts are unreliable**: over certain network mounts, and in particular across the
