@@ -26,3 +26,33 @@ own claim at face value. Concretely, for each `REQ-...` entry:
 
 Not urgent, but worth doing once as a baseline sanity check rather than continuing to accumulate
 requirements whose documented state nobody has re-verified against the actual, current code.
+
+## Interim results
+
+### Pass 1: `agreed` requirements with Importance `must` or `should` and no implementation
+
+Done 2026-10-05, against commit `abae21b6`. Method: listed every `agreed` `must`/`should`
+requirement, then examined those that no code or design document cites, or whose CLI command is
+missing. The remaining requirements were matched only by code citations and the `dfs --help`
+command list. They were not examined individually.
+
+Not implemented:
+
+- `REQ-INTEGRITY-001` (must): no verify command exists, neither the quick nor the thorough depth.
+  `dfs restore --verify` only checks files that are being restored.
+- `REQ-INTEGRITY-002` (should): nothing exists. It depends on `REQ-INTEGRITY-001`.
+- `REQ-STORAGE-005` (should): nothing exists. See `developer-todos/store-defragmentation.md`.
+- `REQ-MAINTENANCE-006` (should): no wait option exists. `docs/design/repository-locking.md`
+  states that it is not addressed.
+- `REQ-MOUNT-005` (should): partially implemented. Reads fail visibly by default
+  (`crates/cli/src/content_reader.rs`, `docs/design/byte-store.md`). The best-effort opt-in for a
+  mount is missing. `dfs mount` has no such option. `dfs restore --best-effort` exists.
+
+Consequence: `REQ-PERFORMANCE-001` cannot be met while `REQ-INTEGRITY-001` does not exist.
+
+Checked and implemented: `REQ-INTEGRITY-003` (`ref_count` triggers in `crates/db`),
+`REQ-RESTORE-002` (`dfs restore` resolves `[deleted]` paths), `REQ-INGEST-002`, `REQ-INGEST-003`,
+`REQ-INGEST-006`, `REQ-STORAGE-008`.
+
+Not examined yet: `could` requirements, the `Status` lines of `docs/design/` decisions, and
+whether `REQ-PERFORMANCE-004` and `REQ-PERFORMANCE-005` are met by measurements.
