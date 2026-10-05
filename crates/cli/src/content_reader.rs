@@ -3,20 +3,53 @@
 //! read-only open needs, and the same one `crate::write_cache`'s original-content fallback
 //! reuses.
 
+use std::sync::Arc;
+
 use mountfs::Errno;
 use store::ReadIntegrity;
+
+use crate::zero_fill_report::{ReadOrigin, ZeroFillReport};
+
+/// What a read does when the store reports missing or short backing data
+/// (REQ-MOUNT-005, DESIGN-MOUNT-027 in `docs/design/mount-write-path.md`).
+#[derive(Clone)]
+pub enum MissingDataPolicy {
+    /// The read fails with `EIO`.
+    Fail,
+    /// The affected range reads as zero-value bytes, and `report` is told.
+    ZeroFill {
+        report: Arc<ZeroFillReport>,
+        origin: ReadOrigin,
+    },
+}
+
+impl MissingDataPolicy {
+    /// `Fail` without a report, `ZeroFill` with one.
+    pub fn for_report(report: Option<&Arc<ZeroFillReport>>, origin: ReadOrigin) -> Self {
+        match report {
+            Some(report) => Self::ZeroFill {
+                report: Arc::clone(report),
+                origin,
+            },
+            None => Self::Fail,
+        }
+    }
+}
 
 /// Reads up to `size` bytes of `content_id`'s logical content starting at `offset`. Returns fewer
 /// bytes than `size` if `offset + size` reaches past the content's own length - an ordinary short
 /// read, not an error. Fails visibly (`Errno::EIO`) rather than returning wrong bytes if any of
-/// the backing store data is missing or short (REQ-MOUNT-005's fail-visibly default - no
-/// best-effort opt-in exists yet).
+/// the backing store data is missing or short (REQ-MOUNT-005's fail-visibly default), unless
+/// `policy` opts into zero-value bytes for that range instead. That covers every failure to read
+/// stored data, whether the store reports it as missing or short or as an I/O error. A failure to
+/// resolve the content's layout in the metadata is not stored data and still fails.
 pub fn read_content(
     repo: &db::Repository,
     store: &store::ByteStore,
     content_id: i64,
     offset: u64,
     size: u32,
+    policy: &MissingDataPolicy,
 ) -> Result<Vec<u8>, Errno> {
     let extents = repo.resolve_extents(content_id).map_err(|_| Errno::EIO)?;
 
@@ -37,7 +70,20 @@ pub fn read_content(
         let mut buf = vec![0u8; to_read as usize];
         match store.read(start + skip, &mut buf) {
             Ok(ReadIntegrity::Complete) => {}
-            Ok(ReadIntegrity::Incomplete { .. }) | Err(_) => return Err(Errno::EIO),
+            Ok(ReadIntegrity::Incomplete { missing_or_short }) => match policy {
+                MissingDataPolicy::Fail => return Err(Errno::EIO),
+                // The store already left zero-value bytes in `buf` for the missing part.
+                MissingDataPolicy::ZeroFill { report, origin } => {
+                    report.note(*origin, &missing_or_short)
+                }
+            },
+            Err(error) => match policy {
+                MissingDataPolicy::Fail => return Err(Errno::EIO),
+                // `buf` holds whatever was read before the failure, and zero-value bytes after.
+                MissingDataPolicy::ZeroFill { report, origin } => {
+                    report.note_read_error(*origin, &error)
+                }
+            },
         }
         result.extend_from_slice(&buf);
         skip = 0;
@@ -83,7 +129,7 @@ mod tests {
             .find_or_create_content(11, b"ABCDEFGHIJKLMNOPQRST", &[chunk_id])
             .unwrap();
 
-        let data = read_content(&repo, &store, content_id, 6, 5).unwrap();
+        let data = read_content(&repo, &store, content_id, 6, 5, &MissingDataPolicy::Fail).unwrap();
         assert_eq!(data, b"world");
     }
 
@@ -102,11 +148,12 @@ mod tests {
             .find_or_create_content(11, b"CCCCCCCCCCCCCCCCCCCC", &[chunk_a, chunk_b])
             .unwrap();
 
-        let data = read_content(&repo, &store, content_id, 0, 11).unwrap();
+        let data =
+            read_content(&repo, &store, content_id, 0, 11, &MissingDataPolicy::Fail).unwrap();
         assert_eq!(data, b"hello world");
 
         // Straddling the boundary exactly (last 2 bytes of chunk a, first 3 of chunk b).
-        let data = read_content(&repo, &store, content_id, 3, 5).unwrap();
+        let data = read_content(&repo, &store, content_id, 3, 5, &MissingDataPolicy::Fail).unwrap();
         assert_eq!(data, b"lo wo");
     }
 
@@ -121,7 +168,8 @@ mod tests {
             .find_or_create_content(5, b"BBBBBBBBBBBBBBBBBBBB", &[chunk_id])
             .unwrap();
 
-        let data = read_content(&repo, &store, content_id, 3, 100).unwrap();
+        let data =
+            read_content(&repo, &store, content_id, 3, 100, &MissingDataPolicy::Fail).unwrap();
         assert_eq!(data, b"lo");
     }
 
@@ -132,8 +180,119 @@ mod tests {
             .find_or_create_content(0, b"AAAAAAAAAAAAAAAAAAAA", &[])
             .unwrap();
 
-        let data = read_content(&repo, &store, content_id, 0, 10).unwrap();
+        let data =
+            read_content(&repo, &store, content_id, 0, 10, &MissingDataPolicy::Fail).unwrap();
         assert_eq!(data, Vec::<u8>::new());
+    }
+
+    fn zero_fill() -> (MissingDataPolicy, Arc<ZeroFillReport>) {
+        let report = Arc::new(ZeroFillReport::with_output(Box::new(std::io::sink())));
+        (
+            MissingDataPolicy::for_report(Some(&report), ReadOrigin::Visible),
+            report,
+        )
+    }
+
+    #[test]
+    fn zero_fill_policy_returns_zero_value_bytes_for_never_written_store_data() {
+        let (repo, _repo_dir, store, _store_dir) = setup();
+        let (chunk_id, _ranges) = repo
+            .reserve_and_insert_chunk(5, b"aaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+        let content_id = repo
+            .find_or_create_content(5, b"BBBBBBBBBBBBBBBBBBBB", &[chunk_id])
+            .unwrap();
+        let (policy, report) = zero_fill();
+
+        let data = read_content(&repo, &store, content_id, 0, 5, &policy).unwrap();
+
+        assert_eq!(data, vec![0u8; 5]);
+        assert!(report.summary().unwrap().starts_with("1 read(s)"));
+    }
+
+    #[test]
+    fn zero_fill_policy_keeps_the_real_bytes_and_zero_fills_only_the_short_part() {
+        let (repo, _repo_dir, store, _store_dir) = setup();
+        let (chunk_a, ranges_a) = repo
+            .reserve_and_insert_chunk(5, b"aaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+        store.write(ranges_a[0].0, b"hello").unwrap();
+        // Reserved right after the first chunk in the same data file, but never written, so the
+        // file is too short for it.
+        let (chunk_b, _ranges_b) = repo
+            .reserve_and_insert_chunk(5, b"bbbbbbbbbbbbbbbbbbbb")
+            .unwrap();
+        let content_id = repo
+            .find_or_create_content(10, b"CCCCCCCCCCCCCCCCCCCC", &[chunk_a, chunk_b])
+            .unwrap();
+        let (policy, _report) = zero_fill();
+
+        let data = read_content(&repo, &store, content_id, 0, 10, &policy).unwrap();
+
+        assert_eq!(data, b"hello\0\0\0\0\0");
+    }
+
+    /// A directory where the store expects a data file: opening it succeeds, reading from it
+    /// fails with an I/O error that is not "not found".
+    fn content_with_unreadable_store_data(
+        repo: &db::Repository,
+        store: &store::ByteStore,
+        store_dir: &tempfile::TempDir,
+    ) -> i64 {
+        let (chunk_id, ranges) = repo
+            .reserve_and_insert_chunk(11, b"01234567890123456789")
+            .unwrap();
+        store.write(ranges[0].0, b"hello world").unwrap();
+        let data_file = store_dir.path().join("00/00/0000000000");
+        std::fs::remove_file(&data_file).unwrap();
+        std::fs::create_dir(&data_file).unwrap();
+        repo.find_or_create_content(11, b"ABCDEFGHIJKLMNOPQRST", &[chunk_id])
+            .unwrap()
+    }
+
+    #[test]
+    fn an_unreadable_store_file_fails_by_default() {
+        let (repo, _repo_dir, store, store_dir) = setup();
+        let content_id = content_with_unreadable_store_data(&repo, &store, &store_dir);
+
+        let result = read_content(&repo, &store, content_id, 0, 11, &MissingDataPolicy::Fail);
+
+        assert_eq!(result, Err(Errno::EIO));
+    }
+
+    #[test]
+    fn zero_fill_policy_treats_an_unreadable_store_file_as_missing_data() {
+        let (repo, _repo_dir, store, store_dir) = setup();
+        let content_id = content_with_unreadable_store_data(&repo, &store, &store_dir);
+        let (policy, report) = zero_fill();
+
+        let data = read_content(&repo, &store, content_id, 0, 11, &policy).unwrap();
+
+        assert_eq!(data, vec![0u8; 11]);
+        assert!(
+            report
+                .summary()
+                .unwrap()
+                .contains("kind(s) of read error treated as missing data")
+        );
+    }
+
+    #[test]
+    fn zero_fill_policy_leaves_complete_reads_alone_and_unreported() {
+        let (repo, _repo_dir, store, _store_dir) = setup();
+        let (chunk_id, ranges) = repo
+            .reserve_and_insert_chunk(11, b"01234567890123456789")
+            .unwrap();
+        store.write(ranges[0].0, b"hello world").unwrap();
+        let content_id = repo
+            .find_or_create_content(11, b"ABCDEFGHIJKLMNOPQRST", &[chunk_id])
+            .unwrap();
+        let (policy, report) = zero_fill();
+
+        let data = read_content(&repo, &store, content_id, 0, 11, &policy).unwrap();
+
+        assert_eq!(data, b"hello world");
+        assert_eq!(report.summary(), None);
     }
 
     #[test]
@@ -147,7 +306,8 @@ mod tests {
             .find_or_create_content(5, b"BBBBBBBBBBBBBBBBBBBB", &[chunk_id])
             .unwrap();
 
-        let err = read_content(&repo, &store, content_id, 0, 5).unwrap_err();
+        let err =
+            read_content(&repo, &store, content_id, 0, 5, &MissingDataPolicy::Fail).unwrap_err();
         assert_eq!(err, Errno::EIO);
     }
 }

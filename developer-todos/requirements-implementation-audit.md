@@ -56,3 +56,6 @@ Checked and implemented: `REQ-INTEGRITY-003` (`ref_count` triggers in `crates/db
 
 Not examined yet: `could` requirements, the `Status` lines of `docs/design/` decisions, and
 whether `REQ-PERFORMANCE-004` and `REQ-PERFORMANCE-005` are met by measurements.
+
+Update 2026-10-05: `REQ-MOUNT-005` is now fully implemented (`dfs mount --best-effort`,
+DESIGN-MOUNT-027 in `docs/design/mount-write-path.md`).

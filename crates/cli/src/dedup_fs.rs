@@ -18,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem, StatfsInfo};
 
+use crate::content_reader::MissingDataPolicy;
 use crate::deleted;
 use crate::failure_log::{Failure, FailureLog};
 use crate::pending_files::{NewGeneration, PendingFiles};
@@ -25,6 +26,7 @@ use crate::ram_budget::{self, DispatchPool};
 use crate::settle_pool::{JobPool, SettleJob};
 use crate::time_format::TimeDisplay;
 use crate::write_cache::MemoryBudget;
+use crate::zero_fill_report::{ReadOrigin, ZeroFillReport};
 
 /// Runtime tuning knobs [`DedupFs::new`] needs beyond its structural parameters - grouped to keep
 /// that constructor's own parameter count reasonable, and to give `crate::mount` a single value
@@ -46,6 +48,10 @@ pub struct Tuning {
     /// what name the caller's move actually specified. Off by default: `rename()` stays literal
     /// (DESIGN-MOUNT-022).
     pub restore_original_names: bool,
+    /// REQ-MOUNT-005's opt-in (`--best-effort`): a read of missing or short stored data returns
+    /// zero-value bytes and reports to this (DESIGN-MOUNT-027). `None` keeps the fail-visibly
+    /// default.
+    pub zero_fill_report: Option<Arc<ZeroFillReport>>,
     /// REQ-OPERABILITY-008's `--utc` opt-in, resolved: which timezone `[all]/[by-time]`'s view
     /// renders its timestamps in. `[deleted]`/`[all]`'s own addressing is unaffected regardless
     /// (stays UTC unconditionally - REQ-TREE-009's stable identity, `crate::deleted`).
@@ -74,6 +80,9 @@ pub struct DedupFs {
     allow_purge: bool,
     restore_original_names: bool,
     time_display: TimeDisplay,
+    /// What a read for display does about missing or short stored data. The save path has its own
+    /// copy in [`JobPool`], distinguished by [`ReadOrigin`].
+    read_policy: MissingDataPolicy,
 }
 
 impl DedupFs {
@@ -135,6 +144,7 @@ impl DedupFs {
             Arc::clone(&repo),
             Arc::clone(&store),
             cdc_target_size_bits,
+            MissingDataPolicy::for_report(tuning.zero_fill_report.as_ref(), ReadOrigin::Saving),
             move |job: &SettleJob, err| {
                 if let Some(log) = &failure_log_for_pool {
                     if let Some(db_err) = err.kills_connection() {
@@ -167,6 +177,10 @@ impl DedupFs {
             allow_purge: tuning.allow_purge,
             restore_original_names: tuning.restore_original_names,
             time_display: tuning.time_display,
+            read_policy: MissingDataPolicy::for_report(
+                tuning.zero_fill_report.as_ref(),
+                ReadOrigin::Visible,
+            ),
         })
     }
 }
@@ -761,8 +775,9 @@ impl MountFilesystem for DedupFs {
         let file_id = handle.0 as i64;
         let repo = self.repo.as_ref();
         let store = self.store.as_ref();
+        let read_policy = &self.read_policy;
         let resolve_content = |content_id: i64, position: u64, len: u32| {
-            crate::content_reader::read_content(repo, store, content_id, position, len)
+            crate::content_reader::read_content(repo, store, content_id, position, len, read_policy)
                 .map_err(|errno| io::Error::from_raw_os_error(errno.0))
         };
         if let Some(result) = self.pending.read(file_id, offset, size, &resolve_content) {
@@ -789,7 +804,14 @@ impl MountFilesystem for DedupFs {
             }
         }
         .expect("kind=File entries always have a content_id (chk_tree_entries_kind_content_id)");
-        crate::content_reader::read_content(&self.repo, &self.store, content_id, offset, size)
+        crate::content_reader::read_content(
+            &self.repo,
+            &self.store,
+            content_id,
+            offset,
+            size,
+            &self.read_policy,
+        )
     }
 
     fn release(&self, handle: Handle) {
@@ -1065,6 +1087,7 @@ mod tests {
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
             allow_purge: false,
             restore_original_names: false,
+            zero_fill_report: None,
             time_display: TimeDisplay::Utc,
         }
     }
@@ -1194,10 +1217,94 @@ mod tests {
 
         let entry = wait_for_settled(&verify_repo, "/a.txt", 11);
         let content_id = entry.content_id.unwrap();
-        let data =
-            crate::content_reader::read_content(&verify_repo, &verify_store, content_id, 0, 11)
-                .unwrap();
+        let data = crate::content_reader::read_content(
+            &verify_repo,
+            &verify_store,
+            content_id,
+            0,
+            11,
+            &crate::content_reader::MissingDataPolicy::Fail,
+        )
+        .unwrap();
         assert_eq!(data, b"hello world");
+    }
+
+    fn best_effort_setup() -> (
+        DedupFs,
+        db::Repository,
+        store::ByteStore,
+        tempfile::TempDir,
+        Arc<ZeroFillReport>,
+    ) {
+        let report = Arc::new(ZeroFillReport::with_output(Box::new(std::io::sink())));
+        let (fs, verify_repo, verify_store, dir) = setup_with_tuning(
+            true,
+            Tuning {
+                zero_fill_report: Some(Arc::clone(&report)),
+                ..default_tuning()
+            },
+        );
+        (fs, verify_repo, verify_store, dir, report)
+    }
+
+    fn lose_all_stored_data(dir: &tempfile::TempDir) {
+        std::fs::remove_dir_all(db::data_dir(&dir.path().join("repo"))).unwrap();
+    }
+
+    #[test]
+    fn a_read_of_missing_stored_data_fails_by_default() {
+        let (fs, verify_repo, _store, dir) = setup(true);
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello world").unwrap();
+        fs.release(handle);
+        wait_for_settled(&verify_repo, "/a.txt", 11);
+        lose_all_stored_data(&dir);
+
+        let handle = fs.open("/a.txt", false).unwrap();
+        assert_eq!(fs.read(handle, 0, 11), Err(Errno::EIO));
+    }
+
+    #[test]
+    fn best_effort_reads_missing_stored_data_as_zero_value_bytes() {
+        let (fs, verify_repo, _store, dir, report) = best_effort_setup();
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello world").unwrap();
+        fs.release(handle);
+        wait_for_settled(&verify_repo, "/a.txt", 11);
+        lose_all_stored_data(&dir);
+
+        let handle = fs.open("/a.txt", false).unwrap();
+        assert_eq!(fs.read(handle, 0, 11).unwrap(), vec![0u8; 11]);
+        let summary = report.summary().expect("the read was zero-filled");
+        assert!(!summary.contains("while saving"), "{summary}");
+    }
+
+    #[test]
+    fn best_effort_saves_a_modified_file_with_zero_value_bytes_for_missing_original_data() {
+        let (fs, verify_repo, verify_store, dir, report) = best_effort_setup();
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello world").unwrap();
+        fs.release(handle);
+        wait_for_settled(&verify_repo, "/a.txt", 11);
+        lose_all_stored_data(&dir);
+
+        let handle = fs.open("/a.txt", true).unwrap();
+        fs.write(handle, 11, b"!").unwrap();
+        fs.release(handle);
+
+        let entry = wait_for_settled(&verify_repo, "/a.txt", 12);
+        let data = crate::content_reader::read_content(
+            &verify_repo,
+            &verify_store,
+            entry.content_id.unwrap(),
+            0,
+            12,
+            &crate::content_reader::MissingDataPolicy::Fail,
+        )
+        .unwrap();
+        assert_eq!(data, b"\0\0\0\0\0\0\0\0\0\0\0!");
+        let summary = report.summary().expect("the save read zero-filled data");
+        assert!(summary.contains("while saving"), "{summary}");
     }
 
     #[test]
@@ -1970,6 +2077,7 @@ mod tests {
             true,
             Tuning {
                 restore_original_names: true,
+                zero_fill_report: None,
                 ..default_tuning()
             },
         );
@@ -2043,6 +2151,7 @@ mod tests {
             second_entry.content_id.unwrap(),
             0,
             7,
+            &crate::content_reader::MissingDataPolicy::Fail,
         )
         .unwrap();
         assert_eq!(data, b"two-two");

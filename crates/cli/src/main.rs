@@ -1,6 +1,7 @@
 mod backpressure;
 mod content_reader;
 mod create_repo;
+mod dangerous_option;
 mod db_backup;
 mod db_compact;
 mod db_restore;
@@ -30,6 +31,7 @@ mod time_format;
 mod unlock;
 mod usage_log;
 mod write_cache;
+mod zero_fill_report;
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -212,6 +214,11 @@ enum Commands {
         /// no bearing on repository content, only on this one session's own observability.
         #[arg(long)]
         debug_log: Option<PathBuf>,
+        /// Missing, incomplete or unreadable stored data reads as zero-value bytes (0x00) instead
+        /// of failing the read - also when a modified file is saved, so the saved content then
+        /// contains them. Off by default.
+        #[arg(long)]
+        best_effort: bool,
     },
     // REQ-RESTORE-001/003/004.
     /// Restores one or more repository paths to a real directory on disk, without mounting.
@@ -227,9 +234,9 @@ enum Commands {
         /// mismatch is never even detected unless this is given.
         #[arg(long)]
         verify: bool,
-        /// Restore what can be restored instead of failing an item outright: zero-fill missing
-        /// or incomplete stored data, and keep content that fails --verify anyway. Off by
-        /// default.
+        /// Restore what can be restored instead of failing an item outright: replace missing,
+        /// incomplete or unreadable stored data by zero-value bytes (0x00), and keep content that
+        /// fails --verify anyway. Off by default.
         #[arg(long)]
         best_effort: bool,
         /// One or more repository paths to restore, followed by the target directory on disk
@@ -525,6 +532,7 @@ fn main() {
             backpressure,
             utc,
             debug_log,
+            best_effort,
         } => {
             let (repository, default_path_used) = resolve_repo_path(repository);
             usage_log::log_invocation(&db::meta_dir(&repository), &top, &matches, time_millis);
@@ -556,6 +564,8 @@ fn main() {
                     allow_purge: purge,
                     restore_original_names,
                     time_display: time_display(utc.utc),
+                    zero_fill_report: best_effort
+                        .then(|| std::sync::Arc::new(zero_fill_report::ZeroFillReport::new())),
                 },
                 debug_log.as_deref(),
             );

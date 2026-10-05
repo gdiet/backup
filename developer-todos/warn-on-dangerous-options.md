@@ -21,4 +21,6 @@ Open points to settle:
   (the planned DESIGN-CLI-008, see `docs/manual.md` once created).
 - Whether scripts need a way to silence it. Probably not, if it stays a single stderr line.
 
-`--best-effort` is the first user, implemented with REQ-MOUNT-005.
+`--best-effort` is the first user, implemented with REQ-MOUNT-005. The shared helper is
+`crate::dangerous_option::warn` in `crates/cli/src/dangerous_option.rs`. Each command builds its own
+consequence text.

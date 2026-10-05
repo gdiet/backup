@@ -438,7 +438,10 @@ fn read_chunk(
         return if best_effort {
             Ok((
                 data,
-                Some("missing or incomplete stored data - zero-filled".to_string()),
+                Some(
+                    "missing or incomplete stored data - replaced by zero-value bytes (0x00)"
+                        .to_string(),
+                ),
             ))
         } else {
             Err("missing or incomplete stored data".to_string())
@@ -465,6 +468,15 @@ fn read_chunk(
     Ok((data, None))
 }
 
+fn best_effort_consequence(verify: bool) -> String {
+    let mut text =
+        "missing or unreadable stored data is restored as zero-value bytes (0x00)".to_string();
+    if verify {
+        text.push_str(", and content that fails --verify is kept");
+    }
+    text
+}
+
 pub fn run(
     repo_path: &Path,
     default_path_used: bool,
@@ -474,6 +486,9 @@ pub fn run(
     assume_read_only_medium: bool,
     display: TimeDisplay,
 ) {
+    if options.best_effort {
+        crate::dangerous_option::warn("--best-effort", &best_effort_consequence(options.verify));
+    }
     match try_run(
         repo_path,
         default_path_used,
@@ -794,6 +809,16 @@ mod tests {
     }
 
     #[test]
+    fn the_best_effort_consequence_names_kept_content_only_together_with_verify() {
+        let without_verify = best_effort_consequence(false);
+        let with_verify = best_effort_consequence(true);
+        assert!(without_verify.contains("zero-value bytes (0x00)"));
+        assert!(!without_verify.contains("--verify"));
+        assert!(with_verify.starts_with(&without_verify));
+        assert!(with_verify.contains("fails --verify is kept"));
+    }
+
+    #[test]
     fn try_run_keeps_mismatched_content_under_best_effort_and_warns() {
         let (repo, repo_dir, store, target_dir) = setup();
         create_file(&repo, &store, 0, "a.txt", b"hello world");
@@ -881,7 +906,7 @@ mod tests {
         )
         .expect("must succeed - best-effort zero-fills missing data instead of failing");
         assert!(message.contains("restored 1 file"));
-        assert!(message.contains("zero-filled"));
+        assert!(message.contains("zero-value bytes"));
         assert_eq!(
             fs::read(target_dir.path().join("a.txt")).unwrap(),
             vec![0u8; 5],

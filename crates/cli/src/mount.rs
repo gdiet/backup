@@ -54,6 +54,7 @@ fn try_run(
     tuning: Tuning,
     debug_log: Option<&Path>,
 ) -> Result<(), String> {
+    let zero_fill_report = tuning.zero_fill_report.clone();
     // DESIGN-METADATA-013's assertion only exists to let a read-only open succeed on storage no
     // writer could reach anyway - a read-write mount already holds the repository-wide write lock
     // (REQ-MAINTENANCE-004), which rules out a concurrent writer for that same reason. Refused
@@ -208,6 +209,9 @@ fn try_run(
         tuning,
     )
     .map_err(|err| format!("error: {err}"))?;
+    if zero_fill_report.is_some() {
+        crate::dangerous_option::warn("--best-effort", &best_effort_consequence(read_write));
+    }
     let mount_result = match debug_log_file {
         Some(log) => mountfs::mount(
             mountfs::LoggingFilesystem::new(fs, log),
@@ -216,10 +220,23 @@ fn try_run(
         ),
         None => mountfs::mount(fs, mountpoint, !read_write),
     };
+    if let Some(summary) = zero_fill_report.and_then(|report| report.summary()) {
+        eprintln!("{summary}");
+    }
     if let Err(err) = mount_result {
         return Err(format!("mount failed: {err}"));
     }
     Ok(())
+}
+
+fn best_effort_consequence(read_write: bool) -> String {
+    let mut text =
+        "missing or unreadable stored data reads as zero-value bytes (0x00) instead of failing"
+            .to_string();
+    if read_write {
+        text.push_str(". Files modified through this mount are saved with those zero-value bytes");
+    }
+    text
 }
 
 #[allow(clippy::too_many_arguments)] // see try_run's own comment just above it
@@ -253,6 +270,16 @@ mod tests {
     use super::*;
     use crate::ram_budget;
 
+    #[test]
+    fn best_effort_warning_adds_the_saving_consequence_only_with_read_write() {
+        let read_only = best_effort_consequence(false);
+        let read_write = best_effort_consequence(true);
+        assert!(read_only.contains("zero-value bytes (0x00)"));
+        assert!(!read_only.contains("saved"));
+        assert!(read_write.starts_with(&read_only));
+        assert!(read_write.contains("saved with those zero-value bytes"));
+    }
+
     fn default_tuning() -> Tuning {
         Tuning {
             ram_budget_gross_bytes: ram_budget::DEFAULT_GROSS_BUDGET_BYTES,
@@ -260,6 +287,7 @@ mod tests {
             backpressure_slope_divisor: crate::backpressure::DEFAULT_SLOPE_DIVISOR,
             allow_purge: false,
             restore_original_names: false,
+            zero_fill_report: None,
             time_display: crate::time_format::TimeDisplay::Local,
         }
     }
@@ -322,6 +350,7 @@ mod tests {
             Tuning {
                 allow_purge: true,
                 restore_original_names: true,
+                zero_fill_report: None,
                 ..default_tuning()
             },
             None,

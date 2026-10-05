@@ -106,8 +106,9 @@ There are two ways forward:
 
 A file that was migrated with a gap stays damaged. `dfs` reports the missing data whenever such a
 file is read, exactly as long as the data files stay missing (`dfs restore` fails such a file unless
-it runs with `--best-effort`, and a mount returns an I/O error). Restoring the data files later
-repairs the file itself. The checksums of the affected chunks cannot match, so `dfs restore
+it runs with `--best-effort`, and a mount returns an I/O error unless it runs with
+`--best-effort` too). Restoring the data files later repairs the file itself, as long as no
+modified version was saved through a `--best-effort` mount in the meantime. The checksums of the affected chunks cannot match, so `dfs restore
 --verify` reports them, since their content was never known.
 
 The option only covers missing or too short data. Any other read error stops the migration.

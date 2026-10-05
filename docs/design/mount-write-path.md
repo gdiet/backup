@@ -725,3 +725,69 @@ brand new one?), but it quietly narrows REQ-TREE-004's "every deletion stays its
 history entry" guarantee for every already-empty file, not just this mechanism's own byproduct rows -
 a real product guarantee to weaken, not an implementation detail to optimize, and not this design
 decision's place to make unilaterally.
+
+## DESIGN-MOUNT-027: `--best-effort` replaces missing or unreadable stored data by zero-value bytes in every read of a mount session
+
+Status: implemented
+
+REQ-MOUNT-005 asks for an explicit opt-in that makes a read of missing or incomplete stored data
+return zero-value bytes instead of an I/O error. `dfs mount --best-effort` is that opt-in. It means
+the same as `dfs restore --best-effort` does for stored data: the operator wants whatever can be
+read, so any failure to read stored data counts as missing data.
+
+One setting governs every read of the session. This includes the reads that compose the content of
+a modified file when it is saved. Such a save stores the zero-value bytes as part of the new
+content. The saved content is then complete and consistent, but it no longer matches the original.
+Stored data that is restored later does not heal it. The operator chose this by passing the option,
+and the session says so (see below).
+
+Every failure to read stored data is replaced, whether the store reports the data as missing or too
+short, or the read fails with an I/O error. A failure to resolve a content's layout in the metadata
+is not a failure to read stored data. It still fails the read.
+
+The price is that a transient I/O error, or an unreadable data directory, is treated like lost data.
+With `--read-write`, a save can store the zero-value bytes permanently. The warnings below exist for
+this reason. An I/O error gets its own warning, which names the error.
+
+The session is not silent about it:
+
+- At start, one line names the option and its consequence. With `--read-write`, the line adds that
+  modified files are saved with the zero-value bytes.
+- The first time a stored data file turns out to be missing or short, a warning names that file.
+  Later reads touching the same file do not warn again. The same holds for each distinct read error,
+  which is reported with the error text. Both sets are bounded, by the number of stored data files
+  and by the number of distinct errors, so they need no eviction.
+- The first time a read for saving a modified file is affected, one more warning says that the saved
+  content contains zero-value bytes.
+- At the end of the session, one line gives the number of affected reads and stored data files, and
+  the number of kinds of read error treated as missing data.
+
+The warnings name stored data files, not repository paths. A read of content has no path at this
+layer. The `--debug-log` records calls of the mount interface and their results. It cannot carry a
+per-read note from this layer, and a zero-filled read appears in it as an ordinary successful read.
+
+### Alternatives considered and rejected
+
+#### Replacing only the store's explicit "missing or too short" result
+
+An I/O error would still fail the read. This is the safer reading of "missing data". It makes
+"best effort" mean less than the operator expects, and it differs from `dfs restore --best-effort`.
+Treating every failure to read stored data as missing data is the simpler rule to explain.
+
+#### Refusing the combination with `--read-write`
+
+The save of a modified file would then have to fail whenever the original is incomplete. That save
+runs in the background after the file was closed. The failure would show up only in the failure
+log, and the operator's change would be lost. Allowing the save with the zero-value bytes loses
+less, and the operator opted in.
+
+#### Zero-filling for display only and failing the save
+
+The operator would read a file as it will never be saved. A modified file could not be saved at
+all while its original is incomplete. The same loss as above applies.
+
+#### Warning once per content
+
+The set of contents already warned about is not bounded by anything but the repository size. A scan
+over a damaged repository could make it as large as the memory budget. A bounded cache with
+eviction repeats the same warning during such a scan.

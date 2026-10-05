@@ -96,3 +96,28 @@ soft-deleted entry immediately. A purged entry cannot be recovered.
 - `dfs db-compact` shrinks the metadata store after many deletions. Take a new backup afterwards.
 - `dfs unlock [path]` clears a write lock that a crashed process left behind. It never removes a
   lock that is still held.
+
+## Potentially dangerous options
+
+Each of these options can make a command do something that is hard or impossible to undo. A command
+prints a one-line warning at start when one of them is given. `--help` lists every option.
+
+### `--best-effort` (`dfs mount`, `dfs restore`)
+
+Stored data can be missing, for example after a data file was lost, or unreadable, for example
+because of a storage error. By default, reading content that touches such data fails with an error.
+With `--best-effort`, the affected part is replaced by zero-value bytes (0x00), and the read
+succeeds. This helps when a file is mostly intact and the
+remaining data is wanted, for example an image.
+
+- `dfs mount --best-effort` applies to every read through the mount. With `--read-write`, it also
+  applies when a modified file is saved. The saved content then contains zero-value bytes in place
+  of the missing data. It is complete and valid in the repository, but it no longer matches the
+  original, and restoring the missing data later does not repair it.
+- `dfs restore --best-effort` writes zero-value bytes for missing data. It also keeps content that
+  fails `--verify` instead of stopping at it.
+- A storage error is treated like missing data. A short or unstable connection to the storage can
+  therefore also produce zero-value bytes. With `--read-write`, these can be saved permanently.
+- The command warns once for each data file that turns out to be missing or short, and once for each
+  kind of read error. A mount prints a summary when it ends.
+

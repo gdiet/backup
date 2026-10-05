@@ -15,6 +15,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::content_reader::MissingDataPolicy;
 use crate::pending_files::{ChainTarget, GenerationSlot};
 
 /// One generation ready to be durably committed - DESIGN-MOUNT-013's hand-off from `release()`.
@@ -125,6 +126,7 @@ struct Context {
     repo: Arc<db::Repository>,
     store: Arc<store::ByteStore>,
     cdc_target_size_bits: u32,
+    read_policy: MissingDataPolicy,
     on_failure: FailureHook,
 }
 
@@ -151,6 +153,7 @@ impl JobPool {
         repo: Arc<db::Repository>,
         store: Arc<store::ByteStore>,
         cdc_target_size_bits: u32,
+        read_policy: MissingDataPolicy,
         on_failure: impl Fn(&SettleJob, JobError) + Send + Sync + 'static,
     ) -> Self {
         let (sender, receiver) = mpsc::channel::<SettleJob>();
@@ -159,6 +162,7 @@ impl JobPool {
             repo,
             store,
             cdc_target_size_bits,
+            read_policy,
             on_failure: Box::new(on_failure),
         });
         let bytes_in_persist_queue = Arc::new(AtomicU64::new(0));
@@ -240,8 +244,15 @@ fn run_job(context: &Arc<Context>, job: SettleJob, bytes_in_persist_queue: &Atom
     let size = job.generation.size();
 
     let resolve_content = |content_id: i64, position: u64, len: u32| {
-        crate::content_reader::read_content(repo, store, content_id, position, len)
-            .map_err(|errno| io::Error::from_raw_os_error(errno.0))
+        crate::content_reader::read_content(
+            repo,
+            store,
+            content_id,
+            position,
+            len,
+            &context.read_policy,
+        )
+        .map_err(|errno| io::Error::from_raw_os_error(errno.0))
     };
     let read = |position: u64, len: u32| job.generation.read(position, len, &resolve_content);
     // DESIGN-MOUNT-006: drains bytesInPersistQueue as soon as each chunk finishes (persisted, or
@@ -440,6 +451,7 @@ mod tests {
             Arc::clone(&repo),
             Arc::clone(&store),
             12,
+            MissingDataPolicy::Fail,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -484,6 +496,7 @@ mod tests {
             Arc::clone(&repo),
             Arc::clone(&store),
             12,
+            MissingDataPolicy::Fail,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -560,6 +573,7 @@ mod tests {
             Arc::clone(&repo),
             Arc::clone(&store),
             12,
+            MissingDataPolicy::Fail,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -625,6 +639,7 @@ mod tests {
             Arc::clone(&repo),
             Arc::clone(&store),
             12,
+            MissingDataPolicy::Fail,
             move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
         );
         pool.submit(SettleJob {
@@ -660,6 +675,7 @@ mod tests {
             repo: Arc::clone(&repo),
             store: Arc::clone(&store),
             cdc_target_size_bits: 12,
+            read_policy: MissingDataPolicy::Fail,
             on_failure: Box::new(move |_job: &SettleJob, err: JobError| {
                 failures_for_hook.lock().unwrap().push(err.to_string());
             }),
@@ -705,7 +721,14 @@ mod tests {
         let generation = write_and_release(&registry, base_id, b"x", &budget, temp_dir.path());
         assert_eq!(generation.spilled_bytes(), 1);
 
-        let pool = JobPool::new(1, Arc::clone(&repo), Arc::clone(&store), 12, |_, _| {});
+        let pool = JobPool::new(
+            1,
+            Arc::clone(&repo),
+            Arc::clone(&store),
+            12,
+            MissingDataPolicy::Fail,
+            |_, _| {},
+        );
         pool.submit(SettleJob {
             parent_id: 0,
             name: "x.txt".to_string(),
