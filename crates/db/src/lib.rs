@@ -29,7 +29,7 @@ use rusqlite::{Connection, OpenFlags, params};
 pub use content::ChunkLocation;
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
-pub use stats::Stats;
+pub use stats::{RepositoryStats, Stats};
 pub use tree::{DeletedEntry, Entry, EntryKind, PurgeResult, SettleOutcome};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
@@ -462,6 +462,11 @@ impl Repository {
     /// recursive descendants - `dir_id` itself is not counted.
     pub fn stats_for(&self, dir_id: i64) -> Result<Stats, Error> {
         self.with_connection(|conn, _cache| stats::stats_for(conn, dir_id))
+    }
+
+    /// REQ-QUERY-003: the repository-wide storage and metadata figures that no path scope has.
+    pub fn repository_stats(&self) -> Result<RepositoryStats, Error> {
+        self.with_connection(|conn, _cache| stats::repository_stats(conn))
     }
 
     /// REQ-MAINTENANCE-001: backs up this repository's metadata to a fresh, self-contained SQLite

@@ -45,7 +45,17 @@ dfs stats --repository repo
 ```
 
 `find` matches names case-insensitively. `*` matches any run of characters, `?` exactly one.
-`stats` reports the logical size, the physical size, and the deduplication ratio.
+`stats` reports the logical size, the physical size, and the deduplication ratio, for example `2.70x
+(63.0 % saved)`. A ratio is never below 1.00x. The physical size counts the chunks that live files
+use. It does not include content that only soft-deleted entries still hold, or gaps in `data/` that
+were freed but not yet reused.
+
+Without a path, `stats` reports on the whole repository. It then also gives the repository age, the
+chunking target size, the number of stored chunks and chunk extents, the end of the stored data and
+the unused space below it, the size of the metadata database, and the number of soft-deleted
+entries. With a path, it reports only on that directory's subtree. Content that the subtree shares
+with files outside of it counts as physical storage of the subtree as well, so the ratio of a path
+describes the path alone.
 
 ### Mount the repository
 

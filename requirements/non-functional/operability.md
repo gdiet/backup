@@ -118,7 +118,7 @@ Status: agreed
 Importance: should
 
 Every timestamp a command prints for a human to read - `dfs list`/`dfs find`'s modification-time
-column, `dfs stats`' repository age, and `dfs mount`'s `[all]/[by-time]` view (REQ-TREE-009 in
+column, `dfs stats`' repository age and file modification times, and `dfs mount`'s `[all]/[by-time]` view (REQ-TREE-009 in
 [`tree.md`](../functional/tree.md), REQ-MOUNT-008 in [`mount.md`](../functional/mount.md)) - renders
 in the process's own local timezone by default. Each of these commands' own `--utc` flag switches
 that one timestamp to UTC instead, marked with the ISO 8601 "Z" designator so the two forms are

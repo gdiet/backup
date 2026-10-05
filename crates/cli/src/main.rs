@@ -288,7 +288,9 @@ enum Commands {
         /// executable.
         #[arg(long)]
         repository: Option<PathBuf>,
-        /// Repository path to report on. Repository age is only reported for the default, `/`.
+        /// Repository path to report on. Repository age, chunking target size, chunk extents, the
+        /// extent of `data/`, metadata size and soft-deleted entries are only reported for the
+        /// default, `/`.
         #[arg(default_value = "/")]
         path: String,
         #[command(flatten)]

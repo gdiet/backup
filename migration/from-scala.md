@@ -80,9 +80,8 @@ when it finishes.
 
 All these databases describe the same `data/` directory. Therefore:
 
-- Compare them one at a time. Rename a directory to `meta/`, run `dfs stats` (its physical size) and
-  compare the size of `meta/repository.sqlite3`, then rename it back. These read-only commands are
-  safe.
+- Compare them one at a time. Rename a directory to `meta/`, run `dfs stats` (its physical size and
+  its metadata size), then rename it back. These read-only commands are safe.
 - Never use more than one of them with a command that writes, such as `dfs ingest`, `dfs reclaim` or
   a read-write mount. Each database only knows its own chunks, so a write through one can overwrite
   content that another still refers to.
