@@ -66,10 +66,9 @@ fn try_run(
 fn success_message(path: &Path, cdc_target_size_bits: u32) -> String {
     format!(
         "created repository at {}\n\
-         chunking: content-defined, target size {cdc_target_size_bits} bits (average chunk size a \
-         little above 2^{cdc_target_size_bits} bytes) - fixed for this repository's lifetime, \
-         cannot be changed later.",
-        path.display()
+         cdc target size: {cdc_target_size_bits} bits ({}), cannot be changed later",
+        path.display(),
+        crate::stats::human_size(1u64 << cdc_target_size_bits)
     )
 }
 
@@ -100,12 +99,14 @@ mod tests {
     }
 
     #[test]
-    fn try_run_creates_a_repository_and_reports_the_chunking() {
+    fn try_run_creates_a_repository_and_reports_the_target_size() {
         let dir = unique_temp_path();
         let message = try_run(&dir, 20, false).expect("must succeed on a fresh path");
         assert!(message.contains("created repository at"));
-        assert!(message.contains("target size 20 bits"));
-        assert!(message.contains("cannot be changed later"));
+        assert!(
+            message.ends_with("cdc target size: 20 bits (1.0 MiB), cannot be changed later"),
+            "got: {message}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -113,7 +114,10 @@ mod tests {
     fn try_run_reports_an_explicit_cdc_target_size() {
         let dir = unique_temp_path();
         let message = try_run(&dir, 22, false).expect("must succeed on a fresh path");
-        assert!(message.contains("target size 22 bits"));
+        assert!(
+            message.contains("cdc target size: 22 bits (4.0 MiB)"),
+            "got: {message}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

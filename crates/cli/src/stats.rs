@@ -190,7 +190,7 @@ fn size_label(bytes: u64) -> String {
 }
 
 /// `bytes` in binary units with one decimal, e.g. `"1.4 MiB"`.
-fn human_size(bytes: u64) -> String {
+pub(crate) fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["bytes", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let mut value = bytes as f64;
     let mut unit = 0;
