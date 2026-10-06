@@ -320,6 +320,25 @@ Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N
 metadata`/`cargo tree` for locating crate sources; otherwise scope `find`/`grep` to a known
 directory.
 
+## Where Agents Put Files And Folders
+
+Unless the task explicitly asks for another location, an agent creates files and folders outside
+the working tree only in one of two places:
+
+- **A temp folder**, for temporary files that should be deleted soon. This is the scratchpad
+  directory that the session provides, or otherwise the operating system's temp directory.
+- **`.local/`**, for files and folders that must stay out of version control but remain of interest
+  locally for a longer time. See "Relationship To Other Implementations" above for how `.local/`
+  is excluded from version control.
+
+Never create a folder in the root of a drive, or elsewhere in the developer's file system, on the
+agent's own initiative. A measurement or test that needs scratch space uses one of the two places
+above, even if an older script in this repository hardcodes another path.
+
+Delete temporary data when it is no longer needed. Ask the developer for confirmation before
+leaving a large amount of data in `.local/` for a long time, roughly 1 GB or more. A full disk is
+the risk here.
+
 ## A Known Editor/Git Staging Race
 
 Observed twice in one session (2026-09-23, an agent moving `agent-todos/` files to `done/` with a
