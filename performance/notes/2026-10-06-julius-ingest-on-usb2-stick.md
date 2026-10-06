@@ -92,8 +92,9 @@ properties explain the gaps against the native baseline:
 - The stick handles small, scattered writes badly, in particular next to large ones. SQLite
   produces many of them.
 
-Both effects are weaker or absent on a normal SSD or hard disk, which explains why ingest beats
-native creation there.
+Both effects are weaker or absent on a normal SSD, which explains why ingest beats native creation
+there. A fast external hard disk, which is the device that matters in practice, has not been
+measured. Its behavior may differ from the stick's in both points.
 
 ## Possible improvements
 
