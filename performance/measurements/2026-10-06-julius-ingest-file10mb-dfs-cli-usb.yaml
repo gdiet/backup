@@ -1,0 +1,20 @@
+date: 2026-10-06
+machine: julius
+environment: native-windows
+power_profile: power-saver             # overlay 961cc777-2547-4f9d-8174-7d86181b8a7a on top of the unchanged Balanced base scheme
+io_device: usb2-stick                  # the repository; the source tree is on the local SSD
+dfs_build: d38d156ce1fbb09765943894b797d89c672b598d on rust
+operation: ingest-file-10mb
+location: dfs-cli
+tool: dfs ingest --repository <repo> <source-dir> /
+mode: sequential
+parallel_n:
+window_seconds:                   # none fixed - one ingest call per run, see the .md
+scale: 15                          # files of 10 MB per run
+content_size: 10485760
+result:
+  unit: bytes_per_second          # also 0.37 files/s
+  mean: 3834912
+  range: [3469043, 4259041]
+  n: 5
+  discarded_warmup_run: false

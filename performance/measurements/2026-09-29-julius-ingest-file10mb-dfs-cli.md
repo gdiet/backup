@@ -65,3 +65,21 @@ set) - not yet informative about how this holds up at the multi-terabyte scale a
 would actually run at, where source reads themselves become the dominant, page-cache-cold cost;
 see the `rust-migration-cdc-bitwidth-compare` branch's own throwaway tool for that separate,
 still-pending investigation.
+
+## Addendum 2026-10-06: repeat on the current build
+
+The same script, `../scripts/ingest-file10mb.ps1`, was run three times in a row on build
+`d38d156ce1fbb09765943894b797d89c672b598d` (same machine, same Power Saver overlay, on AC power).
+Source files and repository were both on the local SSD, below the user's temp folder. The script
+takes the base folder as a parameter now, because agents keep scratch data in temp folders.
+
+| Repeat | Result |
+|---|---|
+| 1 | 30 files, 314,572,800 bytes, 1.03 s, 29.1 files/s, 290.9 MB/s |
+| 2 | 30 files, 314,572,800 bytes, 1.13 s, 26.7 files/s, 266.6 MB/s |
+| 3 | 30 files, 314,572,800 bytes, 2.30 s, 13.0 files/s, 130.4 MB/s |
+
+The original single run (217.1 MB/s, 1.38 s) lies inside this spread (130-291 MB/s). A change in
+ingest performance can therefore neither be shown nor ruled out with this workload. At 300 MB and
+1-2 s per run, the page cache and background activity dominate. The larger runs in
+`2026-10-06-julius-ingest-file10mb-dfs-cli-ssd.md` (200 files, 2 GB) average 140.7 MB/s.

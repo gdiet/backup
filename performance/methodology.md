@@ -203,10 +203,12 @@ Where a workload above can be measured:
   independently of where the mount's client-side operations originate. Directory creation and 10 MB
   file creation/read each have a script today (`../scripts/dfs-mount-dir-create.ps1`,
   `../scripts/dfs-mount-file10mb-{create,read}.ps1`, Windows/WinFSP only).
-- Through the `dfs` CLI tools, as the relevant commands come into existence. `dfs ingest` has a
-  script today (`../scripts/ingest-file10mb.ps1`) - a one-shot batch job rather than a windowed
-  request/response loop, so it does not follow the usual 5-runs-of-~20-seconds shape; see that
-  script's own measurement protocol.
+- Through the `dfs` CLI tools, as the relevant commands come into existence. `dfs ingest` has two
+  scripts today (`../scripts/ingest-file10mb.ps1`, `../scripts/ingest.ps1`) - a one-shot batch job
+  rather than a windowed request/response loop. `ingest.ps1` therefore takes five runs with a fixed
+  count each, every run into a fresh repository, so a run does not deduplicate against an earlier
+  one. It aims at about 20 s per run, longer on a slow device. Source and repository can be placed
+  on different devices.
 - Directly against the DedupFS database, via a small Rust benchmark calling `db::Repository`'s
   methods with no mount or CLI layer in between - a ceiling any higher layer cannot exceed, since
   it still goes through the same calls underneath. Only meaningful for directories and zero-byte

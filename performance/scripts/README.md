@@ -76,6 +76,14 @@ first one as a final check, same as `dfs-mount-dir-create.ps1` below.
   ingest` call importing them into a fresh repository. Ingest is a one-shot batch job, not a
   request/response loop, so this records one timed run rather than the usual 5-runs-of-~20-seconds
   shape - see the measurement protocol's Notes for why.
+- `ingest.ps1` - `-Workload dir|file100b|file10mb -Count <n> -SourceRoot <dir> -RepoBase <dir>
+  [-Runs 5]`. Generates the source tree once (not timed), then ingests it `-Runs` times, each into a
+  fresh repository below `-RepoBase` that is created before and deleted after the timed `dfs ingest`
+  call. Source and repository can sit on different devices, for example the source on the local SSD
+  and the repository on a USB stick. A fresh repository per run replaces the "state accumulates
+  between runs" rule, because a second ingest into the same repository would only deduplicate
+  against the first. Both ingest scripts keep their scratch data below the temp folder or the
+  folders given by the parameters.
 
 `location: db-direct` - there is no script here - it is a Rust benchmark instead, since
 `db-direct` means calling `db::Repository`'s methods directly, not shelling out to anything. See

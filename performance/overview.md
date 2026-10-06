@@ -232,6 +232,12 @@ same machine and file size.
 | Machine | Environment | Power mode | Size | IO device | Location | Mode | Throughput | Protocol |
 |---|---|---|---|---|---|---|---|---|
 | julius | native Windows | power saver | 10 MB x 30 | local SSD | dfs-cli | sequential | 21.7 files/s, 217.1 MB/s (single run, N=1) | [2026-09-29](measurements/2026-09-29-julius-ingest-file10mb-dfs-cli.md) |
+| julius | native Windows | power saver | directories x 20,000 | local SSD (source and repository) | dfs-cli | sequential | 1752.9 ops/s (1675.0-1841.6) | [2026-10-06](measurements/2026-10-06-julius-ingest-dir-dfs-cli-ssd.md) |
+| julius | native Windows | power saver | directories x 2,000 | USB2 stick (repository) | dfs-cli | sequential | 153.1 ops/s (99.7-200.2) | [2026-10-06](measurements/2026-10-06-julius-ingest-dir-dfs-cli-usb.md) |
+| julius | native Windows | power saver | 100 B x 6,000 | local SSD (source and repository) | dfs-cli | sequential | 633.2 ops/s (554.5-755.7) | [2026-10-06](measurements/2026-10-06-julius-ingest-file100b-dfs-cli-ssd.md) |
+| julius | native Windows | power saver | 100 B x 400 | USB2 stick (repository) | dfs-cli | sequential | 45.1 ops/s (37.1-50.3) | [2026-10-06](measurements/2026-10-06-julius-ingest-file100b-dfs-cli-usb.md) |
+| julius | native Windows | power saver | 10 MB x 200 | local SSD (source and repository) | dfs-cli | sequential | 14.1 / ~141 MB/s (12.1-16.7) | [2026-10-06](measurements/2026-10-06-julius-ingest-file10mb-dfs-cli-ssd.md) |
+| julius | native Windows | power saver | 10 MB x 15 | USB2 stick (repository) | dfs-cli | sequential | 0.37 / ~3.7 MB/s (0.33-0.41) | [2026-10-06](measurements/2026-10-06-julius-ingest-file10mb-dfs-cli-usb.md) |
 
 First measurement of `dfs ingest` at any scale. A single timed batch import of 30 pre-existing,
 uniquely-content 10 MB files (300 MB total) - not the usual 5-runs-of-~20-seconds shape, since
@@ -243,3 +249,20 @@ worker-pool parallelism, absent from the single-threaded PowerShell writer the m
 use. Only one data point at a small, fully-cacheable scale - not yet informative about a
 multi-terabyte, page-cache-cold migration run; see the separate `rust-migration-cdc-bitwidth-
 compare` branch for that still-pending investigation.
+
+The 2026-10-06 rows repeat the measurement in the usual 5-runs shape. Every run ingests the same
+source tree, generated once on the local SSD, into a fresh repository, once on the SSD and once on
+the USB2 stick. Against the native creation baselines on the same device and power profile, the
+ratio is not constant:
+
+| Workload | Native, SSD | Ingest, SSD | Native, USB2 stick | Ingest, USB2 stick |
+|---|---|---|---|---|
+| Directories | 929.1 ops/s | 1752.9 ops/s (1.9x faster) | 158.3 ops/s | 153.1 ops/s (about equal, wide spread) |
+| 100 B files | 242.6 ops/s | 633.2 ops/s (2.6x faster) | 100.9 ops/s | 45.1 ops/s (2.2x slower) |
+| 10 MB files | ~264 MB/s | ~141 MB/s (53%) | ~10.5 MB/s | ~3.7 MB/s (35%) |
+
+On the SSD, ingest beats native creation for small items and falls behind for large ones, which
+fits a metadata-bound versus a hash-and-copy-bound split. On the stick, ingest is never faster, and
+at 10 MB it reaches only about a third of the native speed. None of these gaps has been
+investigated yet. A repeat of the 2026-09-29 measurement on the current build is recorded in that
+protocol's addendum.

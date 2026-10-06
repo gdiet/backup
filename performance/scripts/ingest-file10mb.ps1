@@ -16,12 +16,16 @@
 #
 # Before starting a *new* measurement, delete $base first.
 
+param(
+    [string]$Base = (Join-Path $env:TEMP "dedupfs-perf\ingest-files10mb")
+)
+
 $ErrorActionPreference = "Stop"
 [System.Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 
 $fileCount = 30
 $size = 10485760
-$base = "C:\dedupfs-perf\ingest-files10mb"
+$base = $Base
 $sourceRoot = Join-Path $base "source"
 $repoRoot = Join-Path $base "repo"
 
@@ -29,8 +33,12 @@ if (Test-Path $repoRoot) {
     throw "$repoRoot already exists - delete $base first to start a fresh measurement"
 }
 
+# cargo reports its progress on stderr, which Stop would turn into a terminating error whenever the
+# caller redirects this script's error stream.
+$ErrorActionPreference = "Continue"
 cargo build --release -p cli
 if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+$ErrorActionPreference = "Stop"
 $dfsExe = Resolve-Path (Join-Path $PSScriptRoot "..\..\target\release\dfs.exe")
 
 New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
