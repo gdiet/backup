@@ -263,6 +263,9 @@ ratio is not constant:
 
 On the SSD, ingest beats native creation for small items and falls behind for large ones, which
 fits a metadata-bound versus a hash-and-copy-bound split. On the stick, ingest is never faster, and
-at 10 MB it reaches only about a third of the native speed. None of these gaps has been
-investigated yet. A repeat of the 2026-09-29 measurement on the current build is recorded in that
-protocol's addendum.
+at 10 MB it reaches only about a third of the native speed. The stick gaps were investigated
+afterwards (see [the note](notes/2026-10-06-julius-ingest-on-usb2-stick.md)): the stick writes
+1.2 MB chunks slower than the 10 MB blocks of the native baseline, and the SQLite commits on the
+same stick are slow and stall the device. The worker count and SQLite's `synchronous` setting do
+not matter. The SSD gaps have not been investigated. A repeat of the 2026-09-29 measurement on the
+current build is recorded in that protocol's addendum.
