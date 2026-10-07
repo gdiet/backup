@@ -79,11 +79,16 @@ concurrent read from another process sees the file's last complete state (its co
 write began, or nothing yet if it did not exist before), never a partial, in-progress result.
 (Whether a second read handle within the same mount session sees the write's in-progress state, or
 also only its last complete state, is left to the mount's own implementation — either is
-acceptable.) The same holds across a crash or hard kill interrupting a write: once the system is
-back, the affected file's content is either the complete state from before the interrupted write,
+acceptable.) The same holds across a crash or a kill signal interrupting a write: once the system
+is back, the affected file's content is either the complete state from before the interrupted write,
 or the complete state the write would have produced had it finished — never a partial, torn result.
 Content still being written when such an interruption happens is not required to survive it — only
 that whatever remains visible afterward is never partial.
+
+A power loss or the removal of the storage device is held to the same outcome as a design goal.
+REQ-RELIABILITY-002 in [`../non-functional/reliability.md`](../non-functional/reliability.md)
+allows that goal to give way to performance in rare cases. REQ-RELIABILITY-001 in the same file
+holds for the repository as a whole in any case.
 
 Rationale: a backup archive silently containing truncated, corrupted-looking content would
 undermine trust in the archive far more than a concurrent reader seeing slightly stale but always

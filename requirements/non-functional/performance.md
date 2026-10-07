@@ -101,3 +101,18 @@ Rationale: this speedup needs to be an architectural property of how the mount d
 work, not something that only shows up when a client happens to write multiple files concurrently
 itself — an operator copying files sequentially should not need to know or care that pipelining is
 what makes it fast.
+
+### REQ-PERFORMANCE-007: Slow removable storage stays usable without operating system write caching
+Status: agreed
+Importance: should
+
+The performance goals for slow storage (REQ-PERFORMANCE-004 and REQ-PERFORMANCE-005) also hold to a
+reasonable degree when the operating system treats the device for quick removal. In that mode, the
+operating system does not cache writes, and every write reaches the device before the call
+returns. The documentation may recommend a better-performing device policy, but the software does
+not depend on that recommendation.
+
+Rationale: an operator sometimes needs quick removal, for example for a device that is unplugged
+without warning. Each small write is expensive in this mode, so the number of separate writes
+matters more than their total size. Fewer and larger writes against the device keep this case
+usable at a reasonable effort.
