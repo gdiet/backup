@@ -54,6 +54,12 @@ SQLite's `synchronous` setting do not matter.
    - **A crash loses the running batch.** That is acceptable for ingest, which can simply be run
      again, but it must be decided deliberately.
 
+   An emulated-device experiment gives an upper bound for this candidate. One transaction around
+   a whole ingest of 400 files of 100 B was 30 times faster without device write cache, 6 times
+   faster with write cache and 2 times faster on a local SSD. See
+   [`performance/notes/2026-10-07-ingest-commit-batching-on-throttled-device.md`](../performance/notes/2026-10-07-ingest-commit-batching-on-throttled-device.md).
+   The effect of a group commit with a realistic group size is not measured yet.
+
    Estimated gain on the stick, from the 100 B experiment: the metadata costs 22-30 ms per file
    there (three commits), the data about 6-7 ms. One commit per 100 files would leave
    about the data part, roughly 2.5 times faster in total. On an SSD the gain is probably small

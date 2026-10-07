@@ -85,6 +85,19 @@ first one as a final check, same as `dfs-mount-dir-create.ps1` below.
   against the first. Both ingest scripts keep their scratch data below the temp folder or the
   folders given by the parameters.
 
+`slow-disk/` - emulation of a slow storage device on Linux, for experiments that need a controlled
+device instead of a real one. Needs `sudo` for the device setup. `setup.sh` builds a sparse image
+file, a loop device, a `dm-delay` layer that adds a fixed latency to every read and write request,
+and an ext4 file system on top. `--sync` mounts it without write caching, which behaves like a
+Windows device set to quick removal. Without `--sync`, the device has the usual write cache.
+`teardown.sh` removes everything again. `measure.sh <files> <bytes> <runs> [outer]` ingests a
+generated source tree into fresh repositories on the emulated device. It prints the elapsed time
+and the number of write requests and mebibytes that reached the device. `enter-throttle.sh` runs a
+command inside a cgroup with a bandwidth or IOPS limit, as set by `setup.sh --wbps` or `--iops`.
+State lives in the git-excluded `.local/slow-disk`. The bandwidth limit is untested. The numbers
+of the first experiment with these scripts are in
+`../notes/2026-10-07-ingest-commit-batching-on-throttled-device.md`.
+
 `location: db-direct` - there is no script here - it is a Rust benchmark instead, since
 `db-direct` means calling `db::Repository`'s methods directly, not shelling out to anything. See
 `../../crates/db/examples/db_bench.rs` (directory creation only so far, since `db::Repository` has
