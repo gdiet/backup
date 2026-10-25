@@ -27,8 +27,9 @@ workload:
   the matching `-create` script has produced so far; run the `-create` script at least once first.
 - `write-pattern.ps1` (native Windows only, no `.sh` counterpart) - throughput of one device by write
   size. Each run appends a fixed amount to one fresh file in blocks of one size and flushes it,
-  the byte store's own pattern. It also reports the average size of the writes the device actually
-  received, from the raw disk counters. Not a 5-runs-of-20-seconds workload: it answers whether
+  the byte store's own pattern. It also reports, from the raw disk counters, the average size of
+  the writes the device actually received, the average queue length, and the idle share of the
+  device. Not a 5-runs-of-20-seconds workload: it answers whether
   larger writes are faster on a given device.
 
 Every `.ps1` script above has had scaled-down trial validation on `3327`'s native Windows

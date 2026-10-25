@@ -6,9 +6,9 @@ Windows.
 **Size**: small. One short measurement and a note. Ask the developer only for the target folder
 on the disk and for the disk's details listed below.
 **Opened**: 2026-10-25, by the Linux/WSL2 session on `3327`
-**Context**: [`performance/notes/2026-10-06-julius-ingest-on-usb2-stick.md`](../performance/notes/2026-10-06-julius-ingest-on-usb2-stick.md)
+**Context**: [`performance/notes/2026-10-06-julius-ingest-on-usb2-stick.md`](../../performance/notes/2026-10-06-julius-ingest-on-usb2-stick.md)
 (the same question on the USB2 stick), candidate 3 in
-[`ingest-on-slow-removable-media.md`](ingest-on-slow-removable-media.md), `ByteStore::write` in
+[`ingest-on-slow-removable-media.md`](../ingest-on-slow-removable-media.md), `ByteStore::write` in
 `crates/store/src/lib.rs`, `complete_chunk` in `crates/cli/src/settle.rs`
 
 ## Question
@@ -85,3 +85,14 @@ disk, and look at the "Device bytes per write" column before reading the MB/s co
 
 For the hard disk, keep the defaults (`-TotalMB 1024 -Runs 3`) unless the 10 MB probe shows that a
 run would take much longer than 10 s.
+
+## Done 2026-10-25, by the Windows desktop session on `julius`
+
+Measured on the developer's external USB hard disk (WD Elements 25A3, spinning disk, USB 3, NTFS,
+removal policy "Quick removal"), with `write-pattern.ps1` at commit `8bd8e4e4` and its defaults
+(1,024 MB per run, three rounds), 115 s in total. Larger writes are not faster there: 10 MB blocks
+ran at 94-95 MB/s, 1.2 MB blocks at 99-103 MB/s, 100 KB blocks at 119-127 MB/s and 16 KB blocks
+at 131-133 MB/s. By the criterion above, a write buffer is not worth designing for this device.
+Note: [`performance/notes/2026-10-25-julius-write-size-on-usb-hard-disk.md`](../../performance/notes/2026-10-25-julius-write-size-on-usb-hard-disk.md).
+Candidate 3 of [`ingest-on-slow-removable-media.md`](../ingest-on-slow-removable-media.md) now
+links to it.

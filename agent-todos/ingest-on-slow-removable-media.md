@@ -68,7 +68,9 @@ SQLite's `synchronous` setting do not matter.
    bring the stick from about 5.7 to about 9 MB/s for 10 MB files. The gain exists only on devices
    like this stick. The cost is more memory per worker and a larger window of bytes that are
    registered but not yet written. Probably not worth it, in particular if the relevant device is a
-   hard disk.
+   hard disk. Measured on the developer's external USB hard disk, 10 MB writes were about 5% slower
+   than 1.2 MB writes, so a write buffer would not help there (see
+   [`2026-10-25-julius-write-size-on-usb-hard-disk.md`](../performance/notes/2026-10-25-julius-write-size-on-usb-hard-disk.md)).
 
 Do not pursue: a setting for the number of ingest workers, or a change of SQLite `synchronous`.
 Neither had a measurable effect on the stick.

@@ -17,7 +17,9 @@
 #   slow device within a reasonable time.
 # - For every run, the script also reads the raw disk counters of the target's physical disk before
 #   and after it. "B/write" is the average size of the writes the device actually received during
-#   the run, including any other writes to that disk at the same time.
+#   the run, "queue" the average number of outstanding requests, and "idle" the share of the run in
+#   which the disk had no request at all. All three include any other activity on that disk at the
+#   same time.
 #
 # Tool (record this in the measurement protocol): .NET FileStream.Write, via this script.
 
@@ -60,10 +62,30 @@ $driveLetter = $targetFull.Substring(0, 2).ToUpperInvariant()
 $diskInstance = (Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk |
         Where-Object { $_.Name -match [regex]::Escape($driveLetter) } | Select-Object -First 1).Name
 
-function Get-DiskWrites {
+function Get-DiskCounters {
     if (-not $diskInstance) { return $null }
     $d = Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk | Where-Object { $_.Name -eq $diskInstance }
-    return @([double]$d.DiskWritesPersec, [double]$d.DiskWriteBytesPersec)
+    return @{
+        Writes = [double]$d.DiskWritesPersec
+        Bytes = [double]$d.DiskWriteBytesPersec
+        QueueTime = [double]$d.AvgDiskQueueLength
+        Time100ns = [double]$d.Timestamp_Sys100NS
+        Idle = [double]$d.PercentIdleTime
+        IdleBase = [double]$d.PercentIdleTime_Base
+    }
+}
+
+# Average device write size, average queue length and idle share between two counter snapshots.
+# AvgDiskQueueLength accumulates queue length x time in 100 ns units, so its delta divided by the
+# elapsed 100 ns gives the average number of outstanding requests.
+function Format-DiskDelta($before, $after) {
+    if (-not $before -or ($after.Writes - $before.Writes) -le 0) { return @("n/a", "n/a", "n/a") }
+    $elapsed = $after.Time100ns - $before.Time100ns
+    return @(
+        ("{0:N0}" -f (($after.Bytes - $before.Bytes) / ($after.Writes - $before.Writes))),
+        ("{0:N2}" -f (($after.QueueTime - $before.QueueTime) / $elapsed)),
+        ("{0:N0} %" -f (100 * ($after.Idle - $before.Idle) / ($after.IdleBase - $before.IdleBase)))
+    )
 }
 
 $maxSize = ($Sizes | Measure-Object -Maximum).Maximum
@@ -71,21 +93,19 @@ $buffer = New-Object byte[] $maxSize
 [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes($buffer)
 
 "target: $targetFull (disk counters: $(if ($diskInstance) { $diskInstance } else { 'not found' }))"
-"{0,-4} {1,10} {2,8} {3,9} {4,9} {5,10}" -f "run", "block", "writes", "seconds", "MB/s", "B/write"
+"{0,-4} {1,10} {2,8} {3,9} {4,9} {5,10} {6,6} {7,6}" -f "run", "block", "writes", "seconds", "MB/s", "B/write", "queue", "idle"
 for ($run = 1; $run -le $Runs; $run++) {
     foreach ($size in $Sizes) {
         $mb = if ($TotalMBBySize.ContainsKey($size)) { [int]$TotalMBBySize[$size] } else { $TotalMB }
         $totalBytes = [int64]$mb * 1MB
         $file = Join-Path $targetFull "write-pattern-$size.bin"
         if (Test-Path $file) { Remove-Item $file }
-        $before = Get-DiskWrites
+        $before = Get-DiskCounters
         $seconds = [WritePattern]::Run($file, $buffer, $size, $totalBytes)
-        $after = Get-DiskWrites
-        $deviceBytesPerWrite = if ($before -and ($after[0] - $before[0]) -gt 0) {
-            "{0:N0}" -f (($after[1] - $before[1]) / ($after[0] - $before[0]))
-        } else { "n/a" }
+        $after = Get-DiskCounters
+        $device = Format-DiskDelta $before $after
         $writes = [math]::Ceiling($totalBytes / $size)
-        "{0,-4} {1,10:N0} {2,8:N0} {3,9:N2} {4,9:N1} {5,10}" -f $run, $size, $writes, $seconds, ($totalBytes / 1MB / $seconds), $deviceBytesPerWrite
+        "{0,-4} {1,10:N0} {2,8:N0} {3,9:N2} {4,9:N1} {5,10} {6,6} {7,6}" -f $run, $size, $writes, $seconds, ($totalBytes / 1MB / $seconds), $device[0], $device[1], $device[2]
         Remove-Item $file
     }
 }
