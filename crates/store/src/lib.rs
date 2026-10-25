@@ -101,7 +101,8 @@ pub struct ByteStore {
 }
 
 impl ByteStore {
-    /// `data_dir` must already exist. When `read_only` is `true`, [`ByteStore::write`] and
+    /// The parent of `data_dir` must already exist. [`ByteStore::write`] creates `data_dir`
+    /// itself if it is missing. When `read_only` is `true`, [`ByteStore::write`] and
     /// [`ByteStore::truncate_to`] both fail with [`io::ErrorKind::PermissionDenied`] rather than
     /// touching anything on disk.
     pub fn new(data_dir: impl AsRef<Path>, read_only: bool) -> Self {
@@ -112,6 +113,9 @@ impl ByteStore {
     }
 
     /// Writes `data` starting at `position`, creating backing files/directories as needed.
+    ///
+    /// Every backing file or directory this call creates has its parent directory flushed to
+    /// the storage device before the call returns. The written bytes themselves are not flushed.
     pub fn write(&self, position: u64, mut data: &[u8]) -> io::Result<()> {
         if self.read_only {
             return Err(io::Error::new(
@@ -123,31 +127,7 @@ impl ByteStore {
         while !data.is_empty() {
             let (path, _, offset_in_file, room) = self.locate(position);
             let n = (data.len() as u64).min(room) as usize;
-            // Try opening directly first - DESIGN-STORE-005 in docs/design/byte-store.md. The
-            // common case, once the first write into a given dir1/dir2 has already created it,
-            // is that it already exists, and create_dir_all still costs a syscall to confirm
-            // that even when it has nothing to do. Only pay for it on the actual first write
-            // into a new directory (a plain NotFound from open, not yet knowing whether the file
-            // or an ancestor directory is what's actually missing).
-            let mut file = match OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .open(&path)
-            {
-                Ok(file) => file,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    if let Some(parent) = path.parent() {
-                        fs::create_dir_all(parent)?;
-                    }
-                    OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(false)
-                        .open(&path)?
-                }
-                Err(e) => return Err(e),
-            };
+            let mut file = open_for_write(&path)?;
             file.seek(SeekFrom::Start(offset_in_file))?;
             file.write_all(&data[..n])?;
             data = &data[n..];
@@ -277,6 +257,102 @@ impl ByteStore {
         let path = self.data_dir.join(&relative_path);
         (path, relative_path, offset_in_file, room)
     }
+}
+
+/// Opens the backing file at `path` (`<data>/<dir1>/<dir2>/<file-start>`, as returned by
+/// [`ByteStore::locate`]) for writing, creating it and its directories if missing.
+/// Every entry this call creates has its parent directory flushed (DESIGN-STORE-007 in
+/// `docs/design/byte-store.md`).
+fn open_for_write(path: &Path) -> io::Result<File> {
+    // Fast path (DESIGN-STORE-005): once a file exists, every later write into it needs only
+    // this one open. A NotFound does not tell whether the file or one of its directories is
+    // what is missing.
+    match OpenOptions::new().write(true).open(path) {
+        Ok(file) => return Ok(file),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    // Most new files go into a dir2 that already exists, so try the file alone first.
+    let created = match create_new_file(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            create_parent_dirs(path)?;
+            create_new_file(path)
+        }
+        other => other,
+    };
+    match created {
+        Ok(file) => {
+            sync_dir(parent_of(path))?;
+            Ok(file)
+        }
+        // Another write call created the file since the fast path above. That call flushes
+        // the parent directory, so there is nothing left to flush here.
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            OpenOptions::new().write(true).open(path)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn create_new_file(path: &Path) -> io::Result<File> {
+    OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+/// Creates the data directory, `dir1`, and `dir2` above the backing file at `path` where
+/// missing, one level at a time, and flushes the parent of each level this call actually
+/// created.
+fn create_parent_dirs(path: &Path) -> io::Result<()> {
+    let dir2 = parent_of(path);
+    let dir1 = parent_of(dir2);
+    let data_dir = parent_of(dir1);
+    for dir in [data_dir, dir1, dir2] {
+        match fs::create_dir(dir) {
+            Ok(()) => sync_dir(parent_of(dir))?,
+            // It already exists. If a concurrent write call created it, that call flushes the
+            // parent directory.
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// The parent directory of `path`, which is a backing file, a `dir1`/`dir2` directory, or the
+/// data directory. Only the data directory can have an empty parent (a bare relative path such
+/// as `data`), which means the current directory.
+fn parent_of(path: &Path) -> &Path {
+    let parent = path.parent().expect(
+        "only a file system root has no parent, and the data directory's parent is only asked \
+         for right after create_dir created it, which a root cannot be",
+    );
+    if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    }
+}
+
+/// Flushes the directory `dir` to the storage device, which makes entries recently created in
+/// it durable.
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+/// Flushes the directory `dir` to the storage device, which makes entries recently created in
+/// it durable.
+#[cfg(windows)]
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    // FILE_FLAG_BACKUP_SEMANTICS from the Windows API (winbase.h). Without it, opening a
+    // directory fails. Write access is required as well, because FlushFileBuffers (behind
+    // sync_all) refuses a handle opened without GENERIC_WRITE.
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(dir)?
+        .sync_all()
 }
 
 fn dir_entries(dir: &Path) -> io::Result<Vec<PathBuf>> {
@@ -499,6 +575,117 @@ mod tests {
         let mut buf = [0u8; 6];
         assert_eq!(store.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
         assert_eq!(&buf, b"after!");
+    }
+
+    #[test]
+    fn a_write_into_a_fresh_store_creates_the_directories_and_the_file() {
+        let (dir, store) = store();
+        store.write(7, b"fresh").unwrap();
+        assert!(
+            dir.path()
+                .join("00")
+                .join("00")
+                .join("0000000000")
+                .is_file()
+        );
+        let mut buf = [0u8; 5];
+        assert_eq!(store.read(7, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"fresh");
+    }
+
+    #[test]
+    fn a_write_creates_a_missing_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ByteStore::new(dir.path().join("data"), false);
+        store.write(0, b"x").unwrap();
+        let mut buf = [0u8; 1];
+        assert_eq!(store.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"x");
+    }
+
+    #[test]
+    fn the_parent_of_a_bare_relative_data_directory_is_the_current_directory() {
+        assert_eq!(parent_of(Path::new("data")), Path::new("."));
+        assert_eq!(
+            parent_of(Path::new("data").join("00").as_path()),
+            Path::new("data")
+        );
+    }
+
+    #[test]
+    fn writes_crossing_into_a_new_dir2_and_a_new_dir1_create_them() {
+        let (dir, store) = store();
+        // The last file of dir1 00 / dir2 00 into the first file of dir2 01.
+        let into_new_dir2 = FILE_SIZE * 100 - 3;
+        store.write(into_new_dir2, b"abcdef").unwrap();
+        // The last file of dir1 00 into the first file of dir1 01.
+        let into_new_dir1 = FILE_SIZE * 100 * 100 - 3;
+        store.write(into_new_dir1, b"ghijkl").unwrap();
+
+        assert!(
+            dir.path()
+                .join("00")
+                .join("01")
+                .join("10000000000")
+                .is_file()
+        );
+        assert!(
+            dir.path()
+                .join("01")
+                .join("00")
+                .join("1000000000000")
+                .is_file()
+        );
+        for (position, expected) in [(into_new_dir2, b"abcdef"), (into_new_dir1, b"ghijkl")] {
+            let mut buf = [0u8; 6];
+            assert_eq!(
+                store.read(position, &mut buf).unwrap(),
+                ReadIntegrity::Complete
+            );
+            assert_eq!(&buf, expected);
+        }
+    }
+
+    #[test]
+    fn concurrent_writes_into_the_same_new_file_and_directories_all_succeed() {
+        const THREADS: u64 = 8;
+        const PIECE: u64 = 1000;
+        const ROUNDS: u64 = 20;
+        let (_dir, store) = store();
+        for round in 0..ROUNDS {
+            // A new dir1 per round, so every round races on creating dir1, dir2, and the file.
+            let base = round * FILE_SIZE * 100 * 100;
+            let barrier = std::sync::Barrier::new(THREADS as usize);
+            std::thread::scope(|scope| {
+                for t in 0..THREADS {
+                    let (store, barrier) = (&store, &barrier);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        store
+                            .write(base + t * PIECE, &[t as u8 + 1; PIECE as usize])
+                            .unwrap();
+                    });
+                }
+            });
+            let mut buf = vec![0u8; (THREADS * PIECE) as usize];
+            assert_eq!(store.read(base, &mut buf).unwrap(), ReadIntegrity::Complete);
+            for t in 0..THREADS {
+                let piece = &buf[(t * PIECE) as usize..((t + 1) * PIECE) as usize];
+                assert!(
+                    piece.iter().all(|&b| b == t as u8 + 1),
+                    "round {round}, thread {t}"
+                );
+            }
+        }
+    }
+
+    // Whether the flush makes an entry durable cannot be observed without cutting the power.
+    // This only checks that the platform-specific way of opening and flushing a directory works.
+    #[test]
+    fn sync_dir_succeeds_on_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("new")).unwrap();
+        sync_dir(dir.path()).unwrap();
     }
 
     #[test]

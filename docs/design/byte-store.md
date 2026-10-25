@@ -240,6 +240,78 @@ network-round-trip, not internal-versus-external storage: a USB-attached drive i
 through the same local filesystem call path as an internal disk, with no network protocol in
 between, so the syscall-count argument applies to it the same way.
 
+The direct open does not create a missing file. On its `NotFound` path, the file and any missing
+directories are created as described in DESIGN-STORE-007 below.
+
+## DESIGN-STORE-007: New directory entries are flushed immediately
+Status: implemented
+
+When `ByteStore::write` creates a directory or a data file, it flushes the parent directory of the
+new entry before it returns. This covers the data directory if it is missing, each new `dir1` and
+`dir2`, and each new data file. It does not cover the contents of data files. Whether and when the
+written bytes themselves are flushed is a separate decision.
+
+### Why
+
+A new directory entry is not guaranteed to survive a power loss or the removal of the storage
+device until its parent directory is flushed. If the entry of a data file is lost, the whole file
+is lost, up to 100 MB of stored content, even if its content reached the device. This is the kind
+of damage REQ-RELIABILITY-001 and REQ-RELIABILITY-002 in
+[`../../requirements/non-functional/reliability.md`](../../requirements/non-functional/reliability.md)
+ask to avoid or to keep rare.
+
+The flush is needed on every file system this project runs on:
+
+- On Linux, flushing a file does not make its directory entry durable. The parent directory has to
+  be flushed separately.
+- On Windows, Microsoft documents that file system metadata is always cached until it is flushed
+  ([File caching](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching)).
+- The NTFS log guarantees a consistent volume after a crash. It does not guarantee that recent
+  changes survive.
+- No Microsoft documentation states that flushing a file also makes its parent directory entry
+  durable
+  ([FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers),
+  [NtFlushBuffersFileEx](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntflushbuffersfileex)).
+- exFAT and FAT32, common on removable media, have no journal at all.
+
+### How
+
+On Unix systems such as Linux, the directory is opened read-only and flushed with `fsync`. On
+Windows, opening a directory requires the `FILE_FLAG_BACKUP_SEMANTICS` flag. `FlushFileBuffers`
+requires a handle with write access, so a read-only directory handle fails to flush. A handle with
+write access and that flag works without administrator rights.
+
+Directories are created one level at a time, so that the store knows which levels it actually
+created. A recursive creation function cannot report that. A failed flush is returned as the error
+of `write` and is not retried. After a failed `fsync`, Linux may drop the affected dirty pages, so a
+retry can report success although the data is lost.
+
+### Concurrent writes
+
+The store is shared between threads, and two writes can race to create the same directory or file.
+No lock is needed for this. The store creates a directory with a plain create call and a file with
+an exclusive create call. When either reports that the entry already exists, a concurrent call has
+created it, and that call flushes the parent directory. The store then uses the existing entry and
+flushes nothing itself.
+
+As a consequence, a write that finds an entry created by a concurrent call can return before that
+call has completed its flush. This does not weaken what `write` promises. Its return does not mean
+that the written bytes are durable in any case, because file contents are not flushed.
+
+### Cost
+
+Measured on the development machine's internal SSD (NTFS, non-administrator user): opening and
+flushing a parent directory after a new entry took about 0.73 ms median and 1.2 ms at most. The
+same flush with nothing changed took about 0.12 ms. External USB storage was not measured. The
+cost arises once per new data file, that is once per 100 MB of stored content, plus once per new
+`dir2` and `dir1`. It is far below the bound of REQ-RELIABILITY-002.
+
+### Alternative considered and rejected: skipping the flush on NTFS
+
+Detecting the file system and skipping the flush on NTFS was rejected. It needs more code and adds
+a way to get the detection wrong. It saves about 1 ms per new 100 MB data file. In addition, no
+documentation guarantees that NTFS makes a new directory entry durable without the flush.
+
 ## DESIGN-STORE-003: Where allocation and reclaim logic lives
 Status: decided
 
