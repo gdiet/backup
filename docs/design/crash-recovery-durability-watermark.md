@@ -6,7 +6,7 @@ together with REQ-MAINTENANCE-001/002 (metadata backup and restore) in
 [`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md).
 
 The byte store writes chunk bytes through the operating system's cache. A power loss or the removal
-of the storage device can therefore lose bytes that the metadata already refers to. The four
+of the storage device can therefore lose bytes that the metadata already refers to. The
 parts below work together. They let the software know which data might be affected after such an
 event, let the user check it, and always leave a clean metadata backup to fall back on. None of
 them is decided yet.
@@ -48,7 +48,7 @@ Status: idea
 
 The repository metadata stores a **durability watermark**: the highest chunk id whose bytes are
 known to be durable. It is raised only after `sync()` has returned, at the end of a write session
-and at regular points during it (interval not decided).
+and at the sync points described below.
 
 - **"Possibly damaged" is a single query.** If `MAX(chunks.id)` is above the watermark, the last
   session ended before its bytes were known to be durable. The query is one lookup on the primary
@@ -81,6 +81,54 @@ a "newest chunks" query would need. On storage size alone, seconds since reposit
 not save anything either. SQLite stores integers in 1 to 8 bytes by size. Both Unix seconds and
 seconds since creation need 4 bytes until 2038. Milliseconds need 6 bytes, which is 2 bytes more per
 chunk, about 6 to 20 MB for 3 to 10 million chunks.
+
+## Not yet decided: sync points
+
+Status: idea
+
+A write session always ends with `sync()` and a raise of the watermark. In addition, it syncs
+during the session.
+
+**Why.** With a sync only at the end, a crash leaves everything written since the session started
+above the watermark. After a long migration, a large ingest, or a mount that runs for days, that can
+be hundreds of GB. The recovery check would have to hash all of it again, although the operating
+system has written almost all of it long before. Intermediate syncs mainly bound this uncertainty,
+and only secondarily the possible loss. They also cover a storage device that is unplugged during a
+mount without unmounting first: if a sync followed the last change, that state is clean.
+
+**Rule.** A sync is due once something was written since the last sync and one of these holds:
+
+- **Amount:** 256 MB of new data since the last sync. This bounds the recovery check to about one
+  second of hashing. On the USB hard disk, 256 MB take about 2.5 s to write.
+- **Time:** 30 s since the first write that is not yet synced. This covers slow devices, where
+  256 MB can take a minute, and small changes through a mount. Linux writes changed data back after
+  a similar time anyway, so the sync mostly confirms what is already on the device.
+- **Idle:** 2 to 5 s without a new write, mainly in a mount, where pauses after copying a few files
+  are typical.
+
+These numbers are starting values, not measurements.
+
+**Cost.** Each sync flushes at most a few data files and commits the watermark once. Because the
+operating system writes in the background anyway, little is usually left to flush. The expected
+cost on the USB hard disk is well below 1% of the time. This is an estimate. It has to be measured
+on the USB hard disk and the USB stick against the roughly 10% that REQ-RELIABILITY-002 allows. With
+the removal policy "Quick removal", Windows may already write through, which would make a sync
+almost free.
+
+**Threads.** The watermark is not simply `MAX(chunks.id)` at the time of the sync. The chunk row is
+committed before its bytes are written, and several workers write at the same time and finish in
+any order. If chunk 105 is written but chunk 103 is still in flight, the watermark may only reach
+102. The rule:
+
+1. Right before `sync()`, determine the value: the smallest chunk id still being written, minus 1.
+   If nothing is in flight, the highest id assigned so far.
+2. Run `sync()`.
+3. Only then commit exactly that value.
+
+The write path (the settle step of ingest and of a mount) therefore keeps the set of chunk ids it is
+currently writing in memory. Writing the bytes before inserting the chunk row would make this
+simpler. That order change belongs to the question of larger ingest transactions in
+[`../../agent-todos/ingest-on-slow-removable-media.md`](../../agent-todos/ingest-on-slow-removable-media.md).
 
 ## Not yet decided: automatic metadata backup
 
@@ -123,7 +171,7 @@ every such chunk again and compares their BLAKE3 hash with the stored hash.
 
 ## Open questions across the parts
 
-- How often to call `sync()` and raise the watermark during a long session.
+- The final numbers of the sync point rule, after measuring the cost of a sync.
 - Where automatic backups are stored, and the retention numbers.
 - How the store's `sync()` and the watermark commit interact with SQLite's own durability settings.
   The order "sync the store, then commit the watermark" is the only hard rule found so far.
