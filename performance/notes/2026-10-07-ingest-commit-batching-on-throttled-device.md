@@ -38,8 +38,9 @@ reads the write requests and sectors from `/sys/block/dm-N/stat` before and afte
 
 ### The experiment patch
 
-A temporary patch to `crates/cli/src/ingest.rs`, not part of the repository. It reuses the batch
-functions of the migration tool:
+A temporary patch to `crates/cli/src/ingest.rs`, not part of the code base. It is stored as
+`../scripts/slow-disk/experiment-outer-transaction.patch` and applies with `git apply`. It reuses the
+batch functions of the migration tool:
 
 ```rust
 // In try_run, before the loop over the sources:

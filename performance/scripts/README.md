@@ -94,7 +94,8 @@ Windows device set to quick removal. Without `--sync`, the device has the usual 
 generated source tree into fresh repositories on the emulated device. It prints the elapsed time
 and the number of write requests and mebibytes that reached the device. `enter-throttle.sh` runs a
 command inside a cgroup with a bandwidth or IOPS limit, as set by `setup.sh --wbps` or `--iops`.
-State lives in the git-excluded `.local/slow-disk`. The bandwidth limit is untested. The numbers
+`experiment-outer-transaction.patch` is the throwaway change to `dfs ingest` that the `outer` mode of
+`measure.sh` needs. State lives in the git-excluded `.local/slow-disk`. The bandwidth limit is untested. The numbers
 of the first experiment with these scripts are in
 `../notes/2026-10-07-ingest-commit-batching-on-throttled-device.md`.
 

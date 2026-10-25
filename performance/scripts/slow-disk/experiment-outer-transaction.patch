@@ -1,0 +1,30 @@
+diff --git a/crates/cli/src/ingest.rs b/crates/cli/src/ingest.rs
+index 243a639f..ea2b8628 100644
+--- a/crates/cli/src/ingest.rs
++++ b/crates/cli/src/ingest.rs
+@@ -274,6 +274,13 @@ fn try_run(
+         None => None,
+     };
+ 
++    // EXPERIMENT (not for commit): one outer transaction around the whole run.
++    let experiment_outer_tx = std::env::var_os("DFS_EXPERIMENT_OUTER_TX").is_some();
++    if experiment_outer_tx {
++        repo.migration_begin_batch()
++            .map_err(|err| format!("error: {err}"))?;
++    }
++
+     let mut outcome = Outcome::default();
+     for source_path in &source_paths {
+         let Some(name) = source_path.file_name().and_then(|n| n.to_str()) else {
+@@ -296,6 +303,11 @@ fn try_run(
+         );
+     }
+ 
++    if experiment_outer_tx {
++        repo.migration_commit_batch()
++            .map_err(|err| format!("error: {err}"))?;
++    }
++
+     let mut message = format!(
+         "imported {} file(s) into {}",
+         outcome.imported, resolved_target.path

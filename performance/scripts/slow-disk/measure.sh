@@ -3,7 +3,7 @@
 #   measure.sh <files> <bytes-per-file> <runs> [outer]
 # "outer" sets DFS_EXPERIMENT_OUTER_TX (one transaction around the whole ingest); without it, the
 # default per-operation commits are measured. The "outer" mode needs the experiment patch from
-# performance/notes/2026-10-07-ingest-commit-batching-on-throttled-device.md. The source tree lives
+# experiment-outer-transaction.patch in this directory. The source tree lives
 # in $SRC_BASE (default /tmp/dfs-slow-src), the repository on the throttled device under
 # <repository root>/.local/slow-disk/mnt. Prints seconds for ingest, seconds including a final
 # sync, and the write requests / MiB that reached the device (from /sys/block/dm-N/stat).
