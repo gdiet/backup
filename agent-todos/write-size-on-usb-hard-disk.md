@@ -58,3 +58,30 @@ outcome and a link to the note under candidate 3 of `ingest-on-slow-removable-me
 For the reader of the result: if 10 MB writes are clearly faster than 1,200 KB writes (say, by a
 third or more), a write buffer is worth designing. If the difference stays within the run-to-run
 spread, it is not, for this device. The decision is the developer's.
+
+## Progress 2026-10-25: script written and checked on the USB2 stick
+
+`performance/scripts/write-pattern.ps1` exists. A first run on the USB2 stick (`I:`) served as a
+check of the script, because the earlier note has numbers for that device. The external hard disk
+was not connected yet, so the measurement this item asks for is still open.
+
+Run on `julius`, native Windows, Power Saver overlay, `-TotalMB 128 -Runs 2 -TotalMBBySize
+@{16384 = 32}`, 140 s in total:
+
+| Block | MB/s (run 1, run 2) | Device bytes per write |
+|---|---|---|
+| 16,384 B | 10.4, 9.4 | 909,000-989,000 |
+| 100,000 B | 4.1, 4.1 | 97,000 |
+| 1,200,000 B | 5.9, 6.0 | 827,000-842,000 |
+| 10,000,000 B | 9.8, 9.4 | 3,053,000-3,124,000 |
+
+The 100 KB, 1.2 MB and 10 MB results match the earlier note (3.8-4.0, 5.4-5.8 and 9.7-10.0 MB/s),
+so the script measures what the C# program measured. The 16 KB result is new: Windows merged
+these small writes into writes of about 1 MB before they reached the stick, so they ran as fast as
+10 MB blocks. Writes of 100 KB and more reached the stick unmerged. The throughput therefore does
+not grow steadily with the block size on this device. It depends on whether the operating system
+merges the writes, which may in turn depend on the removal policy. Record the policy for the hard
+disk, and look at the "Device bytes per write" column before reading the MB/s column.
+
+For the hard disk, keep the defaults (`-TotalMB 1024 -Runs 3`) unless the 10 MB probe shows that a
+run would take much longer than 10 s.

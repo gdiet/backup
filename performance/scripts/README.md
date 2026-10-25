@@ -25,6 +25,11 @@ workload:
   `perf-gen`-per-file call works fine on Linux but not on Windows (`CreateProcess` overhead).
 - `file100b-read.{ps1,sh}`, `file30kb-read.{ps1,sh}`, `file10mb-read.{ps1,sh}` - reads back whatever
   the matching `-create` script has produced so far; run the `-create` script at least once first.
+- `write-pattern.ps1` (native Windows only, no `.sh` counterpart) - throughput of one device by write
+  size. Each run appends a fixed amount to one fresh file in blocks of one size and flushes it,
+  the byte store's own pattern. It also reports the average size of the writes the device actually
+  received, from the raw disk counters. Not a 5-runs-of-20-seconds workload: it answers whether
+  larger writes are faster on a given device.
 
 Every `.ps1` script above has had scaled-down trial validation on `3327`'s native Windows
 (PowerShell 5.1) - a smaller Scale and a shorter window, not a full 5-runs-of-20-seconds
