@@ -11,10 +11,13 @@ is not yet decided.
 
 Status: idea
 
-No design decision recorded here yet - this file exists so the question is not lost between now
-and when REQ-MAINTENANCE-001/002 (metadata backup/restore) and REQ-STORAGE-004/005 (reclamation/
-compaction) are actually implemented, since none of the operations REQ-MAINTENANCE-007 is about
-exist yet to evaluate a concrete approach against.
+No design decision recorded here yet. The gap this leaves is real: metadata backup and restore
+(REQ-MAINTENANCE-001/002), space reclamation (`dfs reclaim`, REQ-STORAGE-004) and purge (`dfs del
+--purge`, REQ-CLI-003) all exist. Only compaction (REQ-STORAGE-005) does not. A reclaim or purge
+frees byte ranges, and the next write session reuses them (DESIGN-STORE-006 in
+[`byte-store.md`](byte-store.md)). Until staleness is detected, restoring a backup taken before such
+a run can resolve some entries to overwritten bytes without any warning. Only a hash check, such as
+`dfs restore --verify`, reveals it.
 
 One candidate approach, worth evaluating fresh against this project's actual implementation rather
 than assumed correct: a generation counter held in `repository_settings` (see DESIGN-METADATA-009
